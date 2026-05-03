@@ -1,7 +1,9 @@
+import { useEffect } from "react";
 import { NAV_ITEMS, type PageKey } from "../../lib/constants";
 import { useUIStore } from "../../store/uiStore";
 import { cn } from "../../lib/utils";
 import { getIcon } from "../../lib/icons";
+import { fetchDashboardStats } from "../../services/dashboardService";
 
 const SECTIONS = [
   { key: "overview", label: "Overview" },
@@ -9,13 +11,30 @@ const SECTIONS = [
   { key: "settings", label: "Settings" },
 ];
 
-const BADGES: Record<string, number> = {
-  pendingVerifications: 7,
-  pendingReports: 23,
-};
-
 export function Sidebar() {
-  const { activePage, setActivePage } = useUIStore();
+  const {
+    activePage,
+    setActivePage,
+    pendingReports,
+    pendingVerifications,
+    setBadgeCounts,
+  } = useUIStore();
+
+  useEffect(() => {
+    fetchDashboardStats()
+      .then((stats) => {
+        setBadgeCounts({
+          pendingReports: stats.pendingReports,
+          pendingVerifications: stats.pendingVerifications,
+        });
+      })
+      .catch(console.error);
+  }, []);
+
+  const BADGES: Record<string, number> = {
+    pendingVerifications,
+    pendingReports,
+  };
 
   return (
     <aside className="fixed top-0 left-0 bottom-0 w-60 bg-[#0f0a1a] flex flex-col z-40 overflow-hidden">
@@ -24,8 +43,12 @@ export function Sidebar() {
 
       {/* Logo */}
       <div className="px-5 pt-5 flex items-center gap-2.5">
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-fuchsia-500 to-violet-600 flex items-center justify-center text-lg flex-shrink-0">
-          💜
+        <div className="w-9 h-9 rounded-xl overflow-hidden flex-shrink-0">
+          <img
+            src="/images/Logo.png"
+            alt="Logo"
+            className="w-full h-full object-cover"
+          />
         </div>
         <span className="text-white font-semibold text-[15px] tracking-tight">
           Anzathu<span className="text-fuchsia-400">Connect</span>
@@ -68,7 +91,7 @@ export function Sidebar() {
                       {IconComponent && <IconComponent size={16} />}
                     </span>
                     <span className="flex-1 text-left">{item.label}</span>
-                    {badge && (
+                    {badge !== null && badge > 0 && (
                       <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
                         {badge}
                       </span>

@@ -45,10 +45,7 @@ export function ReportsPage() {
 
   return (
     <>
-      <PageLayout
-        title="Content & User Reports"
-        subtitle={`${total} open · 8,200+ resolved`}
-      >
+      <PageLayout title="Content & User Reports" subtitle={`${total} open`}>
         <Card noPad>
           <FilterBar
             pills={STATUS_PILLS}

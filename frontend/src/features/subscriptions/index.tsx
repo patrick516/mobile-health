@@ -14,30 +14,12 @@ export function SubscriptionsPage() {
   return (
     <PageLayout
       title="Subscription Management"
-      subtitle="4,433 premium subscribers · 18% conversion rate"
+      subtitle={`${total} premium subscribers`}
     >
       <div className="grid grid-cols-3 gap-4 mb-5">
-        <StatCard
-          label="Premium Users"
-          value="4,433"
-          change="5.2% this month"
-          changeUp
-          accent="purple"
-        />
-        <StatCard
-          label="Revenue (MWK)"
-          value="2.8M"
-          change="8.1% this month"
-          changeUp
-          accent="teal"
-        />
-        <StatCard
-          label="Avg Subscription"
-          value="1.4mo"
-          change="0.2 months"
-          changeUp
-          accent="blue"
-        />
+        <StatCard label="Premium Users" value={String(total)} accent="purple" />
+        <StatCard label="Revenue (MWK)" value="—" accent="teal" />
+        <StatCard label="Avg Subscription" value="—" accent="blue" />
       </div>
 
       <Card noPad>

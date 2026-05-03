@@ -33,7 +33,7 @@ export type NotificationAudience =
   | "inactive";
 export type PaymentStatus = "paid" | "expired" | "failed";
 
-// ─── Location ────────────────────────────────────────────────────────────────
+// Location
 
 export interface Location {
   id: string;
@@ -45,7 +45,7 @@ export interface Location {
   userCount?: number;
 }
 
-// ─── User ────────────────────────────────────────────────────────────────────
+// User
 
 export interface UserPhoto {
   id: string;
@@ -87,7 +87,7 @@ export interface User {
   avatarColor: string;
 }
 
-// ─── Report ──────────────────────────────────────────────────────────────────
+//  Report
 
 export interface Report {
   id: string;
@@ -105,7 +105,7 @@ export interface Report {
   createdAt: string;
 }
 
-// ─── Match ───────────────────────────────────────────────────────────────────
+// Match
 
 export interface Match {
   id: string;
@@ -124,7 +124,7 @@ export interface Match {
   dissolvedAt: string | null;
 }
 
-// ─── Subscription ────────────────────────────────────────────────────────────
+// Subscription
 
 export interface Subscription {
   id: string;
@@ -139,7 +139,7 @@ export interface Subscription {
   paymentStatus: PaymentStatus;
 }
 
-// ─── Notification ────────────────────────────────────────────────────────────
+//  Notification
 
 export interface Notification {
   id: string;
@@ -151,13 +151,14 @@ export interface Notification {
   status: "sent" | "scheduled" | "draft";
 }
 
-// ─── Analytics / Dashboard ───────────────────────────────────────────────────
+//  Analytics / Dashboard
 
 export interface DashboardStats {
   totalUsers: number;
   totalMatches: number;
   onlineNow: number;
   pendingReports: number;
+  pendingVerifications: number;
   newSignupsToday: number;
   newSignupsWeek: number;
   newSignupsMonth: number;
@@ -165,10 +166,10 @@ export interface DashboardStats {
   premiumConversionRate: number;
   reportsResolved: number;
   reportsResolvedRate: number;
-  weeklySignups: number[]; // 7 values Sun → today
+  weeklySignups: number[];
 }
 
-// ─── API helpers ─────────────────────────────────────────────────────────────
+//  API helpers
 
 export interface PaginatedResponse<T> {
   data: T[];

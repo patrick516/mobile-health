@@ -7,13 +7,12 @@ import { formatDate } from "../../lib/utils";
 import type { NotificationAudience } from "../../types";
 
 const AUDIENCE_LABELS: Record<string, string> = {
-  all: "All Users (24,631)",
-  premium: "Premium Users Only (4,433)",
-  free: "Free Users (20,198)",
-  unverified: "Unverified Users (8,867)",
+  all: "All Users",
+  premium: "Premium Users Only",
+  free: "Free Users",
+  unverified: "Unverified Users",
   inactive: "Inactive 30+ days",
 };
-
 export function NotificationsPage() {
   const { notifications, loading, sending, broadcast } = useNotifications();
   const [title, setTitle] = useState("");

@@ -1,17 +1,33 @@
-export const loginUser = async (email: string, password: string) => {
-  // TODO: Replace with real API call later
+import apiClient from "../lib/apiClient";
 
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve({
-        success: true,
-        user: {
-          id: "1",
-          name: "Patrick",
-          email,
-        },
-        token: "fake-jwt-token",
-      });
-    }, 1000); // simulate network delay
+export const registerUser = async (data: {
+  name: string;
+  email: string;
+  password: string;
+  date_of_birth?: string;
+  gender?: string;
+  country?: string;
+  district?: string;
+  town?: string;
+}) => {
+  const response = await apiClient.post("/mobile/auth/register", data);
+  return response.data;
+};
+
+export const loginUser = async (email: string, password: string) => {
+  const response = await apiClient.post("/mobile/auth/login", {
+    email,
+    password,
   });
+  return response.data;
+};
+
+export const logoutUser = async () => {
+  const response = await apiClient.post("/mobile/auth/logout");
+  return response.data;
+};
+
+export const refreshToken = async () => {
+  const response = await apiClient.post("/mobile/auth/refresh");
+  return response.data;
 };

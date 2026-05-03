@@ -5,14 +5,15 @@ import {
   StyleSheet,
   ScrollView,
   StatusBar,
+  Alert,
 } from "react-native";
 import { useState } from "react";
 import { router } from "expo-router";
 import Svg, { Path } from "react-native-svg";
-
 import InputField from "../src/components/InputField";
 import PrimaryButton from "../src/components/PrimaryButton";
 import { loginUser } from "../src/services/auth.service";
+import { useAuthStore } from "../src/store/authStore";
 
 // ─── Google Icon ───────────────────────────────────────────────
 function GoogleIcon() {
@@ -43,18 +44,25 @@ export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const { setAuth } = useAuthStore();
 
   const handleLogin = async () => {
+    if (!email || !password) {
+      Alert.alert("Error", "Please enter your email and password.");
+      return;
+    }
     setLoading(true);
     try {
-      const response: any = await loginUser(email, password);
-      console.log("LOGIN RESPONSE:", response);
-
-      if (response?.success) {
+      const response = await loginUser(email, password);
+      if (response?.token && response?.user) {
+        setAuth(response.token, response.user);
         router.replace("/discover");
       }
-    } catch (error) {
-      console.error("Login error:", error);
+    } catch (error: any) {
+      Alert.alert(
+        "Login Failed",
+        error.message ?? "Invalid email or password.",
+      );
     } finally {
       setLoading(false);
     }
@@ -63,34 +71,33 @@ export default function LoginScreen() {
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" />
-
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Welcome Back 💜</Text>
           <Text style={styles.headerSub}>Log in to continue your journey</Text>
         </View>
-
         <View style={styles.card}>
           <InputField
             placeholder="Email address"
             value={email}
             onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            iconName="email"
           />
-
           <InputField
             placeholder="Password"
             value={password}
             onChangeText={setPassword}
             secureTextEntry
+            iconName="lock"
           />
-
           <PrimaryButton
             title="Log In"
             onPress={handleLogin}
             loading={loading}
           />
         </View>
-
         <View style={styles.signupRow}>
           <Text style={styles.signupText}>Don't have an account? </Text>
           <TouchableOpacity onPress={() => router.push("/register")}>
@@ -105,17 +112,14 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#FAF7FF" },
   scroll: { padding: 24, paddingTop: 64 },
-
   header: { marginBottom: 20 },
   headerTitle: { fontSize: 28, fontWeight: "800", color: "#1F0A3C" },
   headerSub: { marginTop: 6, color: "#6B7280" },
-
   card: {
     backgroundColor: "#fff",
     padding: 20,
     borderRadius: 20,
   },
-
   signupRow: {
     flexDirection: "row",
     justifyContent: "center",

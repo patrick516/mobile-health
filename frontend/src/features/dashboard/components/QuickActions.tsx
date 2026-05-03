@@ -1,7 +1,17 @@
 import { Button } from "../../../components/ui";
 import { useUIStore } from "../../../store/uiStore";
 
-export function QuickActions({ conversionRate }: { conversionRate: number }) {
+export function QuickActions({
+  conversionRate,
+  pendingVerifications,
+  pendingReports,
+  premiumUsers,
+}: {
+  conversionRate: number;
+  pendingVerifications: number;
+  pendingReports: number;
+  premiumUsers: number;
+}) {
   const { setActivePage, showModal } = useUIStore();
   return (
     <div className="flex flex-col gap-2.5">
@@ -26,7 +36,7 @@ export function QuickActions({ conversionRate }: { conversionRate: number }) {
       >
         <span>✅ Pending Verifications</span>
         <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-          7
+          {pendingVerifications}
         </span>
       </Button>
       <Button
@@ -36,7 +46,7 @@ export function QuickActions({ conversionRate }: { conversionRate: number }) {
       >
         <span>🚩 Open Reports</span>
         <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-          23
+          {pendingReports}
         </span>
       </Button>
       <div className="mt-2 p-3 bg-purple-50 rounded-xl">
@@ -51,7 +61,7 @@ export function QuickActions({ conversionRate }: { conversionRate: number }) {
         </div>
         <div className="flex justify-between mt-1.5 text-[11px] text-purple-400">
           <span>{conversionRate}% of users</span>
-          <span>4,433 premium</span>
+          <span>{premiumUsers.toLocaleString()} premium</span>
         </div>
       </div>
     </div>

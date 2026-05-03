@@ -1,5 +1,4 @@
-import { delay } from "../lib/utils";
-import { MOCK_REPORTS } from "../lib/mockData";
+import { api } from "../lib/apiClient";
 import type {
   Report,
   ReportFilters,
@@ -11,51 +10,58 @@ export async function fetchReports(
   filters: ReportFilters = {},
   pagination: PaginationParams = { page: 1, pageSize: 20 },
 ): Promise<PaginatedResponse<Report>> {
-  await delay(400);
+  const res = await api.get<{ reports: any[]; total: number; page: number }>(
+    "/admin/reports",
+    {
+      page: pagination.page,
+      pageSize: pagination.pageSize,
+      ...(filters.status &&
+        filters.status !== "all" && { status: filters.status }),
+      ...(filters.type && filters.type !== "all" && { reason: filters.type }),
+      ...(filters.search && { search: filters.search }),
+    },
+  );
 
-  let data = [...MOCK_REPORTS];
+  const mapped: Report[] = res.reports.map((r: any) => ({
+    id: r.id,
+    reporterId: r.submitter?.id ?? "",
+    reporterName: r.submitter?.name ?? "Unknown",
+    reporterInitials: (r.submitter?.name ?? "?")
+      .split(" ")
+      .map((n: string) => n[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase(),
+    reporterAvatarColor: "linear-gradient(135deg,#c026d3,#7c3aed)",
+    reportedUserId: r.subject?.id ?? "",
+    reportedUserName: r.subject?.name ?? "Unknown",
+    type: r.reason,
+    description: r.description ?? "",
+    status: r.status,
+    adminNotes: r.adminReply ?? null,
+    resolvedAt: r.resolvedAt ?? null,
+    createdAt: r.createdAt,
+  }));
 
-  if (filters.status && filters.status !== "all")
-    data = data.filter((r) => r.status === filters.status);
-  if (filters.type && filters.type !== "all")
-    data = data.filter((r) => r.type === filters.type);
-  if (filters.search) {
-    const q = filters.search.toLowerCase();
-    data = data.filter(
-      (r) =>
-        r.reporterName.toLowerCase().includes(q) ||
-        r.reportedUserName.toLowerCase().includes(q),
-    );
-  }
-
-  const total = data.length;
-  const start = (pagination.page - 1) * pagination.pageSize;
   return {
-    data: data.slice(start, start + pagination.pageSize),
-    total,
-    page: pagination.page,
+    data: mapped,
+    total: res.total,
+    page: res.page,
     pageSize: pagination.pageSize,
   };
-  // REAL: return api.get<PaginatedResponse<Report>>('/admin/reports', { ...filters, ...pagination });
 }
 
 export async function resolveReport(
   id: string,
   payload: { adminNotes: string; replyEmail: string; action: string },
 ): Promise<void> {
-  await delay(300);
-  const r = MOCK_REPORTS.find((x) => x.id === id);
-  if (r) {
-    r.status = "resolved";
-    r.adminNotes = payload.adminNotes;
-    r.resolvedAt = new Date().toISOString();
-  }
-  // REAL: return api.patch(`/admin/reports/${id}/resolve`, payload);
+  await api.patch(`/admin/reports/${id}/resolve`, {
+    adminReply: payload.replyEmail || payload.adminNotes,
+  });
 }
 
 export async function dismissReport(id: string): Promise<void> {
-  await delay(300);
-  const r = MOCK_REPORTS.find((x) => x.id === id);
-  if (r) r.status = "dismissed";
-  // REAL: return api.patch(`/admin/reports/${id}/dismiss`);
+  await api.patch(`/admin/reports/${id}/resolve`, {
+    adminReply: "Report dismissed by admin.",
+  });
 }

@@ -1,5 +1,4 @@
-import { delay } from "../lib/utils";
-import { MOCK_USERS } from "../lib/mockData";
+import { api } from "../lib/apiClient";
 import type {
   User,
   UserFilters,
@@ -11,98 +10,99 @@ export async function fetchUsers(
   filters: UserFilters = {},
   pagination: PaginationParams = { page: 1, pageSize: 20 },
 ): Promise<PaginatedResponse<User>> {
-  await delay(400);
+  const res = await api.get<{ users: any[]; total: number; page: number }>(
+    "/admin/users",
+    {
+      page: pagination.page,
+      pageSize: pagination.pageSize,
+      ...(filters.search && { search: filters.search }),
+      ...(filters.status &&
+        filters.status !== "all" && { status: filters.status }),
+      ...(filters.gender &&
+        filters.gender !== "all" && { gender: filters.gender }),
+      ...(filters.plan &&
+        filters.plan !== "all" && {
+          isPremium: filters.plan !== "free" ? "true" : "false",
+        }),
+      ...(filters.verificationStatus &&
+        filters.verificationStatus !== "all" && {
+          verified:
+            filters.verificationStatus === "verified" ? "true" : "false",
+        }),
+    },
+  );
 
-  let data = [...MOCK_USERS];
-
-  if (filters.search) {
-    const q = filters.search.toLowerCase();
-    data = data.filter(
-      (u) =>
-        u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q),
-    );
-  }
-  if (filters.status && filters.status !== "all")
-    data = data.filter((u) => u.status === filters.status);
-  if (filters.verificationStatus && filters.verificationStatus !== "all")
-    data = data.filter(
-      (u) => u.verificationStatus === filters.verificationStatus,
-    );
-  if (filters.plan && filters.plan !== "all")
-    data = data.filter((u) => u.plan === filters.plan);
-  if (filters.gender && filters.gender !== "all")
-    data = data.filter((u) => u.gender === filters.gender);
-  if (filters.locationId && filters.locationId !== "all")
-    data = data.filter((u) => u.locationId === filters.locationId);
-
-  const total = data.length;
-  const start = (pagination.page - 1) * pagination.pageSize;
-  const paged = data.slice(start, start + pagination.pageSize);
+  const mapped: User[] = res.users.map((u: any) => ({
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    gender: u.gender ?? "male",
+    age: u.age ?? 0,
+    locationId: u.district ?? "",
+    locationName:
+      [u.town, u.district, u.country].filter(Boolean).join(", ") || "—",
+    status: u.status,
+    verificationStatus: u.verified ? "verified" : "unverified",
+    plan: u.isPremium ? "premium_monthly" : "free",
+    photos: u.photos ?? [],
+    documents: [],
+    joinedAt: u.createdAt,
+    lastActiveAt: u.lastSeenAt ?? u.createdAt,
+    isOnline: u.online ?? false,
+    totalMatches:
+      (u._count?.matchesAsUser1 ?? 0) + (u._count?.matchesAsUser2 ?? 0),
+    messagesSent: 0,
+    reportsFiled: 0,
+    reportsAgainst: u._count?.reportsReceived ?? 0,
+    initials: u.name
+      .split(" ")
+      .map((n: string) => n[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase(),
+    avatarColor: "linear-gradient(135deg,#c026d3,#7c3aed)",
+  }));
 
   return {
-    data: paged,
-    total,
-    page: pagination.page,
+    data: mapped,
+    total: res.total,
+    page: res.page,
     pageSize: pagination.pageSize,
   };
-  // REAL: return api.get<PaginatedResponse<User>>('/admin/users', { ...filters, ...pagination });
 }
 
 export async function fetchUserById(id: string): Promise<User | undefined> {
-  await delay(200);
-  return MOCK_USERS.find((u) => u.id === id);
-  // REAL: return api.get<User>(`/admin/users/${id}`);
+  const res = await api.get<{ user: any }>(`/admin/users/${id}`);
+  return res.user;
 }
 
 export async function banUser(id: string): Promise<void> {
-  await delay(300);
-  const user = MOCK_USERS.find((u) => u.id === id);
-  if (user) user.status = "banned";
-  // REAL: return api.patch(`/admin/users/${id}/ban`);
+  await api.patch(`/admin/users/${id}/ban`);
 }
 
 export async function unbanUser(id: string): Promise<void> {
-  await delay(300);
-  const user = MOCK_USERS.find((u) => u.id === id);
-  if (user) user.status = "active";
-  // REAL: return api.patch(`/admin/users/${id}/unban`);
+  await api.patch(`/admin/users/${id}/unban`);
 }
 
 export async function deleteUser(id: string): Promise<void> {
-  await delay(300);
-  const idx = MOCK_USERS.findIndex((u) => u.id === id);
-  if (idx > -1) MOCK_USERS.splice(idx, 1);
-  // REAL: return api.delete(`/admin/users/${id}`);
+  await api.delete(`/admin/users/${id}`);
 }
 
 export async function approveVerification(id: string): Promise<void> {
-  await delay(300);
-  const user = MOCK_USERS.find((u) => u.id === id);
-  if (user) user.verificationStatus = "verified";
-  // REAL: return api.patch(`/admin/users/${id}/verify`);
+  await api.patch(`/admin/users/${id}/verify`);
 }
 
 export async function rejectVerification(
   id: string,
   reason: string,
 ): Promise<void> {
-  await delay(300);
-  const user = MOCK_USERS.find((u) => u.id === id);
-  if (user) user.verificationStatus = "rejected";
-  console.log("Rejected reason:", reason);
-  // REAL: return api.patch(`/admin/users/${id}/reject`, { reason });
+  await api.patch(`/admin/users/${id}/reject`, { reason });
 }
 
 export async function grantPremium(id: string): Promise<void> {
-  await delay(300);
-  const user = MOCK_USERS.find((u) => u.id === id);
-  if (user) user.plan = "premium_monthly";
-  // REAL: return api.patch(`/admin/users/${id}/grant-premium`);
+  await api.post(`/admin/users/${id}/premium`, { plan: "monthly", days: 30 });
 }
 
 export async function revokePremium(id: string): Promise<void> {
-  await delay(300);
-  const user = MOCK_USERS.find((u) => u.id === id);
-  if (user) user.plan = "free";
-  // REAL: return api.patch(`/admin/users/${id}/revoke-premium`);
+  await api.delete(`/admin/users/${id}/premium`);
 }

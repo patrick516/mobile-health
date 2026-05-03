@@ -42,6 +42,19 @@ export const getStats = async () => {
     prisma.verificationRequest.count({ where: { status: "pending" } }),
   ]);
 
+  // Weekly signups: one count per day (Sun → today)
+  const weeklySignups = await Promise.all(
+    Array.from({ length: 7 }, (_, i) => {
+      const dayStart = new Date(Date.now() - (6 - i) * 24 * 60 * 60 * 1000);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(dayStart);
+      dayEnd.setHours(23, 59, 59, 999);
+      return prisma.user.count({
+        where: { createdAt: { gte: dayStart, lte: dayEnd } },
+      });
+    }),
+  );
+
   const premiumConversionRate =
     premiumConversionBase > 0
       ? ((totalPremium / premiumConversionBase) * 100).toFixed(1)
@@ -75,5 +88,6 @@ export const getStats = async () => {
     verifications: {
       pending: pendingVerifications,
     },
+    weeklySignups,
   };
 };

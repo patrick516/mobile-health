@@ -1,3 +1,7 @@
+// src/App.tsx
+
+import { useAuthStore } from "./store/authStore";
+import Login from "./features/auth/Login";
 import { Sidebar } from "./components/layout/Sidebar";
 import { Topbar } from "./components/layout/Topbar";
 import { DashboardPage } from "./features/dashboard";
@@ -24,7 +28,10 @@ const PAGES = {
 };
 
 export default function App() {
+  const { token } = useAuthStore();
   const { activePage } = useUIStore();
+
+  if (!token) return <Login />;
 
   return (
     <div className="min-h-screen bg-[#f8f5ff] flex">

@@ -1,11 +1,24 @@
-import { delay } from "../lib/utils";
-import { MOCK_NOTIFICATIONS } from "../lib/mockData";
+import { api } from "../lib/apiClient";
 import type { Notification, NotificationAudience } from "../types";
 
 export async function fetchNotifications(): Promise<Notification[]> {
-  await delay(300);
-  return MOCK_NOTIFICATIONS;
-  // REAL: return api.get<Notification[]>('/admin/notifications');
+  const res = await api.get<{ broadcasts: any[] }>(
+    "/admin/notifications/broadcasts",
+  );
+
+  return res.broadcasts.map((b: any) => ({
+    id: b.id,
+    title: b.title,
+    body: b.body,
+    audience: b.isPremiumOnly
+      ? "premium"
+      : b.targetGender || b.targetCountry
+        ? "all"
+        : "all",
+    sentAt: b.sentAt,
+    deliveredCount: b.totalSent ?? 0,
+    status: "sent" as const,
+  }));
 }
 
 export async function sendBroadcast(data: {
@@ -13,13 +26,9 @@ export async function sendBroadcast(data: {
   body: string;
   audience: NotificationAudience;
 }): Promise<void> {
-  await delay(600);
-  MOCK_NOTIFICATIONS.unshift({
-    id: `n${Date.now()}`,
-    ...data,
-    sentAt: new Date().toISOString(),
-    deliveredCount: 0,
-    status: "sent",
+  await api.post("/admin/notifications/broadcast", {
+    title: data.title,
+    body: data.body,
+    isPremiumOnly: data.audience === "premium",
   });
-  // REAL: return api.post('/admin/notifications/broadcast', data);
 }

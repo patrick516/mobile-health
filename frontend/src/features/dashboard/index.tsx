@@ -107,7 +107,12 @@ export function DashboardPage() {
 
         <Card>
           <SectionHeader title="Quick Actions" />
-          <QuickActions conversionRate={stats.premiumConversionRate} />
+          <QuickActions
+            conversionRate={stats.premiumConversionRate}
+            pendingVerifications={stats.pendingVerifications ?? 0}
+            pendingReports={stats.pendingReports}
+            premiumUsers={stats.premiumUsers}
+          />
         </Card>
       </div>
 

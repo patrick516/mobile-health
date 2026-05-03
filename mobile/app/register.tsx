@@ -5,15 +5,16 @@ import {
   StyleSheet,
   ScrollView,
   StatusBar,
+  Alert,
 } from "react-native";
 import { useState } from "react";
 import { router } from "expo-router";
 import InputField from "../src/components/InputField";
 import PrimaryButton from "../src/components/PrimaryButton";
-import { loginUser } from "../src/services/auth.service";
+import { registerUser } from "../src/services/auth.service";
+import { useAuthStore } from "../src/store/authStore";
 import SelectDropdown from "../src/components/SelectDropdown";
 import { COUNTRIES, getDistricts, getTowns } from "../src/data/locationData";
-import { addFakeUser } from "../src/data/fakeUsers";
 
 export default function RegisterScreen() {
   // Personal info
@@ -21,6 +22,7 @@ export default function RegisterScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [dob, setDob] = useState("");
+  const [gender, setGender] = useState("");
 
   // Location
   const [country, setCountry] = useState("");
@@ -28,6 +30,7 @@ export default function RegisterScreen() {
   const [town, setTown] = useState("");
 
   const [loading, setLoading] = useState(false);
+  const { setAuth } = useAuthStore();
 
   // Derived lists — reset child when parent changes
   const handleCountryChange = (val: string) => {
@@ -55,44 +58,45 @@ export default function RegisterScreen() {
   }));
   const townOptions = towns.map((t) => ({ value: t.id, label: t.name }));
 
-  const handleRegister = () => {
+  const genderOptions = [
+    { value: "male", label: "Male" },
+    { value: "female", label: "Female" },
+  ];
+
+  const handleRegister = async () => {
+    if (!name || !email || !password) {
+      Alert.alert("Error", "Please fill in your name, email and password.");
+      return;
+    }
     setLoading(true);
-
-    const newUser = {
-      id: Date.now().toString(),
-      name,
-      age: 25,
-      verified: false,
-      profession: "New User",
-
-      country,
-      district,
-      town,
-
-      distance: `${town}, ${district}, ${country}`,
-
-      bio: "",
-      interests: [],
-      photo: "https://i.pravatar.cc/500",
-      photoColor: "#C2856A",
-      online: true,
-    };
-
-    console.log("REGISTER:", newUser);
-
-    // simulate backend save
-    addFakeUser(newUser);
-
-    setTimeout(() => {
+    try {
+      const response = await registerUser({
+        name,
+        email,
+        password,
+        date_of_birth: dob || undefined,
+        gender: gender || undefined,
+        country: country || undefined,
+        district: district || undefined,
+        town: town || undefined,
+      });
+      if (response?.token && response?.user) {
+        setAuth(response.token, response.user);
+        router.replace("/discover");
+      }
+    } catch (error: any) {
+      Alert.alert(
+        "Registration Failed",
+        error.message ?? "Something went wrong. Please try again.",
+      );
+    } finally {
       setLoading(false);
-      router.replace("/discover");
-    }, 800);
+    }
   };
 
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" />
-
       <ScrollView
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
@@ -108,7 +112,6 @@ export default function RegisterScreen() {
 
         {/* ── Card ── */}
         <View style={styles.card}>
-          {/* Section label */}
           <Text style={styles.sectionLabel}>Personal Info</Text>
 
           <InputField
@@ -118,7 +121,6 @@ export default function RegisterScreen() {
             autoCapitalize="words"
             iconName="person"
           />
-
           <InputField
             placeholder="Email"
             value={email}
@@ -127,7 +129,6 @@ export default function RegisterScreen() {
             autoCapitalize="none"
             iconName="email"
           />
-
           <InputField
             placeholder="Password"
             value={password}
@@ -135,7 +136,6 @@ export default function RegisterScreen() {
             secureTextEntry
             iconName="lock"
           />
-
           <InputField
             placeholder="Date of Birth  (DD/MM/YYYY)"
             value={dob}
@@ -144,11 +144,18 @@ export default function RegisterScreen() {
             iconName="calendar"
           />
 
+          <SelectDropdown
+            placeholder="Select Gender"
+            options={genderOptions}
+            value={gender}
+            onChange={setGender}
+            iconName="👤"
+          />
+
           {/* ── Divider ── */}
           <View style={styles.sectionDivider} />
           <Text style={styles.sectionLabel}>Location</Text>
 
-          {/* Country */}
           <SelectDropdown
             placeholder="Select Country"
             options={countryOptions}
@@ -156,8 +163,6 @@ export default function RegisterScreen() {
             onChange={handleCountryChange}
             iconName="🌍"
           />
-
-          {/* District — only active after country picked */}
           <SelectDropdown
             placeholder={
               country ? "Select District / Province" : "Select country first"
@@ -168,8 +173,6 @@ export default function RegisterScreen() {
             iconName="🏙️"
             disabled={!country}
           />
-
-          {/* Town / Area — only active after district picked */}
           <SelectDropdown
             placeholder={
               district ? "Select Town / Area" : "Select district first"
@@ -211,37 +214,22 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: "#FAF7FF",
-  },
+  root: { flex: 1, backgroundColor: "#FAF7FF" },
   scroll: {
     flexGrow: 1,
     paddingHorizontal: 24,
     paddingTop: 64,
     paddingBottom: 48,
   },
-
-  // Header
-  header: {
-    marginBottom: 28,
-  },
+  header: { marginBottom: 28 },
   headerTitle: {
     fontSize: 30,
     fontWeight: "800",
     color: "#1F0A3C",
     letterSpacing: 0.2,
   },
-  heartEmoji: {
-    fontSize: 26,
-  },
-  headerSub: {
-    marginTop: 6,
-    fontSize: 14,
-    color: "#6B7280",
-  },
-
-  // Card
+  heartEmoji: { fontSize: 26 },
+  headerSub: { marginTop: 6, fontSize: 14, color: "#6B7280" },
   card: {
     backgroundColor: "#FFFFFF",
     borderRadius: 24,
@@ -252,8 +240,6 @@ const styles = StyleSheet.create({
     shadowRadius: 24,
     elevation: 8,
   },
-
-  // Section labels
   sectionLabel: {
     fontSize: 12,
     fontWeight: "700",
@@ -267,8 +253,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#F3EEFF",
     marginVertical: 20,
   },
-
-  // Terms
   termsText: {
     fontSize: 12,
     color: "#9CA3AF",
@@ -277,25 +261,13 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginBottom: 16,
   },
-  termsLink: {
-    color: "#7C3AED",
-    fontWeight: "600",
-  },
-
-  // Login row
+  termsLink: { color: "#7C3AED", fontWeight: "600" },
   loginRow: {
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
     marginTop: 24,
   },
-  loginText: {
-    fontSize: 14,
-    color: "#6B7280",
-  },
-  loginLink: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#7C3AED",
-  },
+  loginText: { fontSize: 14, color: "#6B7280" },
+  loginLink: { fontSize: 14, fontWeight: "700", color: "#7C3AED" },
 });
