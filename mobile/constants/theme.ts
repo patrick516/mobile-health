@@ -1,53 +1,44 @@
-/**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
- */
+const colors = {
+  // Brand
+  primary: "#8B5CF6", // purple
+  primaryDark: "#6D28D9", // deep purple
+  secondary: "#EC4899", // pink/magenta
+  accent: "#F472B6", // light pink
 
-import { Platform } from 'react-native';
+  // Gradient stops
+  gradientStart: "#4C1D95", // deep violet
+  gradientMid: "#7C3AED", // purple
+  gradientEnd: "#EC4899", // pink
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
+  // UI
+  background: "#3B0764", // very dark purple (splash/home bg)
+  surface: "#FFFFFF", // white card
+  surfaceAlt: "#F9F5FF", // very light purple tint for inputs
 
-export const Colors = {
-  light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
-  },
-  dark: {
-    text: '#ECEDEE',
-    background: '#151718',
-    tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
-  },
+  // Text
+  textPrimary: "#1F0A3C", // near-black on white
+  textSecondary: "#6B7280", // grey on white
+  textOnDark: "#FFFFFF", // white on dark bg
+  textMuted: "#A78BFA", // muted purple
+
+  // Input
+  inputBorder: "#E9D8FD",
+  inputBg: "#F9F5FF",
+  inputText: "#1F0A3C",
+  placeholder: "#9CA3AF",
+
+  // Button
+  buttonPrimary: "#7C3AED",
+  buttonText: "#FFFFFF",
+
+  // Social
+  googleBorder: "#E5E7EB",
+  facebookBg: "#1877F2",
+
+  // Misc
+  divider: "#E9D8FD",
+  link: "#7C3AED",
+  error: "#EF4444",
 };
 
-export const Fonts = Platform.select({
-  ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
-    serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
-    mono: 'ui-monospace',
-  },
-  default: {
-    sans: 'normal',
-    serif: 'serif',
-    rounded: 'normal',
-    mono: 'monospace',
-  },
-  web: {
-    sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-    serif: "Georgia, 'Times New Roman', serif",
-    rounded: "'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif",
-    mono: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-  },
-});
+export default colors;

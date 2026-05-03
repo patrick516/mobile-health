@@ -1,0 +1,10 @@
+{
+  "folder-color.pathColors": [
+    {
+      "folderPath": "dating-app/backend/src/models/",
+      "isFolderOnly": true,
+      "color": "foldercolorizer.color_5f5f87"
+    }
+  ],
+  "prisma.pinToPrisma6": true
+}
