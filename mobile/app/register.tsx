@@ -7,8 +7,9 @@ import {
   StatusBar,
   Alert,
 } from "react-native";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { router } from "expo-router";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import InputField from "../src/components/InputField";
 import PrimaryButton from "../src/components/PrimaryButton";
 import { registerUser } from "../src/services/auth.service";
@@ -17,22 +18,19 @@ import SelectDropdown from "../src/components/SelectDropdown";
 import { COUNTRIES, getDistricts, getTowns } from "../src/data/locationData";
 
 export default function RegisterScreen() {
-  // Personal info
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [dob, setDob] = useState("");
+  const [dobDate, setDobDate] = useState<Date | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [gender, setGender] = useState("");
-
-  // Location
   const [country, setCountry] = useState("");
   const [district, setDistrict] = useState("");
   const [town, setTown] = useState("");
-
   const [loading, setLoading] = useState(false);
   const { setAuth } = useAuthStore();
 
-  // Derived lists — reset child when parent changes
   const handleCountryChange = (val: string) => {
     setCountry(val);
     setDistrict("");
@@ -43,25 +41,47 @@ export default function RegisterScreen() {
     setTown("");
   };
 
-  const districts = country ? getDistricts(country) : [];
-  const towns = district ? getTowns(district) : [];
+  const districts = useMemo(
+    () => (country ? getDistricts(country) : []),
+    [country],
+  );
+  const towns = useMemo(() => (district ? getTowns(district) : []), [district]);
 
-  // Build option arrays for SelectDropdown
-  const countryOptions = COUNTRIES.map((c) => ({
-    value: c.code,
-    label: c.name,
-    prefix: c.flag,
-  }));
-  const districtOptions = districts.map((d) => ({
-    value: d.id,
-    label: d.name,
-  }));
-  const townOptions = towns.map((t) => ({ value: t.id, label: t.name }));
+  const countryOptions = useMemo(
+    () =>
+      COUNTRIES.map((c) => ({
+        value: c.code,
+        label: c.name,
+        prefix: c.flag,
+      })),
+    [],
+  );
+  const districtOptions = useMemo(
+    () => districts.map((d) => ({ value: d.id, label: d.name })),
+    [districts],
+  );
+  const townOptions = useMemo(
+    () => towns.map((t) => ({ value: t.id, label: t.name })),
+    [towns],
+  );
+  const genderOptions = useMemo(
+    () => [
+      { value: "male", label: "Male" },
+      { value: "female", label: "Female" },
+    ],
+    [],
+  );
 
-  const genderOptions = [
-    { value: "male", label: "Male" },
-    { value: "female", label: "Female" },
-  ];
+  const handleDateChange = (_: any, selectedDate?: Date) => {
+    setShowDatePicker(false);
+    if (selectedDate) {
+      setDobDate(selectedDate);
+      const day = String(selectedDate.getDate()).padStart(2, "0");
+      const month = String(selectedDate.getMonth() + 1).padStart(2, "0");
+      const year = selectedDate.getFullYear();
+      setDob(`${day}/${month}/${year}`);
+    }
+  };
 
   const handleRegister = async () => {
     if (!name || !email || !password) {
@@ -82,7 +102,7 @@ export default function RegisterScreen() {
       });
       if (response?.token && response?.user) {
         setAuth(response.token, response.user);
-        router.replace("/discover");
+        router.replace("/upload-photos");
       }
     } catch (error: any) {
       Alert.alert(
@@ -99,8 +119,9 @@ export default function RegisterScreen() {
       <StatusBar barStyle="dark-content" />
       <ScrollView
         contentContainerStyle={styles.scroll}
-        keyboardShouldPersistTaps="handled"
+        keyboardShouldPersistTaps="always"
         showsVerticalScrollIndicator={false}
+        keyboardDismissMode="none"
       >
         {/* ── Header ── */}
         <View style={styles.header}>
@@ -136,13 +157,27 @@ export default function RegisterScreen() {
             secureTextEntry
             iconName="lock"
           />
-          <InputField
-            placeholder="Date of Birth  (DD/MM/YYYY)"
-            value={dob}
-            onChangeText={setDob}
-            keyboardType="numeric"
-            iconName="calendar"
-          />
+
+          {/* ── Date of Birth Picker ── */}
+          <TouchableOpacity
+            style={styles.dateInput}
+            onPress={() => setShowDatePicker(true)}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.dateText, !dob && styles.datePlaceholder]}>
+              {dob || "Date of Birth (DD/MM/YYYY)"}
+            </Text>
+          </TouchableOpacity>
+
+          {showDatePicker && (
+            <DateTimePicker
+              value={dobDate ?? new Date(2000, 0, 1)}
+              mode="date"
+              display="default"
+              maximumDate={new Date()}
+              onChange={handleDateChange}
+            />
+          )}
 
           <SelectDropdown
             placeholder="Select Gender"
@@ -185,6 +220,7 @@ export default function RegisterScreen() {
           />
 
           {/* Terms */}
+          <View style={styles.sectionDivider} />
           <Text style={styles.termsText}>
             By signing up, you agree to our{" "}
             <Text style={styles.termsLink}>Terms of Service</Text> and{" "}
@@ -238,7 +274,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.1,
     shadowRadius: 24,
-    elevation: 8,
   },
   sectionLabel: {
     fontSize: 12,
@@ -253,12 +288,28 @@ const styles = StyleSheet.create({
     backgroundColor: "#F3EEFF",
     marginVertical: 20,
   },
+  dateInput: {
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginBottom: 12,
+    backgroundColor: "#F9FAFB",
+  },
+  dateText: {
+    fontSize: 14,
+    color: "#1F0A3C",
+  },
+  datePlaceholder: {
+    color: "#9CA3AF",
+  },
   termsText: {
     fontSize: 12,
     color: "#9CA3AF",
     textAlign: "center",
     lineHeight: 18,
-    marginTop: 4,
+    marginTop: 16,
     marginBottom: 16,
   },
   termsLink: { color: "#7C3AED", fontWeight: "600" },

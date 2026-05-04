@@ -20,7 +20,17 @@ export const register = async ({
   }
 
   const hashed = await hashPassword(password);
-  const dob = date_of_birth ? new Date(date_of_birth) : null;
+
+  let dob = null;
+  if (date_of_birth) {
+    const [day, month, year] = date_of_birth.split("/");
+    dob = new Date(`${year}-${month}-${day}`);
+    if (isNaN(dob.getTime())) {
+      const err = new Error("Invalid date of birth format. Use DD/MM/YYYY");
+      err.statusCode = 400;
+      throw err;
+    }
+  }
   const age = dob ? Math.floor((Date.now() - dob) / 3.15576e10) : null;
 
   const user = await prisma.user.create({

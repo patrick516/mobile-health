@@ -12,6 +12,7 @@ import notificationsRoutes from "./notifications/notifications.routes.js";
 import searchRoutes from "./search/search.routes.js";
 import locationsRoutes from "./locations/locations.routes.js";
 import reportsRoutes from "./reports/reports.routes.js";
+import photosRoutes from "./photos/photos.routes.js";
 
 const router = Router();
 
@@ -26,6 +27,7 @@ router.use("/premium", premiumRoutes);
 router.use("/notifications", notificationsRoutes);
 router.use("/search", searchRoutes);
 router.use("/locations", locationsRoutes);
-router.use("/users", reportsRoutes); // /users/:id/report and /users/:id/block live here
+router.use("/users", reportsRoutes);
+router.use("/photos", photosRoutes);
 
 export default router;

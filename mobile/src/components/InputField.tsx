@@ -29,10 +29,9 @@ export default function InputField({
   ...props
 }: InputFieldProps) {
   const [isSecure, setIsSecure] = useState(secureTextEntry ?? false);
-  const [focused, setFocused] = useState(false);
 
   return (
-    <View style={[styles.wrapper, focused && styles.wrapperFocused]}>
+    <View style={styles.wrapper}>
       {/* Left icon */}
       {iconName && (
         <Text style={styles.leftIcon}>{iconMap[iconName] ?? "•"}</Text>
@@ -42,8 +41,9 @@ export default function InputField({
         style={[styles.input, iconName && styles.inputWithIcon]}
         placeholderTextColor="#9CA3AF"
         secureTextEntry={isSecure}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
+        autoComplete="off"
+        importantForAutofill="no"
+        autoCorrect={false}
         {...props}
       />
 
@@ -72,15 +72,6 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     paddingHorizontal: 14,
     minHeight: 52,
-  },
-  wrapperFocused: {
-    borderColor: "#7C3AED",
-    backgroundColor: "#FFFFFF",
-    shadowColor: "#7C3AED",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 3,
   },
   leftIcon: {
     fontSize: 16,
