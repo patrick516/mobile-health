@@ -5,6 +5,7 @@ import {
   getMatches,
   getLikesReceived,
   getLikesSent,
+  getMatchWithUser,
 } from "./matches.controller.js";
 import { authenticate } from "../../../middleware/auth.middleware.js";
 import { requirePremium } from "../../../middleware/premium.middleware.js";
@@ -12,6 +13,7 @@ import { requirePremium } from "../../../middleware/premium.middleware.js";
 const router = Router();
 
 router.get("/", authenticate, getMatches);
+router.get("/with/:userId", authenticate, getMatchWithUser);
 router.get("/likes/received", authenticate, requirePremium, getLikesReceived);
 router.get("/likes/sent", authenticate, getLikesSent);
 

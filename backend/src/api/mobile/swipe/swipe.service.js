@@ -106,6 +106,34 @@ export const passUser = async (senderId, receiverId) => {
   });
 };
 
+export const getLikes = async (userId) => {
+  const likes = await prisma.swipe.findMany({
+    where: { receiverId: userId, action: "like" },
+    include: {
+      sender: {
+        select: {
+          id: true,
+          name: true,
+          age: true,
+          photoUrl: true,
+          photos: {
+            select: { id: true, url: true, isMain: true },
+            orderBy: [{ isMain: "desc" }, { order: "asc" }],
+            take: 1,
+          },
+          town: true,
+          district: true,
+          verified: true,
+          online: true,
+        },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return likes.map((l) => l.sender);
+};
+
 export const rewind = async (userId) => {
   // Get the last swipe this user made
   const last = await prisma.swipe.findFirst({

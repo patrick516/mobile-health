@@ -9,12 +9,30 @@ import {
   StatusBar,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from "react-native";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { router, useLocalSearchParams } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Path } from "react-native-svg";
-import { FAKE_USERS, FAKE_MESSAGES, ChatMessage } from "../src/data/fakeUsers";
+import {
+  fetchMessages,
+  sendMessage,
+  markRead,
+  Message,
+  Conversation,
+  fetchConversations,
+} from "../src/services/conversationsService";
+import {
+  connectSocket,
+  getSocket,
+  joinConversation,
+  leaveConversation,
+  emitTyping,
+  emitStopTyping,
+} from "../src/lib/socketClient";
+import { useAuthStore } from "../src/store/authStore";
+import { formatTime } from "../src/lib/utils";
 
 function BackIcon() {
   return (
@@ -41,18 +59,6 @@ function MoreIcon() {
     </Svg>
   );
 }
-function ImageIcon() {
-  return (
-    <Svg width={22} height={22} viewBox="0 0 24 24">
-      <Path
-        d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-        stroke="#9CA3AF"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-    </Svg>
-  );
-}
 function SendIcon() {
   return (
     <Svg width={20} height={20} viewBox="0 0 24 24">
@@ -66,12 +72,12 @@ function SendIcon() {
     </Svg>
   );
 }
-function TickIcon() {
+function TickIcon({ read }: { read: boolean }) {
   return (
     <Svg width={14} height={14} viewBox="0 0 24 24">
       <Path
         d="M5 13l4 4L19 7"
-        stroke="rgba(255,255,255,0.7)"
+        stroke={read ? "#FFFFFF" : "rgba(255,255,255,0.5)"}
         strokeWidth="2"
         strokeLinecap="round"
       />
@@ -80,37 +86,140 @@ function TickIcon() {
 }
 
 export default function ChatScreen() {
-  const { userId } = useLocalSearchParams<{ userId: string }>();
-  const user = FAKE_USERS.find((u) => u.id === userId) ?? FAKE_USERS[0];
-  const [messages, setMessages] = useState<ChatMessage[]>(
-    FAKE_MESSAGES[userId] ?? [],
-  );
+  const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
+  const { user: me } = useAuthStore();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [conversation, setConversation] = useState<Conversation | null>(null);
   const [text, setText] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [isTyping, setIsTyping] = useState(false);
+  const [partnerOnline, setPartnerOnline] = useState(false);
   const listRef = useRef<FlatList>(null);
+  const typingTimer = useRef<any>(null);
 
-  const sendMessage = () => {
-    if (!text.trim()) return;
-    const newMsg: ChatMessage = {
-      id: `m${Date.now()}`,
-      senderId: "me",
-      type: "text", // ← add this line
-      text: text.trim(),
-      time: new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      read: false,
+  // Load conversation info and messages
+  useEffect(() => {
+    if (!conversationId) return;
+
+    Promise.all([fetchMessages(conversationId), fetchConversations()])
+      .then(([msgs, convos]) => {
+        setMessages(msgs.reverse());
+        const convo = convos.find((c) => c.id === conversationId) ?? null;
+        setConversation(convo);
+        setPartnerOnline(convo?.participant?.online ?? false);
+        markRead(conversationId).catch(console.error);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [conversationId]);
+
+  // Socket setup
+  useEffect(() => {
+    if (!conversationId) return;
+    connectSocket();
+    const socket = getSocket();
+    joinConversation(conversationId);
+
+    socket.on("message:new", ({ conversationId: cId, message }) => {
+      if (cId !== conversationId) return;
+      setMessages((prev) => [...prev, message]);
+      markRead(conversationId).catch(console.error);
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+    });
+
+    socket.on("message:read", ({ conversationId: cId }) => {
+      if (cId !== conversationId) return;
+      setMessages((prev) => prev.map((m) => ({ ...m, read: true })));
+    });
+
+    socket.on("typing:start", ({ conversationId: cId }) => {
+      if (cId !== conversationId) return;
+      setIsTyping(true);
+    });
+
+    socket.on("typing:stop", ({ conversationId: cId }) => {
+      if (cId !== conversationId) return;
+      setIsTyping(false);
+    });
+
+    socket.on("user:online", ({ userId }) => {
+      if (userId === conversation?.participant?.id) setPartnerOnline(true);
+    });
+
+    socket.on("user:offline", ({ userId }) => {
+      if (userId === conversation?.participant?.id) setPartnerOnline(false);
+    });
+
+    return () => {
+      leaveConversation(conversationId);
+      socket.off("message:new");
+      socket.off("message:read");
+      socket.off("typing:start");
+      socket.off("typing:stop");
+      socket.off("user:online");
+      socket.off("user:offline");
     };
-    setMessages((prev) => [...prev, newMsg]);
-    setText("");
-    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+  }, [conversationId, conversation?.participant?.id]);
+
+  const handleTextChange = (val: string) => {
+    setText(val);
+    if (conversationId) {
+      emitTyping(conversationId);
+      clearTimeout(typingTimer.current);
+      typingTimer.current = setTimeout(() => {
+        emitStopTyping(conversationId);
+      }, 1500);
+    }
   };
+
+  const handleSend = async () => {
+    if (!text.trim() || !conversationId) return;
+    const trimmed = text.trim();
+    setText("");
+    emitStopTyping(conversationId);
+
+    // Optimistic UI
+    const optimistic: Message = {
+      id: `temp-${Date.now()}`,
+      conversationId,
+      senderId: me?.id ?? "me",
+      type: "text",
+      text: trimmed,
+      voiceUri: null,
+      voiceDuration: null,
+      read: false,
+      createdAt: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, optimistic]);
+    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+
+    try {
+      const saved = await sendMessage(conversationId, trimmed);
+      setMessages((prev) =>
+        prev.map((m) => (m.id === optimistic.id ? saved : m)),
+      );
+    } catch (error) {
+      // Remove optimistic message on failure
+      setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
+    }
+  };
+
+  const partner = conversation?.participant;
+  const photoUri = partner?.photoUrl ?? null;
+
+  if (loading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#7C3AED" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" />
 
-      {/* ── Header ── */}
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backBtn}
@@ -125,21 +234,38 @@ export default function ChatScreen() {
           onPress={() =>
             router.push({
               pathname: "/profile-detail",
-              params: { userId: user.id },
+              params: { userId: partner?.id },
             })
           }
           activeOpacity={0.8}
         >
-          <Image source={{ uri: user.photo }} style={styles.headerAvatar} />
+          <View style={styles.avatarWrap}>
+            {photoUri ? (
+              <Image source={{ uri: photoUri }} style={styles.headerAvatar} />
+            ) : (
+              <View style={[styles.headerAvatar, styles.avatarFallback]}>
+                <Text style={styles.avatarInitial}>
+                  {partner?.name?.[0] ?? "?"}
+                </Text>
+              </View>
+            )}
+            {partnerOnline && <View style={styles.onlineDot} />}
+          </View>
           <View>
-            <Text style={styles.headerName}>{user.name}</Text>
+            <Text style={styles.headerName}>{partner?.name ?? "Chat"}</Text>
             <Text
               style={[
                 styles.headerStatus,
-                { color: user.online ? "#22C55E" : "#9CA3AF" },
+                {
+                  color: isTyping
+                    ? "#7C3AED"
+                    : partnerOnline
+                      ? "#22C55E"
+                      : "#9CA3AF",
+                },
               ]}
             >
-              {user.online ? "● Online" : "Offline"}
+              {isTyping ? "typing..." : partnerOnline ? "● Online" : "Offline"}
             </Text>
           </View>
         </TouchableOpacity>
@@ -149,7 +275,7 @@ export default function ChatScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* ── Messages ── */}
+      {/* Messages */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -164,15 +290,36 @@ export default function ChatScreen() {
           onContentSizeChange={() =>
             listRef.current?.scrollToEnd({ animated: false })
           }
+          ListEmptyComponent={
+            <View style={styles.emptyChat}>
+              <Text style={styles.emptyChatEmoji}>👋</Text>
+              <Text style={styles.emptyChatText}>
+                Say hello to {partner?.name ?? "your match"}!
+              </Text>
+            </View>
+          }
           renderItem={({ item }) => {
-            const isMe = item.senderId === "me";
+            const isMe = item.senderId === me?.id;
             return (
               <View style={[styles.bubbleRow, isMe && styles.bubbleRowMe]}>
-                {!isMe && (
+                {!isMe && photoUri && (
                   <Image
-                    source={{ uri: user.photo }}
+                    source={{ uri: photoUri }}
                     style={styles.bubbleAvatar}
                   />
+                )}
+                {!isMe && !photoUri && (
+                  <View style={[styles.bubbleAvatar, styles.avatarFallback]}>
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        color: "#7C3AED",
+                        fontWeight: "700",
+                      }}
+                    >
+                      {partner?.name?.[0] ?? "?"}
+                    </Text>
+                  </View>
                 )}
                 <View style={styles.bubbleWrap}>
                   {isMe ? (
@@ -184,14 +331,18 @@ export default function ChatScreen() {
                     >
                       <Text style={styles.bubbleTextMe}>{item.text}</Text>
                       <View style={styles.bubbleTimeRow}>
-                        <Text style={styles.bubbleTimeMe}>{item.time}</Text>
-                        <TickIcon />
+                        <Text style={styles.bubbleTimeMe}>
+                          {formatTime(item.createdAt)}
+                        </Text>
+                        <TickIcon read={item.read} />
                       </View>
                     </LinearGradient>
                   ) : (
                     <View style={[styles.bubble, styles.bubbleThem]}>
                       <Text style={styles.bubbleTextThem}>{item.text}</Text>
-                      <Text style={styles.bubbleTimeThem}>{item.time}</Text>
+                      <Text style={styles.bubbleTimeThem}>
+                        {formatTime(item.createdAt)}
+                      </Text>
                     </View>
                   )}
                 </View>
@@ -200,23 +351,26 @@ export default function ChatScreen() {
           }}
         />
 
-        {/* ── Input bar ── */}
-        <View style={styles.inputBar}>
-          <TouchableOpacity style={styles.mediaBtn} activeOpacity={0.8}>
-            <ImageIcon />
-          </TouchableOpacity>
+        {/* Typing indicator */}
+        {isTyping && (
+          <View style={styles.typingWrap}>
+            <Text style={styles.typingText}>
+              {partner?.name ?? "They"} is typing...
+            </Text>
+          </View>
+        )}
 
+        {/* Input bar */}
+        <View style={styles.inputBar}>
           <TextInput
             style={styles.input}
             placeholder="Type a message..."
             placeholderTextColor="#9CA3AF"
             value={text}
-            onChangeText={setText}
+            onChangeText={handleTextChange}
             multiline
-            onSubmitEditing={sendMessage}
           />
-
-          <TouchableOpacity onPress={sendMessage} activeOpacity={0.85}>
+          <TouchableOpacity onPress={handleSend} activeOpacity={0.85}>
             <LinearGradient
               colors={["#EE2090", "#7C3AED"]}
               start={{ x: 0, y: 0 }}
@@ -234,8 +388,12 @@ export default function ChatScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#FAF7FF" },
-
-  // Header
+  centered: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FAF7FF",
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -254,11 +412,29 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   userInfo: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10 },
+  avatarWrap: { position: "relative" },
   headerAvatar: {
     width: 40,
     height: 40,
     borderRadius: 20,
     backgroundColor: "#E0D0F0",
+  },
+  avatarFallback: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#E9D8FD",
+  },
+  avatarInitial: { fontSize: 16, fontWeight: "700", color: "#7C3AED" },
+  onlineDot: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    width: 11,
+    height: 11,
+    borderRadius: 6,
+    backgroundColor: "#22C55E",
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
   },
   headerName: { fontSize: 16, fontWeight: "700", color: "#1F0A3C" },
   headerStatus: { fontSize: 12, fontWeight: "500" },
@@ -268,9 +444,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
-  // Messages
   messageList: { padding: 16, paddingBottom: 8, gap: 12 },
+  emptyChat: { alignItems: "center", paddingTop: 80 },
+  emptyChatEmoji: { fontSize: 48, marginBottom: 12 },
+  emptyChatText: { fontSize: 15, color: "#9CA3AF", textAlign: "center" },
   bubbleRow: { flexDirection: "row", alignItems: "flex-end", gap: 8 },
   bubbleRowMe: { flexDirection: "row-reverse" },
   bubbleAvatar: {
@@ -306,8 +483,8 @@ const styles = StyleSheet.create({
   },
   bubbleTimeMe: { fontSize: 10, color: "rgba(255,255,255,0.7)" },
   bubbleTimeThem: { fontSize: 10, color: "#9CA3AF", marginTop: 2 },
-
-  // Input
+  typingWrap: { paddingHorizontal: 20, paddingBottom: 4 },
+  typingText: { fontSize: 12, color: "#7C3AED", fontStyle: "italic" },
   inputBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -317,12 +494,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderTopWidth: 1,
     borderTopColor: "#F0EBF8",
-  },
-  mediaBtn: {
-    width: 36,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center",
   },
   input: {
     flex: 1,

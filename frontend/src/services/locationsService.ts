@@ -2,7 +2,7 @@ import { api } from "../lib/apiClient";
 import type { Location, LocationType } from "../types";
 
 export async function fetchLocations(): Promise<Location[]> {
-  const [countriesRes, districtsRes] = await Promise.all([
+  const [countriesRes] = await Promise.all([
     api.get<{ countries: any[] }>("/admin/locations/countries"),
     Promise.all([]).then(() => ({ districts: [] as any[] })),
   ]);

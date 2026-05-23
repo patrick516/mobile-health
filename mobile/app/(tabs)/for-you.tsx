@@ -7,18 +7,16 @@ import {
   Image,
   StatusBar,
   Dimensions,
+  ActivityIndicator,
 } from "react-native";
+import { useState, useEffect } from "react";
 import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Path, Circle } from "react-native-svg";
-import { FAKE_USERS, LIFESTYLE_LABELS, User } from "../../src/data/fakeUsers";
+import { fetchForYou, DiscoverUser } from "../../src/services/discoverService";
 
 const { width: W } = Dimensions.get("window");
 const CARD_W = (W - 48) / 2;
-
-// Current user gender (male) → shows females. TODO: pull from auth context.
-const MY_GENDER: "male" | "female" = "male";
-const OPPOSITE: "male" | "female" = MY_GENDER === "male" ? "female" : "male";
 
 function PinIcon() {
   return (
@@ -33,6 +31,7 @@ function PinIcon() {
     </Svg>
   );
 }
+
 function VerifiedIcon() {
   return (
     <Svg width={14} height={14} viewBox="0 0 24 24">
@@ -44,7 +43,8 @@ function VerifiedIcon() {
   );
 }
 
-function UserCard({ user }: { user: User }) {
+function UserCard({ user }: { user: DiscoverUser }) {
+  const photoUri = user.photoUrl ?? user.photos?.[0]?.url;
   return (
     <TouchableOpacity
       style={styles.card}
@@ -56,22 +56,23 @@ function UserCard({ user }: { user: User }) {
         })
       }
     >
-      <Image
-        source={{ uri: user.photo }}
-        style={styles.cardImg}
-        resizeMode="cover"
-      />
+      {photoUri ? (
+        <Image
+          source={{ uri: photoUri }}
+          style={styles.cardImg}
+          resizeMode="cover"
+        />
+      ) : (
+        <View style={[styles.cardImg, styles.noPhoto]} />
+      )}
 
-      {/* Online dot */}
       {user.online && <View style={styles.onlineDot} />}
 
-      {/* Gradient overlay */}
       <LinearGradient
         colors={["transparent", "rgba(0,0,0,0.82)"]}
         style={styles.cardGrad}
       />
 
-      {/* Info */}
       <View style={styles.cardInfo}>
         <View style={styles.nameRow}>
           <Text style={styles.cardName} numberOfLines={1}>
@@ -80,32 +81,50 @@ function UserCard({ user }: { user: User }) {
           {user.verified && <VerifiedIcon />}
         </View>
 
-        <View style={styles.locationRow}>
-          <PinIcon />
-          <Text style={styles.locationText} numberOfLines={1}>
-            {user.town}
-          </Text>
-        </View>
+        {user.town && (
+          <View style={styles.locationRow}>
+            <PinIcon />
+            <Text style={styles.locationText} numberOfLines={1}>
+              {user.town}
+            </Text>
+          </View>
+        )}
 
-        {/* One lifestyle pill */}
-        <View style={styles.lifestylePill}>
-          <Text style={styles.lifestyleText} numberOfLines={1}>
-            {LIFESTYLE_LABELS.relationshipGoal[user.lifestyle.relationshipGoal]}
-          </Text>
-        </View>
+        {user.lifestyle?.relationshipGoal && (
+          <View style={styles.lifestylePill}>
+            <Text style={styles.lifestyleText} numberOfLines={1}>
+              {user.lifestyle.relationshipGoal.replace("_", " ")}
+            </Text>
+          </View>
+        )}
       </View>
     </TouchableOpacity>
   );
 }
 
 export default function ForYouScreen() {
-  const users = FAKE_USERS.filter((u) => u.gender === OPPOSITE);
+  const [users, setUsers] = useState<DiscoverUser[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchForYou()
+      .then((res) => setUsers(res.users))
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#7C3AED" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" />
 
-      {/* Header */}
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>For You</Text>
@@ -127,22 +146,43 @@ export default function ForYouScreen() {
         </TouchableOpacity>
       </View>
 
-      <FlatList
-        data={users}
-        keyExtractor={(u) => u.id}
-        numColumns={2}
-        contentContainerStyle={styles.grid}
-        columnWrapperStyle={styles.row}
-        showsVerticalScrollIndicator={false}
-        renderItem={({ item }) => <UserCard user={item} />}
-      />
+      {users.length === 0 ? (
+        <View style={styles.centered}>
+          <Text style={styles.emptyEmoji}>💜</Text>
+          <Text style={styles.emptyTitle}>No one here yet</Text>
+          <Text style={styles.emptySub}>Check back soon!</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={users}
+          keyExtractor={(u) => u.id}
+          numColumns={2}
+          contentContainerStyle={styles.grid}
+          columnWrapperStyle={styles.row}
+          showsVerticalScrollIndicator={false}
+          renderItem={({ item }) => <UserCard user={item} />}
+        />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#FAF7FF" },
-
+  centered: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FAF7FF",
+  },
+  emptyEmoji: { fontSize: 48, marginBottom: 12 },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#1F0A3C",
+    marginBottom: 6,
+  },
+  emptySub: { fontSize: 14, color: "#9CA3AF" },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -166,10 +206,8 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-
   grid: { paddingHorizontal: 16, paddingBottom: 32 },
   row: { gap: 12, marginBottom: 12 },
-
   card: {
     width: CARD_W,
     height: CARD_W * 1.35,
@@ -184,7 +222,7 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   cardImg: { width: "100%", height: "100%", position: "absolute" },
-
+  noPhoto: { backgroundColor: "#E0D0F0" },
   onlineDot: {
     position: "absolute",
     top: 10,
@@ -197,7 +235,6 @@ const styles = StyleSheet.create({
     borderColor: "#FFFFFF",
     zIndex: 2,
   },
-
   cardGrad: {
     position: "absolute",
     bottom: 0,
@@ -205,13 +242,7 @@ const styles = StyleSheet.create({
     right: 0,
     height: "65%",
   },
-
-  cardInfo: {
-    position: "absolute",
-    bottom: 10,
-    left: 10,
-    right: 10,
-  },
+  cardInfo: { position: "absolute", bottom: 10, left: 10, right: 10 },
   nameRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -226,7 +257,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   locationText: { fontSize: 11, color: "rgba(255,255,255,0.8)" },
-
   lifestylePill: {
     backgroundColor: "rgba(233,30,140,0.75)",
     borderRadius: 50,

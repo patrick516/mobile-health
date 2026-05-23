@@ -5,11 +5,14 @@ import {
   TouchableOpacity,
   ScrollView,
   StatusBar,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Path } from "react-native-svg";
+import apiClient from "../src/lib/apiClient";
 
 function BackIcon() {
   return (
@@ -25,7 +28,6 @@ function BackIcon() {
   );
 }
 
-// ── Option group component ────────────────────────────────────────────────────
 function OptionGroup({
   label,
   options,
@@ -71,7 +73,6 @@ function OptionGroup({
   );
 }
 
-// ── Interest tag toggle ───────────────────────────────────────────────────────
 const ALL_INTERESTS = [
   "Travel",
   "Photography",
@@ -88,13 +89,13 @@ const ALL_INTERESTS = [
 ];
 
 export default function PreferencesScreen() {
-  // Dating preferences
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
   const [lookingFor, setLookingFor] = useState("everyone");
   const [ageMin, setAgeMin] = useState(18);
   const [ageMax, setAgeMax] = useState(35);
   const [distance, setDistance] = useState(20);
-
-  // Lifestyle preferences
   const [smoking, setSmoking] = useState("any");
   const [alcohol, setAlcohol] = useState("any");
   const [children, setChildren] = useState("any");
@@ -103,13 +104,31 @@ export default function PreferencesScreen() {
   const [religion, setReligion] = useState("any");
   const [education, setEducation] = useState("any");
   const [relGoal, setRelGoal] = useState("any");
+  const [interests, setInterests] = useState<string[]>([]);
 
-  // Interests
-  const [interests, setInterests] = useState<string[]>([
-    "Travel",
-    "Coffee",
-    "Music",
-  ]);
+  useEffect(() => {
+    apiClient
+      .get("/mobile/preferences")
+      .then((res) => {
+        const p = res.data.preferences;
+        if (!p) return;
+        setLookingFor(p.lookingFor ?? "everyone");
+        setAgeMin(p.minAge ?? 18);
+        setAgeMax(p.maxAge ?? 35);
+        setDistance(p.maxDistanceKm ?? 20);
+        setSmoking(p.smoking ?? "any");
+        setAlcohol(p.alcohol ?? "any");
+        setChildren(p.children ?? "any");
+        setExercise(p.exercise ?? "any");
+        setDiet(p.diet ?? "any");
+        setReligion(p.religion ?? "any");
+        setEducation(p.education ?? "any");
+        setRelGoal(p.relationshipGoal ?? "any");
+        setInterests(p.interests ?? []);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
 
   const toggleInterest = (tag: string) =>
     setInterests((prev) =>
@@ -132,6 +151,40 @@ export default function PreferencesScreen() {
     setInterests([]);
   };
 
+  const handleApply = async () => {
+    setSaving(true);
+    try {
+      await apiClient.patch("/mobile/preferences", {
+        looking_for: lookingFor,
+        min_age: ageMin,
+        max_age: ageMax,
+        max_distance_km: distance,
+        ...(smoking !== "any" && { smoking }),
+        ...(alcohol !== "any" && { alcohol }),
+        ...(children !== "any" && { children }),
+        ...(exercise !== "any" && { exercise }),
+        ...(diet !== "any" && { diet }),
+        ...(religion !== "any" && { religion }),
+        ...(education !== "any" && { education }),
+        ...(relGoal !== "any" && { relationship_goal: relGoal }),
+        interests,
+      });
+      router.back();
+    } catch (error: any) {
+      Alert.alert("Error", error.message ?? "Could not save preferences.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#7C3AED" />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" />
@@ -150,7 +203,6 @@ export default function PreferencesScreen() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Dating ── */}
         <Text style={styles.sectionTitle}>Dating Preferences</Text>
 
         <OptionGroup
@@ -244,7 +296,6 @@ export default function PreferencesScreen() {
           </View>
         </View>
 
-        {/* ── Lifestyle ── */}
         <Text style={styles.sectionTitle}>Lifestyle Preferences</Text>
         <Text style={styles.sectionNote}>
           Filter matches by their lifestyle habits
@@ -260,7 +311,6 @@ export default function PreferencesScreen() {
             { val: "socially", label: "Social 🚬" },
           ]}
         />
-
         <OptionGroup
           label="Alcohol"
           value={alcohol}
@@ -271,7 +321,6 @@ export default function PreferencesScreen() {
             { val: "socially", label: "Social 🥂" },
           ]}
         />
-
         <OptionGroup
           label="Children"
           value={children}
@@ -282,7 +331,6 @@ export default function PreferencesScreen() {
             { val: "dont_have_dont_want", label: "Childfree 🚫" },
           ]}
         />
-
         <OptionGroup
           label="Relationship Goal"
           value={relGoal}
@@ -294,7 +342,6 @@ export default function PreferencesScreen() {
             { val: "friendship", label: "Friends 🤝" },
           ]}
         />
-
         <OptionGroup
           label="Exercise"
           value={exercise}
@@ -306,7 +353,6 @@ export default function PreferencesScreen() {
             { val: "never", label: "Not into gym" },
           ]}
         />
-
         <OptionGroup
           label="Diet"
           value={diet}
@@ -319,7 +365,6 @@ export default function PreferencesScreen() {
             { val: "halal", label: "Halal 🕌" },
           ]}
         />
-
         <OptionGroup
           label="Religion"
           value={religion}
@@ -331,7 +376,6 @@ export default function PreferencesScreen() {
             { val: "none", label: "None" },
           ]}
         />
-
         <OptionGroup
           label="Education"
           value={education}
@@ -344,7 +388,6 @@ export default function PreferencesScreen() {
           ]}
         />
 
-        {/* ── Interests ── */}
         <Text style={styles.sectionTitle}>Interests</Text>
         <View style={styles.interestGrid}>
           {ALL_INTERESTS.map((tag) => {
@@ -381,9 +424,10 @@ export default function PreferencesScreen() {
       {/* Apply button */}
       <View style={styles.footer}>
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={handleApply}
           activeOpacity={0.85}
           style={styles.applyTouch}
+          disabled={saving}
         >
           <LinearGradient
             colors={["#EE2090", "#7C3AED"]}
@@ -391,7 +435,11 @@ export default function PreferencesScreen() {
             end={{ x: 1, y: 0 }}
             style={styles.applyBtn}
           >
-            <Text style={styles.applyTxt}>Apply Filters</Text>
+            {saving ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Text style={styles.applyTxt}>Apply Filters</Text>
+            )}
           </LinearGradient>
         </TouchableOpacity>
       </View>
@@ -401,7 +449,12 @@ export default function PreferencesScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#FAF7FF" },
-
+  centered: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FAF7FF",
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -412,9 +465,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: 20, fontWeight: "800", color: "#1F0A3C" },
   resetTxt: { fontSize: 14, fontWeight: "600", color: "#E91E8C" },
-
   scroll: { paddingHorizontal: 20, paddingTop: 4 },
-
   sectionTitle: {
     fontSize: 16,
     fontWeight: "800",
@@ -423,7 +474,6 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   sectionNote: { fontSize: 12, color: "#9CA3AF", marginBottom: 12 },
-
   group: { marginBottom: 16 },
   groupLabel: {
     fontSize: 13,
@@ -432,7 +482,6 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   optionRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-
   optionChip: {
     paddingHorizontal: 14,
     paddingVertical: 9,
@@ -446,7 +495,6 @@ const styles = StyleSheet.create({
   optionChipActive: { borderColor: "transparent" },
   optionText: { fontSize: 13, fontWeight: "600", color: "#6B7280", zIndex: 1 },
   optionTextActive: { color: "#FFFFFF" },
-
   sliderLabelRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -461,7 +509,6 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   sliderFill: { height: "100%", borderRadius: 3 },
-
   ageButtons: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   distButtons: { flexDirection: "row", gap: 8 },
   ageBtn: {
@@ -475,7 +522,6 @@ const styles = StyleSheet.create({
   ageBtnActive: { backgroundColor: "#F3EEFF", borderColor: "#7C3AED" },
   ageBtnTxt: { fontSize: 12, color: "#6B7280" },
   ageBtnTxtActive: { color: "#7C3AED", fontWeight: "700" },
-
   interestGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   interestTag: {
     paddingHorizontal: 14,
@@ -490,7 +536,6 @@ const styles = StyleSheet.create({
   interestTagActive: { borderColor: "transparent" },
   interestTxt: { fontSize: 13, fontWeight: "600", color: "#6B7280", zIndex: 1 },
   interestTxtActive: { color: "#FFFFFF" },
-
   footer: {
     position: "absolute",
     bottom: 0,

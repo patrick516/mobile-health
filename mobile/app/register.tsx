@@ -7,7 +7,7 @@ import {
   StatusBar,
   Alert,
 } from "react-native";
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { router } from "expo-router";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import InputField from "../src/components/InputField";
@@ -15,7 +15,14 @@ import PrimaryButton from "../src/components/PrimaryButton";
 import { registerUser } from "../src/services/auth.service";
 import { useAuthStore } from "../src/store/authStore";
 import SelectDropdown from "../src/components/SelectDropdown";
-import { COUNTRIES, getDistricts, getTowns } from "../src/data/locationData";
+import {
+  fetchCountries,
+  fetchDistricts,
+  fetchTowns,
+  Country,
+  District,
+  Town,
+} from "../src/services/locationsService";
 
 export default function RegisterScreen() {
   const [name, setName] = useState("");
@@ -29,48 +36,85 @@ export default function RegisterScreen() {
   const [district, setDistrict] = useState("");
   const [town, setTown] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Location data from backend
+  const [countries, setCountries] = useState<Country[]>([]);
+  const [districts, setDistricts] = useState<District[]>([]);
+  const [towns, setTowns] = useState<Town[]>([]);
+  const [loadingCountries, setLoadingCountries] = useState(true);
+  const [loadingDistricts, setLoadingDistricts] = useState(false);
+  const [loadingTowns, setLoadingTowns] = useState(false);
+
   const { setAuth } = useAuthStore();
 
-  const handleCountryChange = (val: string) => {
+  // Fetch countries on mount
+  useEffect(() => {
+    fetchCountries()
+      .then(setCountries)
+      .catch(console.error)
+      .finally(() => setLoadingCountries(false));
+  }, []);
+
+  // Fetch districts when country changes
+  const handleCountryChange = async (val: string) => {
     setCountry(val);
     setDistrict("");
     setTown("");
-  };
-  const handleDistrictChange = (val: string) => {
-    setDistrict(val);
-    setTown("");
+    setDistricts([]);
+    setTowns([]);
+    if (!val) return;
+    setLoadingDistricts(true);
+    try {
+      const data = await fetchDistricts(val);
+      setDistricts(data);
+    } catch {
+      setDistricts([]);
+    } finally {
+      setLoadingDistricts(false);
+    }
   };
 
-  const districts = useMemo(
-    () => (country ? getDistricts(country) : []),
-    [country],
-  );
-  const towns = useMemo(() => (district ? getTowns(district) : []), [district]);
+  // Fetch towns when district changes
+  const handleDistrictChange = async (val: string) => {
+    setDistrict(val);
+    setTown("");
+    setTowns([]);
+    if (!val) return;
+    setLoadingTowns(true);
+    try {
+      const data = await fetchTowns(val);
+      setTowns(data);
+    } catch {
+      setTowns([]);
+    } finally {
+      setLoadingTowns(false);
+    }
+  };
 
   const countryOptions = useMemo(
     () =>
-      COUNTRIES.map((c) => ({
+      countries.map((c) => ({
         value: c.code,
         label: c.name,
-        prefix: c.flag,
+        prefix: c.flag ?? "",
       })),
-    [],
+    [countries],
   );
+
   const districtOptions = useMemo(
     () => districts.map((d) => ({ value: d.id, label: d.name })),
     [districts],
   );
+
   const townOptions = useMemo(
     () => towns.map((t) => ({ value: t.id, label: t.name })),
     [towns],
   );
-  const genderOptions = useMemo(
-    () => [
-      { value: "male", label: "Male" },
-      { value: "female", label: "Female" },
-    ],
-    [],
-  );
+
+  const genderOptions = [
+    { value: "male", label: "Male" },
+    { value: "female", label: "Female" },
+  ];
 
   const handleDateChange = (_: any, selectedDate?: Date) => {
     setShowDatePicker(false);
@@ -123,7 +167,7 @@ export default function RegisterScreen() {
         showsVerticalScrollIndicator={false}
         keyboardDismissMode="none"
       >
-        {/* ── Header ── */}
+        {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>
             Create Account <Text style={styles.heartEmoji}>💜</Text>
@@ -131,7 +175,7 @@ export default function RegisterScreen() {
           <Text style={styles.headerSub}>Join AnzathuConnect today</Text>
         </View>
 
-        {/* ── Card ── */}
+        {/* Card */}
         <View style={styles.card}>
           <Text style={styles.sectionLabel}>Personal Info</Text>
 
@@ -158,7 +202,7 @@ export default function RegisterScreen() {
             iconName="lock"
           />
 
-          {/* ── Date of Birth Picker ── */}
+          {/* Date of Birth */}
           <TouchableOpacity
             style={styles.dateInput}
             onPress={() => setShowDatePicker(true)}
@@ -187,36 +231,47 @@ export default function RegisterScreen() {
             iconName="👤"
           />
 
-          {/* ── Divider ── */}
+          {/* Divider */}
           <View style={styles.sectionDivider} />
           <Text style={styles.sectionLabel}>Location</Text>
 
           <SelectDropdown
-            placeholder="Select Country"
+            placeholder={
+              loadingCountries ? "Loading countries..." : "Select Country"
+            }
             options={countryOptions}
             value={country}
             onChange={handleCountryChange}
             iconName="🌍"
+            disabled={loadingCountries}
           />
           <SelectDropdown
             placeholder={
-              country ? "Select District / Province" : "Select country first"
+              !country
+                ? "Select country first"
+                : loadingDistricts
+                  ? "Loading districts..."
+                  : "Select District / Province"
             }
             options={districtOptions}
             value={district}
             onChange={handleDistrictChange}
             iconName="🏙️"
-            disabled={!country}
+            disabled={!country || loadingDistricts}
           />
           <SelectDropdown
             placeholder={
-              district ? "Select Town / Area" : "Select district first"
+              !district
+                ? "Select district first"
+                : loadingTowns
+                  ? "Loading towns..."
+                  : "Select Town / Area"
             }
             options={townOptions}
             value={town}
             onChange={setTown}
             iconName="📌"
-            disabled={!district}
+            disabled={!district || loadingTowns}
           />
 
           {/* Terms */}
@@ -234,7 +289,7 @@ export default function RegisterScreen() {
           />
         </View>
 
-        {/* ── Login link ── */}
+        {/* Login link */}
         <View style={styles.loginRow}>
           <Text style={styles.loginText}>Already have an account? </Text>
           <TouchableOpacity
@@ -283,11 +338,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     marginBottom: 14,
   },
-  sectionDivider: {
-    height: 1,
-    backgroundColor: "#F3EEFF",
-    marginVertical: 20,
-  },
+  sectionDivider: { height: 1, backgroundColor: "#F3EEFF", marginVertical: 20 },
   dateInput: {
     borderWidth: 1,
     borderColor: "#E5E7EB",
@@ -297,13 +348,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     backgroundColor: "#F9FAFB",
   },
-  dateText: {
-    fontSize: 14,
-    color: "#1F0A3C",
-  },
-  datePlaceholder: {
-    color: "#9CA3AF",
-  },
+  dateText: { fontSize: 14, color: "#1F0A3C" },
+  datePlaceholder: { color: "#9CA3AF" },
   termsText: {
     fontSize: 12,
     color: "#9CA3AF",

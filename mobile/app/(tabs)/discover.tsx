@@ -8,19 +8,24 @@ import {
   StatusBar,
   Animated,
   PanResponder,
+  ActivityIndicator,
 } from "react-native";
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Path, Circle } from "react-native-svg";
-import { FAKE_USERS, User } from "../../src/data/fakeUsers";
+import {
+  fetchDiscover,
+  DiscoverUser,
+} from "../../src/services/discoverService";
+import { likeUser, passUser } from "../../src/services/swipeService";
 
 const { width: W, height: H } = Dimensions.get("window");
 const CARD_W = W - 32;
 const CARD_H = H * 0.58;
 const SWIPE_THRESHOLD = 100;
 
-// ── Icons ────────────────────────────────────────────────────────────────────
+// ── Icons ─────────────────────────────────────────────────────────────────────
 function RewindIcon() {
   return (
     <Svg width={22} height={22} viewBox="0 0 24 24">
@@ -31,7 +36,6 @@ function RewindIcon() {
     </Svg>
   );
 }
-
 function CrossIcon() {
   return (
     <Svg width={26} height={26} viewBox="0 0 24 24">
@@ -44,7 +48,6 @@ function CrossIcon() {
     </Svg>
   );
 }
-
 function HeartIcon() {
   return (
     <Svg width={26} height={26} viewBox="0 0 24 24">
@@ -55,7 +58,6 @@ function HeartIcon() {
     </Svg>
   );
 }
-
 function StarIcon() {
   return (
     <Svg width={22} height={22} viewBox="0 0 24 24">
@@ -66,7 +68,6 @@ function StarIcon() {
     </Svg>
   );
 }
-
 function FilterIcon() {
   return (
     <Svg width={20} height={20} viewBox="0 0 24 24">
@@ -79,7 +80,6 @@ function FilterIcon() {
     </Svg>
   );
 }
-
 function PinIcon() {
   return (
     <Svg width={13} height={13} viewBox="0 0 24 24">
@@ -93,7 +93,6 @@ function PinIcon() {
     </Svg>
   );
 }
-
 function BagIcon() {
   return (
     <Svg width={13} height={13} viewBox="0 0 24 24">
@@ -107,7 +106,6 @@ function BagIcon() {
     </Svg>
   );
 }
-
 function VerifiedIcon() {
   return (
     <Svg width={18} height={18} viewBox="0 0 24 24">
@@ -119,7 +117,6 @@ function VerifiedIcon() {
   );
 }
 
-// ── Swipe stamps ─────────────────────────────────────────────────────────────
 function LikeStamp({
   opacity,
 }: {
@@ -131,7 +128,6 @@ function LikeStamp({
     </Animated.View>
   );
 }
-
 function NopeStamp({
   opacity,
 }: {
@@ -144,35 +140,42 @@ function NopeStamp({
   );
 }
 
-// ── Profile card content ──────────────────────────────────────────────────────
-function ProfileCard({ user, onPress }: { user: User; onPress: () => void }) {
+function ProfileCard({
+  user,
+  onPress,
+}: {
+  user: DiscoverUser;
+  onPress: () => void;
+}) {
+  const photoUri = user.photoUrl ?? user.photos?.[0]?.url;
   return (
     <TouchableOpacity
       style={StyleSheet.absoluteFill}
       activeOpacity={0.97}
       onPress={onPress}
     >
-      <Image
-        source={{ uri: user.photo }}
-        style={styles.cardImage}
-        resizeMode="cover"
-      />
-
+      {photoUri ? (
+        <Image
+          source={{ uri: photoUri }}
+          style={styles.cardImage}
+          resizeMode="cover"
+        />
+      ) : (
+        <View style={[styles.cardImage, styles.noPhoto]}>
+          <Text style={styles.noPhotoText}>No Photo</Text>
+        </View>
+      )}
       <LinearGradient
         colors={["transparent", "rgba(0,0,0,0.22)", "rgba(0,0,0,0.84)"]}
         locations={[0.3, 0.6, 1]}
         style={styles.cardGradient}
       />
-
-      {/* Online badge */}
       {user.online && (
         <View style={styles.onlineBadge}>
           <View style={styles.onlineDot} />
           <Text style={styles.onlineText}>Online</Text>
         </View>
       )}
-
-      {/* Card info */}
       <View style={styles.cardInfo}>
         <View style={styles.nameRow}>
           <Text style={styles.cardName}>
@@ -184,56 +187,64 @@ function ProfileCard({ user, onPress }: { user: User; onPress: () => void }) {
             </View>
           )}
         </View>
-
-        <View style={styles.metaRow}>
-          <BagIcon />
-          <Text style={styles.cardMeta}>{user.profession}</Text>
-        </View>
-
-        <View style={styles.metaRow}>
-          <PinIcon />
-          <Text style={styles.cardMeta}>
-            {user.town}, {user.district}
-          </Text>
-        </View>
-
-        <View style={styles.tagsRow}>
-          {user.interests.slice(0, 3).map((tag) => (
-            <View key={tag} style={styles.cardTag}>
-              <Text style={styles.cardTagText}>{tag}</Text>
-            </View>
-          ))}
-        </View>
+        {user.profession && (
+          <View style={styles.metaRow}>
+            <BagIcon />
+            <Text style={styles.cardMeta}>{user.profession}</Text>
+          </View>
+        )}
+        {(user.town || user.district) && (
+          <View style={styles.metaRow}>
+            <PinIcon />
+            <Text style={styles.cardMeta}>
+              {[user.town, user.district].filter(Boolean).join(", ")}
+            </Text>
+          </View>
+        )}
+        {user.interests.length > 0 && (
+          <View style={styles.tagsRow}>
+            {user.interests.slice(0, 3).map((tag) => (
+              <View key={tag} style={styles.cardTag}>
+                <Text style={styles.cardTagText}>{tag}</Text>
+              </View>
+            ))}
+          </View>
+        )}
       </View>
     </TouchableOpacity>
   );
 }
 
-// ── Main screen ───────────────────────────────────────────────────────────────
 export default function DiscoverScreen() {
+  const [users, setUsers] = useState<DiscoverUser[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [matchBanner, setMatchBanner] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [matchBanner, setMatchBanner] = useState<DiscoverUser | null>(null);
 
   const pan = useRef(new Animated.ValueXY()).current;
+
+  useEffect(() => {
+    fetchDiscover()
+      .then((res) => setUsers(res.users))
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
 
   const rotate = pan.x.interpolate({
     inputRange: [-W / 2, 0, W / 2],
     outputRange: ["-8deg", "0deg", "8deg"],
     extrapolate: "clamp",
   });
-
   const likeOpacity = pan.x.interpolate({
     inputRange: [0, SWIPE_THRESHOLD],
     outputRange: [0, 1],
     extrapolate: "clamp",
   });
-
   const nopeOpacity = pan.x.interpolate({
     inputRange: [-SWIPE_THRESHOLD, 0],
     outputRange: [1, 0],
     extrapolate: "clamp",
   });
-
   const nextCardScale = pan.x.interpolate({
     inputRange: [-W / 2, 0, W / 2],
     outputRange: [1, 0.94, 1],
@@ -249,63 +260,83 @@ export default function DiscoverScreen() {
         useNativeDriver: false,
       }),
       onPanResponderRelease: (_, gesture) => {
-        if (gesture.dx > SWIPE_THRESHOLD) {
-          swipeRight();
-        } else if (gesture.dx < -SWIPE_THRESHOLD) {
-          swipeLeft();
-        } else {
+        if (gesture.dx > SWIPE_THRESHOLD) swipeRight();
+        else if (gesture.dx < -SWIPE_THRESHOLD) swipeLeft();
+        else
           Animated.spring(pan, {
             toValue: { x: 0, y: 0 },
             useNativeDriver: false,
             friction: 5,
           }).start();
-        }
       },
     }),
   ).current;
 
   const nextCard = () => {
     pan.setValue({ x: 0, y: 0 });
-    setCurrentIndex((i) => (i + 1) % FAKE_USERS.length);
+    setCurrentIndex((i) => i + 1);
   };
 
   const swipeLeft = () => {
+    const passed = users[currentIndex];
     Animated.timing(pan, {
       toValue: { x: -W * 1.5, y: 0 },
       duration: 300,
       useNativeDriver: false,
-    }).start(() => nextCard());
+    }).start(() => {
+      nextCard();
+      passUser(passed.id).catch(console.error);
+    });
   };
 
   const swipeRight = () => {
-    const liked = FAKE_USERS[currentIndex];
+    const liked = users[currentIndex];
     Animated.timing(pan, {
       toValue: { x: W * 1.5, y: 0 },
       duration: 300,
       useNativeDriver: false,
-    }).start(() => {
+    }).start(async () => {
       nextCard();
-      // Fake match 30% probability
-      if (Math.random() < 0.3) {
-        setMatchBanner(liked);
-        setTimeout(() => setMatchBanner(null), 4000);
+      try {
+        const result = await likeUser(liked.id);
+        if (result.matched) {
+          setMatchBanner(liked);
+          setTimeout(() => setMatchBanner(null), 4000);
+        }
+      } catch (error) {
+        console.error(error);
       }
     });
   };
-
   const rewind = () => {
     pan.setValue({ x: 0, y: 0 });
-    setCurrentIndex((i) => (i === 0 ? FAKE_USERS.length - 1 : i - 1));
+    setCurrentIndex((i) => Math.max(0, i - 1));
   };
 
-  const user = FAKE_USERS[currentIndex];
-  const nextUser = FAKE_USERS[(currentIndex + 1) % FAKE_USERS.length];
+  if (loading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#7C3AED" />
+      </View>
+    );
+  }
+
+  if (currentIndex >= users.length) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.emptyEmoji}>💜</Text>
+        <Text style={styles.emptyTitle}>You've seen everyone!</Text>
+        <Text style={styles.emptySub}>Check back later for new people.</Text>
+      </View>
+    );
+  }
+
+  const user = users[currentIndex];
+  const nextUser = users[currentIndex + 1];
 
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" />
-
-      {/* ── Header ── */}
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>Discover</Text>
@@ -320,31 +351,36 @@ export default function DiscoverScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* ── Card stack ── */}
       <View style={styles.cardStack}>
         {/* Back card */}
-        <Animated.View
-          style={[
-            styles.card,
-            styles.cardBehind,
-            { transform: [{ scale: nextCardScale }] },
-          ]}
-        >
-          <Image
-            source={{ uri: nextUser.photo }}
-            style={styles.cardImage}
-            resizeMode="cover"
-          />
-          <LinearGradient
-            colors={["transparent", "rgba(0,0,0,0.7)"]}
-            style={styles.cardGradient}
-          />
-          <View style={styles.cardInfo}>
-            <Text style={styles.cardName}>
-              {nextUser.name}, {nextUser.age}
-            </Text>
-          </View>
-        </Animated.View>
+        {nextUser && (
+          <Animated.View
+            style={[
+              styles.card,
+              styles.cardBehind,
+              { transform: [{ scale: nextCardScale }] },
+            ]}
+          >
+            {nextUser.photoUrl ? (
+              <Image
+                source={{ uri: nextUser.photoUrl }}
+                style={styles.cardImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={[styles.cardImage, styles.noPhoto]} />
+            )}
+            <LinearGradient
+              colors={["transparent", "rgba(0,0,0,0.7)"]}
+              style={styles.cardGradient}
+            />
+            <View style={styles.cardInfo}>
+              <Text style={styles.cardName}>
+                {nextUser.name}, {nextUser.age}
+              </Text>
+            </View>
+          </Animated.View>
+        )}
 
         {/* Front swipeable card */}
         <Animated.View
@@ -374,7 +410,7 @@ export default function DiscoverScreen() {
         </Animated.View>
       </View>
 
-      {/* ── Action buttons ── */}
+      {/* Action buttons */}
       <View style={styles.actions}>
         <TouchableOpacity
           style={[styles.actionBtn, styles.actionSm]}
@@ -383,7 +419,6 @@ export default function DiscoverScreen() {
         >
           <RewindIcon />
         </TouchableOpacity>
-
         <TouchableOpacity
           style={[styles.actionBtn, styles.actionMd]}
           onPress={swipeLeft}
@@ -391,7 +426,6 @@ export default function DiscoverScreen() {
         >
           <CrossIcon />
         </TouchableOpacity>
-
         <TouchableOpacity
           style={styles.actionLg}
           onPress={swipeRight}
@@ -406,7 +440,6 @@ export default function DiscoverScreen() {
             <HeartIcon />
           </LinearGradient>
         </TouchableOpacity>
-
         <TouchableOpacity
           style={[styles.actionBtn, styles.actionMd]}
           onPress={() => router.push("/premium")}
@@ -416,7 +449,7 @@ export default function DiscoverScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* ── It's a Match overlay ── */}
+      {/* Match overlay */}
       {matchBanner && (
         <View style={styles.matchOverlay}>
           <LinearGradient
@@ -457,8 +490,20 @@ export default function DiscoverScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#FAF7FF" },
-
-  // Header
+  centered: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FAF7FF",
+  },
+  emptyEmoji: { fontSize: 56, marginBottom: 12 },
+  emptyTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#1F0A3C",
+    marginBottom: 8,
+  },
+  emptySub: { fontSize: 14, color: "#9CA3AF" },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -482,8 +527,6 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-
-  // Card stack
   cardStack: {
     flex: 1,
     alignItems: "center",
@@ -505,6 +548,12 @@ const styles = StyleSheet.create({
   },
   cardBehind: { zIndex: 0 },
   cardImage: { width: "100%", height: "100%", position: "absolute" },
+  noPhoto: {
+    backgroundColor: "#E0D0F0",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  noPhotoText: { color: "#9CA3AF", fontSize: 14 },
   cardGradient: {
     position: "absolute",
     bottom: 0,
@@ -512,8 +561,6 @@ const styles = StyleSheet.create({
     right: 0,
     height: "60%",
   },
-
-  // Online badge
   onlineBadge: {
     position: "absolute",
     top: 16,
@@ -533,8 +580,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#22C55E",
   },
   onlineText: { fontSize: 11, color: "#FFFFFF", fontWeight: "600" },
-
-  // Card info overlay
   cardInfo: { position: "absolute", bottom: 22, left: 20, right: 20 },
   nameRow: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
   cardName: {
@@ -564,8 +609,6 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.35)",
   },
   cardTagText: { fontSize: 11, color: "#FFFFFF", fontWeight: "600" },
-
-  // Stamps
   stamp: {
     position: "absolute",
     top: 48,
@@ -599,8 +642,6 @@ const styles = StyleSheet.create({
     color: "#EF4444",
     letterSpacing: 1,
   },
-
-  // Action buttons
   actions: {
     flexDirection: "row",
     alignItems: "center",
@@ -637,8 +678,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
-  // Match banner overlay
   matchOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.55)",

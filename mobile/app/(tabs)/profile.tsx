@@ -6,11 +6,16 @@ import {
   ScrollView,
   Image,
   StatusBar,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
-import { router } from "expo-router";
+import { useState, useEffect, useCallback } from "react";
+import { router, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Path, Circle } from "react-native-svg";
-import { LIFESTYLE_LABELS } from "../../src/data/fakeUsers";
+import { fetchMe, MyProfile } from "../../src/services/userService";
+import { getMyPhotos } from "../../src/services/photosService";
+import { useAuthStore } from "../../src/store/authStore";
 
 function SettingsIcon() {
   return (
@@ -32,6 +37,7 @@ function SettingsIcon() {
     </Svg>
   );
 }
+
 function EditIcon() {
   return (
     <Svg width={16} height={16} viewBox="0 0 24 24">
@@ -45,32 +51,6 @@ function EditIcon() {
     </Svg>
   );
 }
-
-// Placeholder — will come from auth context
-const MY_PROFILE = {
-  name: "Alex",
-  age: 27,
-  verified: true,
-  profession: "Developer",
-  location: "Blantyre, Malawi",
-  bio: "Building things and meeting people. Love music and weekend trips 🎸✈️",
-  interests: ["Music", "Travel", "Technology", "Coffee", "Photography"],
-  photo: "https://i.pravatar.cc/500?img=12",
-  completeness: 80,
-  isPremium: false,
-  lifestyle: {
-    smoking: "never",
-    alcohol: "socially",
-    children: "dont_have_want",
-    relationshipGoal: "serious",
-    exercise: "often",
-    diet: "omnivore",
-    religion: "christian",
-    education: "bachelors",
-    height: "5'11\"",
-    zodiac: "Leo",
-  },
-};
 
 function SectionCard({
   title,
@@ -101,14 +81,135 @@ function SectionCard({
   );
 }
 
+const LIFESTYLE_LABELS: Record<string, Record<string, string>> = {
+  smoking: {
+    never: "Non-smoker",
+    socially: "Social smoker",
+    regularly: "Smoker",
+    trying_to_quit: "Trying to quit",
+  },
+  alcohol: {
+    never: "No alcohol",
+    socially: "Social drinker",
+    regularly: "Regular drinker",
+  },
+  children: {
+    have_and_want_more: "Has kids, wants more",
+    have_dont_want_more: "Has kids",
+    dont_have_want: "Wants kids",
+    dont_have_dont_want: "No kids",
+  },
+  relationshipGoal: {
+    serious: "Serious relationship",
+    casual: "Casual dating",
+    friendship: "Friendship",
+    not_sure: "Not sure yet",
+  },
+  exercise: {
+    never: "No exercise",
+    sometimes: "Sometimes active",
+    often: "Often active",
+    daily: "Daily workout",
+  },
+  diet: {
+    omnivore: "Omnivore",
+    vegetarian: "Vegetarian",
+    vegan: "Vegan",
+    pescatarian: "Pescatarian",
+    halal: "Halal",
+    kosher: "Kosher",
+  },
+  religion: {
+    christian: "Christian",
+    muslim: "Muslim",
+    hindu: "Hindu",
+    buddhist: "Buddhist",
+    none: "No religion",
+    other: "Other religion",
+  },
+  education: {
+    high_school: "High School",
+    diploma: "Diploma",
+    bachelors: "Bachelor's",
+    masters: "Master's",
+    phd: "PhD",
+    other: "Other",
+  },
+};
+
+function getCompleteness(profile: MyProfile, photosCount: number): number {
+  let score = 0;
+  if (profile.name) score += 15;
+  if (profile.bio) score += 15;
+  if (profile.profession) score += 10;
+  if (profile.country) score += 10;
+  if (photosCount > 0) score += 20;
+  if (profile.interests?.length > 0) score += 15;
+  if (profile.lifestyle) score += 15;
+  return score;
+}
+
 export default function ProfileScreen() {
+  const [profile, setProfile] = useState<MyProfile | null>(null);
+  const [photos, setPhotos] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { clearAuth } = useAuthStore();
+
+  const load = useCallback(() => {
+    Promise.all([fetchMe(), getMyPhotos()])
+      .then(([me, myPhotos]) => {
+        setProfile(me);
+        setPhotos(myPhotos);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
+
+  const handleLogout = () => {
+    Alert.alert("Log Out", "Are you sure you want to log out?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Log Out",
+        style: "destructive",
+        onPress: () => {
+          clearAuth();
+          router.replace("/");
+        },
+      },
+    ]);
+  };
+
+  if (loading || !profile) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#7C3AED" />
+      </View>
+    );
+  }
+
+  const completeness = getCompleteness(profile, photos.length);
+  const mainPhoto = photos.find((p) => p.isMain) ?? photos[0];
+  const location = [profile.town, profile.district, profile.country]
+    .filter(Boolean)
+    .join(", ");
+
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" />
 
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Profile</Text>
-        <TouchableOpacity style={styles.settingsBtn} activeOpacity={0.8}>
+        <TouchableOpacity
+          style={styles.settingsBtn}
+          onPress={handleLogout}
+          activeOpacity={0.8}
+        >
           <SettingsIcon />
         </TouchableOpacity>
       </View>
@@ -120,8 +221,20 @@ export default function ProfileScreen() {
         {/* Photo section */}
         <View style={styles.photoSection}>
           <View style={styles.photoWrap}>
-            <Image source={{ uri: MY_PROFILE.photo }} style={styles.photo} />
-            <TouchableOpacity style={styles.editPhotoBtn} activeOpacity={0.8}>
+            {mainPhoto?.url ? (
+              <Image source={{ uri: mainPhoto.url }} style={styles.photo} />
+            ) : (
+              <View style={[styles.photo, styles.photoFallback]}>
+                <Text style={styles.photoFallbackText}>
+                  {profile.name?.[0] ?? "?"}
+                </Text>
+              </View>
+            )}
+            <TouchableOpacity
+              style={styles.editPhotoBtn}
+              onPress={() => router.push("/upload-photos")}
+              activeOpacity={0.8}
+            >
               <LinearGradient
                 colors={["#EE2090", "#7C3AED"]}
                 style={styles.editPhotoBtnGrad}
@@ -130,11 +243,12 @@ export default function ProfileScreen() {
               </LinearGradient>
             </TouchableOpacity>
           </View>
+
           <View style={styles.nameRow}>
             <Text style={styles.name}>
-              {MY_PROFILE.name}, {MY_PROFILE.age}
+              {profile.name}, {profile.age ?? "?"}
             </Text>
-            {MY_PROFILE.verified && (
+            {profile.verified && (
               <Svg width={18} height={18} viewBox="0 0 24 24">
                 <Path
                   d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"
@@ -143,13 +257,14 @@ export default function ProfileScreen() {
               </Svg>
             )}
           </View>
-          <Text style={styles.location}>📍 {MY_PROFILE.location}</Text>
+
+          {location ? <Text style={styles.location}>📍 {location}</Text> : null}
 
           {/* Completeness bar */}
           <View style={styles.completenessBox}>
             <View style={styles.completenessTop}>
               <Text style={styles.completenessLabel}>
-                Profile {MY_PROFILE.completeness}% complete
+                Profile {completeness}% complete
               </Text>
               <Text style={styles.completenessHint}>Tap Edit to improve</Text>
             </View>
@@ -158,17 +273,14 @@ export default function ProfileScreen() {
                 colors={["#EE2090", "#7C3AED"]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
-                style={[
-                  styles.barFill,
-                  { width: `${MY_PROFILE.completeness}%` },
-                ]}
+                style={[styles.barFill, { width: `${completeness}%` }]}
               />
             </View>
           </View>
         </View>
 
         {/* Premium banner */}
-        {!MY_PROFILE.isPremium && (
+        {!profile.isPremium && (
           <TouchableOpacity
             onPress={() => router.push("/premium")}
             activeOpacity={0.88}
@@ -195,66 +307,96 @@ export default function ProfileScreen() {
         )}
 
         {/* About me */}
-        <SectionCard title="About Me" onEdit={() => {}}>
-          <Text style={styles.bio}>{MY_PROFILE.bio}</Text>
+        <SectionCard
+          title="About Me"
+          onEdit={() => router.push("/edit-profile")}
+        >
+          <Text style={styles.bio}>
+            {profile.bio || "No bio yet. Tap Edit to add one."}
+          </Text>
         </SectionCard>
 
         {/* Interests */}
-        <SectionCard title="Interests" onEdit={() => {}}>
-          <View style={styles.tagsWrap}>
-            {MY_PROFILE.interests.map((tag) => (
-              <View key={tag} style={styles.tag}>
-                <Text style={styles.tagText}>{tag}</Text>
-              </View>
-            ))}
-          </View>
-        </SectionCard>
+        {profile.interests?.length > 0 && (
+          <SectionCard
+            title="Interests"
+            onEdit={() => router.push("/edit-profile")}
+          >
+            <View style={styles.tagsWrap}>
+              {profile.interests.map((tag) => (
+                <View key={tag} style={styles.tag}>
+                  <Text style={styles.tagText}>{tag}</Text>
+                </View>
+              ))}
+            </View>
+          </SectionCard>
+        )}
 
         {/* Lifestyle */}
-        <SectionCard
-          title="Lifestyle & Preferences"
-          onEdit={() => router.push("/preferences")}
-        >
-          <View style={styles.lifestyleGrid}>
-            {Object.entries(MY_PROFILE.lifestyle)
-              .filter(([k]) => k !== "height" && k !== "zodiac")
-              .map(([key, val]) => {
-                const label = LIFESTYLE_LABELS[key]?.[val as string];
-                if (!label) return null;
-                return (
-                  <View key={key} style={styles.lifestyleChip}>
-                    <Text style={styles.lifestyleChipText}>{label}</Text>
-                  </View>
-                );
-              })}
-          </View>
-        </SectionCard>
-
-        {/* Stats row */}
-        <SectionCard title="Quick Facts">
-          <View style={styles.statsRow}>
-            {MY_PROFILE.lifestyle.height && (
-              <View style={styles.stat}>
-                <Text style={styles.statVal}>
-                  {MY_PROFILE.lifestyle.height}
-                </Text>
-                <Text style={styles.statLabel}>Height</Text>
-              </View>
-            )}
-            {MY_PROFILE.lifestyle.zodiac && (
-              <View style={styles.stat}>
-                <Text style={styles.statVal}>
-                  {MY_PROFILE.lifestyle.zodiac}
-                </Text>
-                <Text style={styles.statLabel}>Zodiac</Text>
-              </View>
-            )}
-            <View style={styles.stat}>
-              <Text style={styles.statVal}>{MY_PROFILE.profession}</Text>
-              <Text style={styles.statLabel}>Job</Text>
+        {profile.lifestyle && (
+          <SectionCard
+            title="Lifestyle & Preferences"
+            onEdit={() => router.push("/preferences")}
+          >
+            <View style={styles.lifestyleGrid}>
+              {Object.entries(profile.lifestyle)
+                .filter(([k, v]) => v && k !== "height" && k !== "zodiac")
+                .map(([key, val]) => {
+                  const label = LIFESTYLE_LABELS[key]?.[val as string];
+                  if (!label) return null;
+                  return (
+                    <View key={key} style={styles.lifestyleChip}>
+                      <Text style={styles.lifestyleChipText}>{label}</Text>
+                    </View>
+                  );
+                })}
             </View>
-          </View>
-        </SectionCard>
+          </SectionCard>
+        )}
+
+        {/* Quick facts */}
+        {(profile.lifestyle?.height ||
+          profile.lifestyle?.zodiac ||
+          profile.profession) && (
+          <SectionCard title="Quick Facts">
+            <View style={styles.statsRow}>
+              {profile.lifestyle?.height && (
+                <View style={styles.stat}>
+                  <Text style={styles.statVal}>{profile.lifestyle.height}</Text>
+                  <Text style={styles.statLabel}>Height</Text>
+                </View>
+              )}
+              {profile.lifestyle?.zodiac && (
+                <View style={styles.stat}>
+                  <Text style={styles.statVal}>{profile.lifestyle.zodiac}</Text>
+                  <Text style={styles.statLabel}>Zodiac</Text>
+                </View>
+              )}
+              {profile.profession && (
+                <View style={styles.stat}>
+                  <Text style={styles.statVal}>{profile.profession}</Text>
+                  <Text style={styles.statLabel}>Job</Text>
+                </View>
+              )}
+            </View>
+          </SectionCard>
+        )}
+        {/* Verification */}
+        <TouchableOpacity
+          style={styles.verifyBtn}
+          onPress={() => router.push("/verification")}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.verifyText}>🪪 Verify My Identity</Text>
+        </TouchableOpacity>
+        {/* Log out */}
+        <TouchableOpacity
+          style={styles.logoutBtn}
+          onPress={handleLogout}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.logoutText}>Log Out</Text>
+        </TouchableOpacity>
 
         <View style={{ height: 24 }} />
       </ScrollView>
@@ -264,7 +406,12 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#FAF7FF" },
-
+  centered: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FAF7FF",
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -287,9 +434,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-
   scroll: { paddingHorizontal: 20, paddingBottom: 40 },
-
   photoSection: { alignItems: "center", paddingVertical: 20 },
   photoWrap: { position: "relative", marginBottom: 12 },
   photo: {
@@ -299,6 +444,12 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: "#E91E8C",
   },
+  photoFallback: {
+    backgroundColor: "#E9D8FD",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  photoFallbackText: { fontSize: 40, fontWeight: "800", color: "#7C3AED" },
   editPhotoBtn: {
     position: "absolute",
     bottom: 0,
@@ -314,7 +465,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
   nameRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -323,7 +473,6 @@ const styles = StyleSheet.create({
   },
   name: { fontSize: 22, fontWeight: "800", color: "#1F0A3C" },
   location: { fontSize: 13, color: "#6B7280", marginBottom: 16 },
-
   completenessBox: { width: "100%", gap: 6 },
   completenessTop: { flexDirection: "row", justifyContent: "space-between" },
   completenessLabel: { fontSize: 12, color: "#7C3AED", fontWeight: "600" },
@@ -335,7 +484,6 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   barFill: { height: "100%", borderRadius: 3 },
-
   premiumTouch: { borderRadius: 18, overflow: "hidden", marginBottom: 16 },
   premiumBanner: {
     flexDirection: "row",
@@ -345,7 +493,6 @@ const styles = StyleSheet.create({
   },
   premiumTitle: { fontSize: 15, fontWeight: "700", color: "#FFFFFF" },
   premiumSub: { fontSize: 12, color: "rgba(220,190,255,0.8)", marginTop: 2 },
-
   card: {
     backgroundColor: "#FFFFFF",
     borderRadius: 18,
@@ -367,7 +514,6 @@ const styles = StyleSheet.create({
   editRow: { flexDirection: "row", alignItems: "center", gap: 4 },
   editTxt: { fontSize: 13, color: "#7C3AED", fontWeight: "600" },
   bio: { fontSize: 14, color: "#6B7280", lineHeight: 22 },
-
   tagsWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   tag: {
     paddingHorizontal: 14,
@@ -378,7 +524,6 @@ const styles = StyleSheet.create({
     borderColor: "#E9D8FD",
   },
   tagText: { fontSize: 13, color: "#7C3AED", fontWeight: "600" },
-
   lifestyleGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   lifestyleChip: {
     paddingHorizontal: 12,
@@ -389,7 +534,6 @@ const styles = StyleSheet.create({
     borderColor: "#FBCFE8",
   },
   lifestyleChipText: { fontSize: 12, color: "#BE185D", fontWeight: "500" },
-
   statsRow: { flexDirection: "row", gap: 12 },
   stat: {
     flex: 1,
@@ -405,4 +549,26 @@ const styles = StyleSheet.create({
     marginBottom: 3,
   },
   statLabel: { fontSize: 11, color: "#9CA3AF" },
+
+  verifyBtn: {
+    marginTop: 8,
+    paddingVertical: 16,
+    alignItems: "center",
+    backgroundColor: "#F3EEFF",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E9D8FD",
+    marginBottom: 8,
+  },
+  verifyText: { fontSize: 15, fontWeight: "700", color: "#7C3AED" },
+  logoutBtn: {
+    marginTop: 8,
+    paddingVertical: 16,
+    alignItems: "center",
+    backgroundColor: "#FFF0F0",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#FEE2E2",
+  },
+  logoutText: { fontSize: 15, fontWeight: "700", color: "#EF4444" },
 });

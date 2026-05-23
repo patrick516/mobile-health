@@ -13,6 +13,7 @@ import searchRoutes from "./search/search.routes.js";
 import locationsRoutes from "./locations/locations.routes.js";
 import reportsRoutes from "./reports/reports.routes.js";
 import photosRoutes from "./photos/photos.routes.js";
+import verificationRoutes from "./verification/verification.routes.js";
 
 const router = Router();
 
@@ -29,5 +30,6 @@ router.use("/search", searchRoutes);
 router.use("/locations", locationsRoutes);
 router.use("/users", reportsRoutes);
 router.use("/photos", photosRoutes);
+router.use("/verification", verificationRoutes);
 
 export default router;

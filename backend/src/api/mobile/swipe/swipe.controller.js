@@ -21,6 +21,15 @@ export const passUser = async (req, res, next) => {
   }
 };
 
+export const getLikes = async (req, res, next) => {
+  try {
+    const users = await swipeService.getLikes(req.user.id);
+    return success(res, { users, total: users.length });
+  } catch (err) {
+    next(err);
+  }
+};
+
 export const rewind = async (req, res, next) => {
   try {
     const result = await swipeService.rewind(req.user.id);

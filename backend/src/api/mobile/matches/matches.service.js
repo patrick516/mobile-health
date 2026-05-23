@@ -35,6 +35,15 @@ export const getMatches = async (userId) => {
   }));
 };
 
+export const getMatchWithUser = async (userId, otherUserId) => {
+  const [id1, id2] = [userId, otherUserId].sort();
+  const match = await prisma.match.findUnique({
+    where: { user1Id_user2Id: { user1Id: id1, user2Id: id2 } },
+    include: { conversation: { select: { id: true } } },
+  });
+  return match ?? null;
+};
+
 export const getLikesReceived = async (userId) => {
   const likes = await prisma.swipe.findMany({
     where: { receiverId: userId, action: "like" },

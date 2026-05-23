@@ -5,13 +5,15 @@ import {
   TouchableOpacity,
   ScrollView,
   StatusBar,
-  Dimensions,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
+import { useState } from "react";
 import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import Svg, { Path, Circle } from "react-native-svg";
-
-const { width: W } = Dimensions.get("window");
+import Svg, { Path } from "react-native-svg";
+import apiClient from "../src/lib/apiClient";
+import { useAuthStore } from "../src/store/authStore";
 
 function BackIcon() {
   return (
@@ -27,14 +29,7 @@ function BackIcon() {
   );
 }
 
-interface FeatureRow {
-  icon: string;
-  title: string;
-  desc: string;
-  iconBg: string;
-}
-
-const FEATURES: FeatureRow[] = [
+const FEATURES = [
   {
     icon: "💜",
     title: "Unlimited Likes",
@@ -61,7 +56,49 @@ const FEATURES: FeatureRow[] = [
   },
 ];
 
+const PLANS = [
+  {
+    id: "monthly",
+    label: "1 Month",
+    price: "MWK 2,500",
+    perMonth: "MWK 2,500/mo",
+  },
+  {
+    id: "yearly",
+    label: "12 Months",
+    price: "MWK 20,000",
+    perMonth: "MWK 1,667/mo",
+    badge: "Best Value",
+  },
+];
+
 export default function PremiumScreen() {
+  const [selectedPlan, setSelectedPlan] = useState("monthly");
+  const [loading, setLoading] = useState(false);
+  const { user, setAuth, token } = useAuthStore();
+
+  const handleUpgrade = async () => {
+    setLoading(true);
+    try {
+      await apiClient.post(`/mobile/users/${user?.id}/premium`, {
+        plan: selectedPlan,
+        days: selectedPlan === "yearly" ? 365 : 30,
+      });
+      if (token && user) {
+        setAuth(token, { ...user, isPremium: true });
+      }
+      Alert.alert(
+        "🎉 Welcome to Premium!",
+        "You now have full access to all features.",
+        [{ text: "Let's Go!", onPress: () => router.back() }],
+      );
+    } catch (error: any) {
+      Alert.alert("Error", error.message ?? "Could not process upgrade.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <LinearGradient
       colors={["#1A0535", "#3D0F6E", "#6B1F9E", "#3D0F6E", "#1A0535"]}
@@ -72,11 +109,10 @@ export default function PremiumScreen() {
     >
       <StatusBar barStyle="light-content" />
 
-      {/* Back button */}
       <TouchableOpacity
         onPress={() => router.back()}
         activeOpacity={0.7}
-        style={styles.laterBtn}
+        style={styles.backBtn}
       >
         <BackIcon />
       </TouchableOpacity>
@@ -85,19 +121,58 @@ export default function PremiumScreen() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        {/* Crown emoji */}
         <Text style={styles.crown}>👑</Text>
-
-        {/* ── Heading ── */}
         <Text style={styles.title}>Go Premium</Text>
         <Text style={styles.subtitle}>
           Unlock all features and{"\n"}get more matches
         </Text>
-
-        {/* Decorative hearts */}
         <Text style={styles.deco}>💗</Text>
 
-        {/* ── Feature cards ── */}
+        {/* Plan selector */}
+        <View style={styles.planRow}>
+          {PLANS.map((plan) => (
+            <TouchableOpacity
+              key={plan.id}
+              style={[
+                styles.planCard,
+                selectedPlan === plan.id && styles.planCardActive,
+              ]}
+              onPress={() => setSelectedPlan(plan.id)}
+              activeOpacity={0.85}
+            >
+              {plan.badge && (
+                <View style={styles.planBadge}>
+                  <Text style={styles.planBadgeText}>{plan.badge}</Text>
+                </View>
+              )}
+              <Text
+                style={[
+                  styles.planLabel,
+                  selectedPlan === plan.id && styles.planLabelActive,
+                ]}
+              >
+                {plan.label}
+              </Text>
+              <Text
+                style={[
+                  styles.planPrice,
+                  selectedPlan === plan.id && styles.planPriceActive,
+                ]}
+              >
+                {plan.price}
+              </Text>
+              <Text
+                style={[
+                  styles.planPer,
+                  selectedPlan === plan.id && styles.planPerActive,
+                ]}
+              >
+                {plan.perMonth}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
         <View style={styles.features}>
           {FEATURES.map((f) => (
             <View key={f.title} style={styles.featureRow}>
@@ -114,25 +189,29 @@ export default function PremiumScreen() {
           ))}
         </View>
 
-        {/* spacer */}
-        <View style={{ height: 120 }} />
+        <View style={{ height: 140 }} />
       </ScrollView>
 
-      {/* ── Bottom CTAs ── */}
       <View style={styles.footer}>
-        {/* Upgrade Now */}
-        <TouchableOpacity activeOpacity={0.85} style={styles.upgradeTouchable}>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          style={styles.upgradeTouchable}
+          onPress={handleUpgrade}
+          disabled={loading}
+        >
           <LinearGradient
             colors={["#EE2090", "#C2175A"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.upgradeBtn}
           >
-            <Text style={styles.upgradeTxt}>Upgrade Now</Text>
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Text style={styles.upgradeTxt}>Upgrade Now</Text>
+            )}
           </LinearGradient>
         </TouchableOpacity>
-
-        {/* Maybe later */}
         <TouchableOpacity
           onPress={() => router.back()}
           activeOpacity={0.7}
@@ -157,13 +236,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
-  scroll: {
-    paddingTop: 100,
-    paddingHorizontal: 28,
-    alignItems: "center",
-  },
-
+  scroll: { paddingTop: 100, paddingHorizontal: 28, alignItems: "center" },
   crown: { fontSize: 70, marginBottom: 16 },
   title: {
     fontSize: 32,
@@ -178,9 +251,49 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 22,
   },
-  deco: { fontSize: 28, marginTop: 8, marginBottom: 32 },
-
-  // Features
+  deco: { fontSize: 28, marginTop: 8, marginBottom: 24 },
+  planRow: { flexDirection: "row", gap: 12, width: "100%", marginBottom: 28 },
+  planCard: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 18,
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.15)",
+    position: "relative",
+    overflow: "hidden",
+  },
+  planCardActive: {
+    borderColor: "#EE2090",
+    backgroundColor: "rgba(238,32,144,0.15)",
+  },
+  planBadge: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    backgroundColor: "#EE2090",
+    borderRadius: 50,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  planBadgeText: { fontSize: 9, fontWeight: "700", color: "#FFFFFF" },
+  planLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "rgba(255,255,255,0.6)",
+    marginBottom: 6,
+  },
+  planLabelActive: { color: "#FFFFFF" },
+  planPrice: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "rgba(255,255,255,0.7)",
+    marginBottom: 4,
+  },
+  planPriceActive: { color: "#FFFFFF" },
+  planPer: { fontSize: 11, color: "rgba(255,255,255,0.4)" },
+  planPerActive: { color: "rgba(255,255,255,0.7)" },
   features: { width: "100%", gap: 16 },
   featureRow: {
     flexDirection: "row",
@@ -212,8 +325,6 @@ const styles = StyleSheet.create({
     color: "rgba(220,190,255,0.75)",
     lineHeight: 18,
   },
-
-  // Footer
   footer: {
     position: "absolute",
     bottom: 0,

@@ -24,3 +24,13 @@ export async function fetchDashboardStats(): Promise<DashboardStats> {
     weeklySignups: s.weeklySignups ?? [0, 0, 0, 0, 0, 0, s.users.newToday],
   };
 }
+
+export async function fetchRecentReports(): Promise<any[]> {
+  const res = await api.get<{ reports: any[] }>("/admin/reports?limit=4");
+  return res.reports ?? [];
+}
+
+export async function fetchRecentMatches(): Promise<any[]> {
+  const res = await api.get<{ matches: any[] }>("/admin/matches?limit=4");
+  return res.matches ?? [];
+}

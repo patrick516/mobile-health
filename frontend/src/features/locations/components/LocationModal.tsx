@@ -1,74 +1,170 @@
 import { useState } from "react";
 import { Modal, Button, Input, Select } from "../../../components/ui";
-import type { Location, LocationType } from "../../../types";
+
+type ModalType = "country" | "district" | "town";
 
 interface Props {
   open: boolean;
   onClose: () => void;
-  onCreate: (data: {
-    name: string;
-    type: LocationType;
-    parentId: string | null;
-  }) => void;
-  districts: Location[];
+  type: ModalType;
+  countries: { code: string; name: string }[];
+  districts: { id: string; name: string; countryCode: string }[];
+  onCreateCountry: (name: string, code: string, flag?: string) => void;
+  onCreateDistrict: (name: string, countryCode: string) => void;
+  onCreateTown: (name: string, districtId: string) => void;
 }
 
-export function LocationModal({ open, onClose, onCreate, districts }: Props) {
+export function LocationModal({
+  open,
+  onClose,
+  type,
+  countries,
+  districts,
+  onCreateCountry,
+  onCreateDistrict,
+  onCreateTown,
+}: Props) {
   const [name, setName] = useState("");
-  const [type, setType] = useState<LocationType>("district");
-  const [parentId, setParentId] = useState<string | null>(null);
+  const [code, setCode] = useState("");
+  const [flag, setFlag] = useState("");
+  const [countryCode, setCountryCode] = useState("");
+  const [districtId, setDistrictId] = useState("");
+
+  const filteredDistricts = countryCode
+    ? districts.filter((d) => d.countryCode === countryCode)
+    : districts;
+
+  const isValid = () => {
+    if (!name.trim()) return false;
+    if (type === "country" && !code.trim()) return false;
+    if (type === "district" && !countryCode) return false;
+    if (type === "town" && !districtId) return false;
+    return true;
+  };
 
   const handleCreate = () => {
-    onCreate({ name, type, parentId });
-    onClose();
+    if (!isValid()) return;
+    if (type === "country")
+      onCreateCountry(
+        name.trim(),
+        code.trim().toUpperCase(),
+        flag || undefined,
+      );
+    if (type === "district") onCreateDistrict(name.trim(), countryCode);
+    if (type === "town") onCreateTown(name.trim(), districtId);
     setName("");
+    setCode("");
+    setFlag("");
+    setCountryCode("");
+    setDistrictId("");
+    onClose();
+  };
+
+  const titles = {
+    country: "🌍 Add Country",
+    district: "🏙️ Add District",
+    town: "📌 Add Town",
   };
 
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title="📍 Add Location"
+      title={titles[type]}
       footer={
         <>
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={handleCreate} disabled={!name}>
-            + Add Location
+          <Button
+            variant="primary"
+            onClick={handleCreate}
+            disabled={!isValid()}
+          >
+            + Add {type.charAt(0).toUpperCase() + type.slice(1)}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
-        <Select
-          label="Type"
-          value={type}
-          onChange={(e) => setType(e.target.value as LocationType)}
-        >
-          <option value="district">District</option>
-          <option value="town">Town</option>
-          <option value="country">Country</option>
-        </Select>
         <Input
           label="Name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Location name…"
+          placeholder={
+            type === "country"
+              ? "e.g. Malawi"
+              : type === "district"
+                ? "e.g. Blantyre"
+                : "e.g. Limbe"
+          }
         />
-        {type === "town" && (
+
+        {type === "country" && (
+          <>
+            <Input
+              label="Country Code (2 letters)"
+              value={code}
+              onChange={(e) =>
+                setCode(e.target.value.toUpperCase().slice(0, 2))
+              }
+              placeholder="e.g. MW"
+            />
+            <Input
+              label="Flag Emoji (optional)"
+              value={flag}
+              onChange={(e) => setFlag(e.target.value)}
+              placeholder="e.g. 🇲🇼"
+            />
+          </>
+        )}
+
+        {type === "district" && (
           <Select
-            label="Parent District"
-            value={parentId ?? ""}
-            onChange={(e) => setParentId(e.target.value || null)}
+            label="Country"
+            value={countryCode}
+            onChange={(e) => setCountryCode(e.target.value)}
           >
-            <option value="">— Select district —</option>
-            {districts.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
+            <option value="">— Select country —</option>
+            {countries.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.name}
               </option>
             ))}
           </Select>
+        )}
+
+        {type === "town" && (
+          <>
+            <Select
+              label="Country"
+              value={countryCode}
+              onChange={(e) => {
+                setCountryCode(e.target.value);
+                setDistrictId("");
+              }}
+            >
+              <option value="">— Select country first —</option>
+              {countries.map((c) => (
+                <option key={c.code} value={c.code}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+            <Select
+              label="District"
+              value={districtId}
+              onChange={(e) => setDistrictId(e.target.value)}
+              disabled={!countryCode}
+            >
+              <option value="">— Select district —</option>
+              {filteredDistricts.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </Select>
+          </>
         )}
       </div>
     </Modal>

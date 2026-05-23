@@ -415,6 +415,7 @@ export const MOCK_DASHBOARD_STATS: DashboardStats = {
   totalMatches: 8247,
   onlineNow: 1842,
   pendingReports: 23,
+  pendingVerifications: 7,
   newSignupsToday: 247,
   newSignupsWeek: 1284,
   newSignupsMonth: 4891,

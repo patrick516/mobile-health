@@ -12,6 +12,18 @@ export const getMatches = async (req, res, next) => {
   }
 };
 
+export const getMatchWithUser = async (req, res, next) => {
+  try {
+    const match = await matchesService.getMatchWithUser(
+      req.user.id,
+      req.params.userId,
+    );
+    return success(res, { match });
+  } catch (err) {
+    next(err);
+  }
+};
+
 export const getLikesReceived = async (req, res, next) => {
   try {
     const likes = await matchesService.getLikesReceived(req.user.id);

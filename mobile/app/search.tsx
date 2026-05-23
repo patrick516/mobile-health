@@ -7,11 +7,13 @@ import {
   TouchableOpacity,
   Image,
   StatusBar,
+  ActivityIndicator,
 } from "react-native";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { router } from "expo-router";
 import Svg, { Path } from "react-native-svg";
-import { FAKE_USERS } from "../src/data/fakeUsers";
+import apiClient from "../src/lib/apiClient";
+import { useDebounce } from "../src/hooks/useDebounce";
 
 function SearchIcon() {
   return (
@@ -28,57 +30,108 @@ function SearchIcon() {
 
 export default function SearchScreen() {
   const [query, setQuery] = useState("");
+  const [users, setUsers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const filteredUsers = FAKE_USERS.filter((user) =>
-    user.name.toLowerCase().includes(query.toLowerCase()),
-  );
+  const doSearch = useCallback(async (q: string) => {
+    if (!q.trim()) {
+      setUsers([]);
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await apiClient.get("/mobile/search", {
+        params: { q, limit: 20 },
+      });
+      setUsers(res.data.users ?? []);
+    } catch {
+      setUsers([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const debouncedQuery = useDebounce(query, 400);
+
+  useState(() => {
+    doSearch(debouncedQuery);
+  });
 
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" />
-
-      {/* Header */}
       <Text style={styles.title}>Search</Text>
-
-      {/* Search bar */}
       <View style={styles.searchBox}>
         <SearchIcon />
         <TextInput
           placeholder="Search people..."
           value={query}
-          onChangeText={setQuery}
+          onChangeText={(t) => {
+            setQuery(t);
+            doSearch(t);
+          }}
           style={styles.input}
           placeholderTextColor="#9CA3AF"
+          autoFocus
         />
       </View>
 
-      {/* Results */}
-      <FlatList
-        data={filteredUsers}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={{ paddingBottom: 20 }}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.card}
-            activeOpacity={0.85}
-            onPress={() =>
-              router.push({
-                pathname: "/profile-detail",
-                params: { userId: item.id },
-              })
-            }
-          >
-            <Image source={{ uri: item.photo }} style={styles.avatar} />
-
-            <View style={styles.info}>
-              <Text style={styles.name}>
-                {item.name}, {item.age}
-              </Text>
-              <Text style={styles.sub}>{item.profession || "Member"}</Text>
-            </View>
-          </TouchableOpacity>
-        )}
-      />
+      {loading ? (
+        <ActivityIndicator
+          size="large"
+          color="#7C3AED"
+          style={{ marginTop: 40 }}
+        />
+      ) : (
+        <FlatList
+          data={users}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={{ paddingBottom: 20 }}
+          ListEmptyComponent={
+            query.length > 0 ? (
+              <View style={styles.empty}>
+                <Text style={styles.emptyText}>No results for "{query}"</Text>
+              </View>
+            ) : null
+          }
+          renderItem={({ item }) => {
+            const photoUri = item.photoUrl ?? item.photos?.[0]?.url ?? null;
+            return (
+              <TouchableOpacity
+                style={styles.card}
+                activeOpacity={0.85}
+                onPress={() =>
+                  router.push({
+                    pathname: "/profile-detail",
+                    params: { userId: item.id },
+                  })
+                }
+              >
+                {photoUri ? (
+                  <Image source={{ uri: photoUri }} style={styles.avatar} />
+                ) : (
+                  <View style={[styles.avatar, styles.avatarFallback]}>
+                    <Text style={styles.avatarInitial}>
+                      {item.name?.[0] ?? "?"}
+                    </Text>
+                  </View>
+                )}
+                <View style={styles.info}>
+                  <Text style={styles.name}>
+                    {item.name}, {item.age ?? "?"}
+                  </Text>
+                  <Text style={styles.sub}>
+                    {item.profession ||
+                      [item.town, item.district].filter(Boolean).join(", ") ||
+                      "Member"}
+                  </Text>
+                </View>
+                {item.online && <View style={styles.onlineDot} />}
+              </TouchableOpacity>
+            );
+          }}
+        />
+      )}
     </View>
   );
 }
@@ -90,14 +143,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 60,
   },
-
   title: {
     fontSize: 26,
     fontWeight: "800",
     color: "#1F0A3C",
     marginBottom: 16,
   },
-
   searchBox: {
     flexDirection: "row",
     alignItems: "center",
@@ -109,14 +160,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#F3EEFF",
   },
-
-  input: {
-    marginLeft: 10,
-    flex: 1,
-    fontSize: 14,
-    color: "#111827",
-  },
-
+  input: { marginLeft: 10, flex: 1, fontSize: 14, color: "#111827" },
+  empty: { alignItems: "center", paddingTop: 40 },
+  emptyText: { fontSize: 14, color: "#9CA3AF" },
   card: {
     flexDirection: "row",
     alignItems: "center",
@@ -129,7 +175,6 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 2,
   },
-
   avatar: {
     width: 48,
     height: 48,
@@ -137,20 +182,19 @@ const styles = StyleSheet.create({
     marginRight: 12,
     backgroundColor: "#E5E7EB",
   },
-
-  info: {
-    flex: 1,
+  avatarFallback: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#E9D8FD",
   },
-
-  name: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#1F0A3C",
-  },
-
-  sub: {
-    fontSize: 13,
-    color: "#6B7280",
-    marginTop: 2,
+  avatarInitial: { fontSize: 18, fontWeight: "700", color: "#7C3AED" },
+  info: { flex: 1 },
+  name: { fontSize: 15, fontWeight: "700", color: "#1F0A3C" },
+  sub: { fontSize: 13, color: "#6B7280", marginTop: 2 },
+  onlineDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#22C55E",
   },
 });

@@ -1,5 +1,4 @@
-// src/App.tsx
-
+import type { ReactElement } from "react";
 import { useAuthStore } from "./store/authStore";
 import Login from "./features/auth/Login";
 import { Sidebar } from "./components/layout/Sidebar";
@@ -15,7 +14,7 @@ import { NotificationsPage } from "./features/notifications";
 import { AnalyticsPage } from "./features/analytics";
 import { useUIStore } from "./store/uiStore";
 
-const PAGES = {
+const PAGES: Record<string, ReactElement> = {
   dashboard: <DashboardPage />,
   analytics: <AnalyticsPage />,
   users: <UsersPage />,
