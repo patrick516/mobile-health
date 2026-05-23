@@ -1,17 +1,20 @@
 {
   "expo": {
-    "name": "mobile",
+    "name": "AnzathuConnect",
     "slug": "mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "mobile",
+    "scheme": "anzathuconnect",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.pkulinji.anzathuconnect"
     },
     "android": {
+      "package": "com.pkulinji.anzathuconnect",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -44,6 +47,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "9e603099-30bf-4a2e-bbec-7a486e8155fa"
+      }
     }
   }
 }
