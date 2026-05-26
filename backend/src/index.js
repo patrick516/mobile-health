@@ -1,33 +1,23 @@
-// src/index.js
-
 import "dotenv/config";
 import http from "http";
 import app from "./app.js";
-import { env } from "./config/env.js";
-import prisma from "./config/db.js";
-import { initSocket } from "./config/socket.js";
 
-const start = async () => {
-  try {
-    await prisma.$connect();
-    console.log(" Database connected");
+const PORT = process.env.PORT || 5000;
 
-    const httpServer = http.createServer(app);
+const server = http.createServer(app);
 
-    initSocket(httpServer);
-    console.log(" WebSocket server initialized");
+server.listen(PORT, () => {
+  console.log(` MobileHealth API running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV}`);
+  console.log(` Health check: http://localhost:${PORT}/api/health`);
+});
 
-    httpServer.listen(env.PORT, () => {
-      console.log(`\n Server running on http://localhost:${env.PORT}`);
-      console.log(`   Mobile API → http://localhost:${env.PORT}/api/mobile`);
-      console.log(`   Admin  API → http://localhost:${env.PORT}/api/admin`);
-      console.log(`   WebSocket  → ws://localhost:${env.PORT}\n`);
-    });
-  } catch (err) {
-    console.error(" Failed to start server:", err);
-    await prisma.$disconnect();
-    process.exit(1);
-  }
-};
+server.on("error", (err) => {
+  console.error("Server error:", err);
+  process.exit(1);
+});
 
-start();
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled rejection:", reason);
+  process.exit(1);
+});

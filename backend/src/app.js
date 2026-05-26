@@ -1,55 +1,65 @@
-// src/app.js
-
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
-import path from "path";
-import { fileURLToPath } from "url";
+import { errorHandler } from "./middleware/errorHandler.js";
 
-import { env } from "./config/env.js";
-import { defaultLimiter } from "./middleware/rateLimit.middleware.js";
-import { errorHandler, notFound } from "./middleware/error.middleware.js";
-import mobileRoutes from "./api/mobile/index.js";
-import adminRoutes from "./api/admin/index.js";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Route imports
+import authRoutes from "./api/auth/auth.routes.js";
+import geographyRoutes from "./api/geography/geography.routes.js";
+import householdsRoutes from "./api/households/households.routes.js";
+import membersRoutes from "./api/members/members.routes.js";
+import visitsRoutes from "./api/visits/visits.routes.js";
+import referralsRoutes from "./api/referrals/referrals.routes.js";
+import immunisationsRoutes from "./api/immunisations/immunisations.routes.js";
+import drugsRoutes from "./api/drugs/drugs.routes.js";
+import syncRoutes from "./api/sync/sync.routes.js";
+import mapRoutes from "./api/map/map.routes.js";
+import analyticsRoutes from "./api/analytics/analytics.routes.js";
+import adminRoutes from "./api/admin/admin.routes.js";
+import exportRoutes from "./api/export/export.routes.js";
 
 const app = express();
 
-// ── Security & parsing ───────────────────────────────
+//  MIDDLEWARE
 app.use(helmet());
-app.use(cors({ origin: env.CLIENT_URL, credentials: true }));
-app.use(express.json());
+app.use(
+  cors({
+    origin: process.env.CLIENT_URL || "*",
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  }),
+);
+app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
+app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
 
-// ── Logging ──────────────────────────────────────────
-if (env.NODE_ENV !== "test") {
-  app.use(morgan("dev"));
-}
-
-// ── Rate limiting ────────────────────────────────────
-app.use(defaultLimiter);
-
-// ── Static files — serve uploaded photos/voice notes ─
-app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
-
-// ── Health check ─────────────────────────────────────
-app.get("/health", (req, res) => {
-  res.json({
-    status: "ok",
-    env: env.NODE_ENV,
-    version: "1.0.0",
-  });
+//  HEALTH CHECK
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// ── API Routes ───────────────────────────────────────
-app.use("/api/mobile", mobileRoutes);
+//  ROUTES
+app.use("/api/auth", authRoutes);
+app.use("/api/geography", geographyRoutes);
+app.use("/api/households", householdsRoutes);
+app.use("/api/members", membersRoutes);
+app.use("/api/visits", visitsRoutes);
+app.use("/api/referrals", referralsRoutes);
+app.use("/api/immunisations", immunisationsRoutes);
+app.use("/api/drugs", drugsRoutes);
+app.use("/api/sync", syncRoutes);
+app.use("/api/map", mapRoutes);
+app.use("/api/analytics", analyticsRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/export", exportRoutes);
 
-// ── 404 & Error handlers ─────────────────────────────
-app.use(notFound);
+//  404
+app.use((req, res) => {
+  res.status(404).json({ success: false, message: "Route not found" });
+});
+
+//  ERROR HANDLER
 app.use(errorHandler);
 
 export default app;

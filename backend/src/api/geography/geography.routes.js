@@ -1,0 +1,26 @@
+import { Router } from "express";
+import {
+  getRegions,
+  getDistricts,
+  getTAs,
+  getZones,
+  getVillages,
+  createVillage,
+  getGeographyTree,
+} from "./geography.controller.js";
+import { authenticate } from "../../middleware/auth.js";
+import { role } from "../../middleware/role.js";
+
+const router = Router();
+
+router.use(authenticate);
+
+router.get("/tree", getGeographyTree);
+router.get("/regions", getRegions);
+router.get("/districts", getDistricts);
+router.get("/tas", getTAs);
+router.get("/zones", getZones);
+router.get("/villages", getVillages);
+router.post("/villages", createVillage);
+
+export default router;

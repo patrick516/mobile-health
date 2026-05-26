@@ -1,635 +1,593 @@
-// prisma/schema.prisma
-
 generator client {
   provider = "prisma-client-js"
 }
-
 
 datasource db {
   provider = "postgresql"
  
 }
 
-// ─────────────────────────────────────────────
-// ENUMS
-// ─────────────────────────────────────────────
+// ─── ENUMS ────────────────────────────────────────────────────────────────────
 
-enum Gender {
-  male
-  female
+enum Role {
+  CCW
+  NURSE
+  DISTRICT_OFFICER
+  ADMIN
 }
 
-enum SmokingPref {
-  never
-  socially
-  regularly
-  trying_to_quit
+enum StructureType {
+  BRICK
+  MUD
+  IRON_SHEET
+  GRASS_THATCH
+  OTHER
 }
 
-enum AlcoholPref {
-  never
-  socially
-  regularly
+enum WaterSource {
+  BOREHOLE
+  RIVER
+  PIPED
+  PROTECTED_WELL
+  UNPROTECTED_WELL
+  OTHER
 }
 
-enum ChildrenPref {
-  have_and_want_more
-  have_dont_want_more
-  dont_have_want
-  dont_have_dont_want
+enum LatrineType {
+  IMPROVED_PIT
+  TRADITIONAL_PIT
+  VIP
+  FLUSH_TOILET
+  NONE
 }
 
-enum RelationshipGoal {
-  serious
-  casual
-  friendship
-  not_sure
+enum DistanceToFacility {
+  UNDER_5KM
+  BETWEEN_5_10KM
+  OVER_10KM
 }
 
-enum ExercisePref {
-  never
-  sometimes
-  often
-  daily
+enum MemberStatus {
+  ACTIVE
+  DECEASED
+  RELOCATED
+  UNKNOWN
 }
 
-enum DietPref {
-  omnivore
-  vegetarian
-  vegan
-  pescatarian
-  halal
-  kosher
+enum HouseholdStatus {
+  ACTIVE
+  VACANT
+  DEMOLISHED
 }
 
-enum ReligionPref {
-  christian
-  muslim
-  hindu
-  buddhist
-  none
-  other
+enum Sex {
+  MALE
+  FEMALE
+  UNKNOWN
 }
 
-enum EducationLevel {
-  high_school
-  diploma
-  bachelors
-  masters
-  phd
-  other
+enum Relationship {
+  HEAD
+  SPOUSE
+  CHILD
+  PARENT
+  OTHER_RELATIVE
+  NON_RELATIVE
 }
 
-enum MessageType {
-  text
-  voice
+enum VisitType {
+  ROUTINE
+  SICK
+  FOLLOW_UP
+  DRUG_DISPENSING_ONLY
 }
 
-enum NotificationType {
-  new_match
-  new_message
-  new_like
-  profile_view
+enum MuacStatus {
+  NORMAL
+  MODERATE_MALNUTRITION
+  SEVERE_MALNUTRITION
 }
 
-enum ReportReason {
-  spam
-  inappropriate_content
-  fake_profile
-  harassment
-  other
+enum ReferralUrgency {
+  ROUTINE
+  URGENT
+  EMERGENCY
 }
 
-enum ReportStatus {
-  pending     // just submitted
-  reviewing   // admin opened it
-  resolved    // admin replied and closed it
+enum ReferralStatus {
+  PENDING
+  OVERDUE
+  ARRIVED
+  TREATED
+  FEEDBACK_SENT
+  COMPLETED
+  MISSED
 }
 
-enum PaymentMethod {
-  mobile_money
-  card
+enum ImmunisationStatus {
+  DUE
+  GIVEN
+  OVERDUE
+  MISSED
 }
 
-enum SubscriptionPlan {
-  monthly
-  yearly
+enum AncStatus {
+  SCHEDULED
+  ATTENDED
+  MISSED
+  OVERDUE
 }
 
-enum SwipeAction {
-  like
-  pass
+enum StockRequestStatus {
+  PENDING
+  APPROVED
+  FULFILLED
+  REJECTED
 }
 
-enum Platform {
-  ios
-  android
+enum SyncRecordType {
+  HOUSEHOLD
+  MEMBER
+  VISIT
+  REFERRAL
+  IMMUNISATION
+  DRUG_DISPENSE
+  STOCK_REQUEST
+  ANC_VISIT
 }
 
-enum LookingFor {
-  men
-  women
-  everyone
-}
-
-enum VerificationStatus {
-  unsubmitted  // user hasn't submitted docs yet
-  pending      // submitted, waiting for admin review
-  approved     // admin approved
-  rejected     // admin rejected
-}
-
-enum AdminRole {
-  super_admin  // full access
-  moderator    // content moderation only
-}
-
-enum UserStatus {
-  active
-  suspended    // temporarily banned
-  banned       // permanently banned
-}
-
-enum DocumentType {
-  national_id
-  passport
-  drivers_license
-}
-
-// ─────────────────────────────────────────────
-// ADMIN
-// ─────────────────────────────────────────────
-
-model Admin {
-  id           String    @id @default(cuid())
-  name         String
-  email        String    @unique
-  password     String
-  role         AdminRole @default(moderator)
-  isActive     Boolean   @default(true)
-  lastLoginAt  DateTime?
-
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-
-  // Actions performed by this admin
-  verifications  VerificationRequest[] @relation("AdminVerifier")
-  resolvedReports Report[]             @relation("AdminResolver")
-  manualMatches   Match[]              @relation("AdminMatchCreator")
-  broadcastsSent  BroadcastNotification[]
-}
-
-// ─────────────────────────────────────────────
-// USER
-// ─────────────────────────────────────────────
-
-model User {
-  id            String     @id @default(cuid())
-  name          String
-  email         String     @unique
-  password      String
-  dateOfBirth   DateTime?
-  age           Int?
-  gender        Gender?
-  bio           String?    @db.VarChar(500)
-  profession    String?
-  verified      Boolean    @default(false)
-  isPremium     Boolean    @default(false)
-  online        Boolean    @default(false)
-  lastSeenAt    DateTime?
-  status        UserStatus @default(active)
-  suspendedUntil DateTime?
-  bannedReason  String?
-
-  // Location
-  country       String?
-  district      String?
-  town          String?
-
-  // Main profile photo URL — kept for quick access
-  photoUrl      String?
-
-  // Interests
-  interests     String[]
-
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
-
-  // Relations
-  photos                UserPhoto[]
-  lifestyle             Lifestyle?
-  preferences           DiscoveryPreference?
-  verificationRequest   VerificationRequest?
-  sentSwipes            Swipe[]              @relation("SwipeSender")
-  receivedSwipes        Swipe[]              @relation("SwipeReceiver")
-  matchesAsUser1        Match[]              @relation("MatchUser1")
-  matchesAsUser2        Match[]              @relation("MatchUser2")
-  conversations         ConversationParticipant[]
-  sentMessages          Message[]            @relation("MessageSender")
-  notifications         Notification[]
-  subscription          Subscription?
-  pushTokens            PushToken[]
-  reportsSubmitted      Report[]             @relation("ReportSubmitter")
-  reportsReceived       Report[]             @relation("ReportSubject")
-  blocksInitiated       Block[]              @relation("BlockInitiator")
-  blocksReceived        Block[]              @relation("BlockTarget")
-  passwordResetTokens   PasswordResetToken[]
-  refreshTokens         RefreshToken[]
-
-  @@index([email])
-  @@index([gender])
-  @@index([country, district])
-  @@index([isPremium])
-  @@index([online])
-  @@index([status])
-}
-
-// ─────────────────────────────────────────────
-// USER PHOTOS — multiple photos per user
-// ─────────────────────────────────────────────
-
-model UserPhoto {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  url         String
-  isMain      Boolean  @default(false) // main photo shown on cards
-  order       Int      @default(0)     // display order on profile
-  removedByAdmin Boolean @default(false)
-  removedAt   DateTime?
-
-  createdAt   DateTime @default(now())
-
-  @@index([userId])
-  @@index([userId, isMain])
-}
-
-// ─────────────────────────────────────────────
-// IDENTITY VERIFICATION
-// ─────────────────────────────────────────────
-
-model VerificationRequest {
-  id           String             @id @default(cuid())
-  userId       String             @unique
-  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  documentType DocumentType
-  documentUrl  String             // uploaded ID document URL
-  selfieUrl    String             // selfie holding document
-
-  status       VerificationStatus @default(pending)
-  reviewedById String?
-  reviewedBy   Admin?             @relation("AdminVerifier", fields: [reviewedById], references: [id])
-  reviewedAt   DateTime?
-  rejectionReason String?         // if rejected, why
-
-  submittedAt  DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
-
-  @@index([status])
-}
-
-// ─────────────────────────────────────────────
-// LIFESTYLE
-// ─────────────────────────────────────────────
-
-model Lifestyle {
-  id               String           @id @default(cuid())
-  userId           String           @unique
-  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  smoking          SmokingPref?
-  alcohol          AlcoholPref?
-  children         ChildrenPref?
-  relationshipGoal RelationshipGoal?
-  exercise         ExercisePref?
-  diet             DietPref?
-  religion         ReligionPref?
-  education        EducationLevel?
-  height           String?
-  zodiac           String?
-
-  updatedAt        DateTime         @updatedAt
-}
-
-// ─────────────────────────────────────────────
-// DISCOVERY PREFERENCES
-// ─────────────────────────────────────────────
-
-model DiscoveryPreference {
-  id               String           @id @default(cuid())
-  userId           String           @unique
-  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  lookingFor       LookingFor       @default(everyone)
-  minAge           Int              @default(18)
-  maxAge           Int              @default(99)
-  maxDistanceKm    Int              @default(100)
-
-  smoking          SmokingPref?
-  alcohol          AlcoholPref?
-  children         ChildrenPref?
-  relationshipGoal RelationshipGoal?
-  exercise         ExercisePref?
-  diet             DietPref?
-  religion         ReligionPref?
-  education        EducationLevel?
-  interests        String[]
-
-  updatedAt        DateTime         @updatedAt
-}
-
-// ─────────────────────────────────────────────
-// SWIPES
-// ─────────────────────────────────────────────
-
-model Swipe {
-  id          String      @id @default(cuid())
-  senderId    String
-  receiverId  String
-  action      SwipeAction
-
-  sender      User        @relation("SwipeSender",   fields: [senderId],   references: [id], onDelete: Cascade)
-  receiver    User        @relation("SwipeReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
-
-  createdAt   DateTime    @default(now())
-
-  @@unique([senderId, receiverId])
-  @@index([senderId])
-  @@index([receiverId])
-}
-
-// ─────────────────────────────────────────────
-// MATCHES
-// ─────────────────────────────────────────────
-
-model Match {
-  id           String   @id @default(cuid())
-  user1Id      String
-  user2Id      String
-  matchedAt    DateTime @default(now())
-
-  // Manual match created by admin
-  createdByAdminId String?
-  createdByAdmin   Admin?  @relation("AdminMatchCreator", fields: [createdByAdminId], references: [id])
-
-  user1        User     @relation("MatchUser1", fields: [user1Id], references: [id], onDelete: Cascade)
-  user2        User     @relation("MatchUser2", fields: [user2Id], references: [id], onDelete: Cascade)
-
-  conversation Conversation?
-
-  @@unique([user1Id, user2Id])
-  @@index([user1Id])
-  @@index([user2Id])
-}
-
-// ─────────────────────────────────────────────
-// CONVERSATIONS & MESSAGES
-// ─────────────────────────────────────────────
-
-model Conversation {
-  id           String    @id @default(cuid())
-  matchId      String?   @unique
-  match        Match?    @relation(fields: [matchId], references: [id], onDelete: SetNull)
-
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-
-  participants ConversationParticipant[]
-  messages     Message[]
-}
-
-model ConversationParticipant {
-  id             String       @id @default(cuid())
-  conversationId String
-  userId         String
-  unreadCount    Int          @default(0)
-  lastReadAt     DateTime?
-
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  user           User         @relation(fields: [userId],         references: [id], onDelete: Cascade)
-
-  @@unique([conversationId, userId])
-  @@index([userId])
-}
-
-model Message {
-  id             String      @id @default(cuid())
-  conversationId String
-  senderId       String
-  type           MessageType @default(text)
-
-  text           String?     @db.VarChar(2000)
-  voiceUri       String?
-  voiceDuration  Int?
-
-  read           Boolean     @default(false)
-  createdAt      DateTime    @default(now())
-
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender         User         @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
-
-  @@index([conversationId, createdAt])
-  @@index([senderId])
-}
-
-// ─────────────────────────────────────────────
-// PREMIUM / SUBSCRIPTIONS
-// ─────────────────────────────────────────────
-
-model Subscription {
-  id               String           @id @default(cuid())
-  userId           String           @unique
-  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  plan             SubscriptionPlan
-  isActive         Boolean          @default(false)
-  startedAt        DateTime?
-  expiresAt        DateTime?
-  cancelledAt      DateTime?
-
-  // manually granted by admin
-  grantedByAdmin   Boolean          @default(false)
-
-  paymentMethod    PaymentMethod?
-  paymentSessionId String?
-  transactionRef   String?
-
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
-
-  @@index([userId])
-  @@index([expiresAt])
-  @@index([isActive])
-}
-
-// ─────────────────────────────────────────────
-// NOTIFICATIONS
-// ─────────────────────────────────────────────
-
-model Notification {
-  id        String           @id @default(cuid())
-  userId    String
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  type      NotificationType
-  title     String
-  body      String
-  read      Boolean          @default(false)
-
-  refUserId   String?
-  refMatchId  String?
-  refMsgId    String?
-
-  createdAt DateTime         @default(now())
-
-  @@index([userId, read])
-  @@index([userId, createdAt])
-}
-
-model PushToken {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  token     String   @unique
-  platform  Platform
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([userId])
-}
-
-// ─────────────────────────────────────────────
-// BROADCAST NOTIFICATIONS (Admin → all users)
-// ─────────────────────────────────────────────
-
-model BroadcastNotification {
-  id          String   @id @default(cuid())
-  adminId     String
-  admin       Admin    @relation(fields: [adminId], references: [id])
-
-  title       String
-  body        String
-
-  // Optional filters — null means send to everyone
-  targetGender  Gender?
-  targetCountry String?
-  isPremiumOnly Boolean @default(false)
-
-  sentAt      DateTime @default(now())
-  totalSent   Int      @default(0)
-}
-
-// ─────────────────────────────────────────────
-// REPORTS & BLOCKS
-// ─────────────────────────────────────────────
-
-model Report {
-  id          String       @id @default(cuid())
-  submitterId String
-  subjectId   String
-  reason      ReportReason
-  description String?      @db.VarChar(500)
-
-  status      ReportStatus @default(pending)
-
-  // Admin resolution
-  resolvedById  String?
-  resolvedBy    Admin?   @relation("AdminResolver", fields: [resolvedById], references: [id])
-  resolvedAt    DateTime?
-  adminReply    String?  // the email reply sent to reporter
-
-  submitter   User         @relation("ReportSubmitter", fields: [submitterId], references: [id], onDelete: Cascade)
-  subject     User         @relation("ReportSubject",   fields: [subjectId],   references: [id], onDelete: Cascade)
-
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-
-  @@index([subjectId])
-  @@index([status])
-  @@index([resolvedById])
-}
-
-model Block {
-  id          String   @id @default(cuid())
-  initiatorId String
-  targetId    String
-
-  initiator   User     @relation("BlockInitiator", fields: [initiatorId], references: [id], onDelete: Cascade)
-  target      User     @relation("BlockTarget",    fields: [targetId],    references: [id], onDelete: Cascade)
-
-  createdAt   DateTime @default(now())
-
-  @@unique([initiatorId, targetId])
-  @@index([initiatorId])
-  @@index([targetId])
-}
-
-// ─────────────────────────────────────────────
-// AUTH TOKENS
-// ─────────────────────────────────────────────
-
-model RefreshToken {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  token     String   @unique
-  expiresAt DateTime
-  revoked   Boolean  @default(false)
-
-  createdAt DateTime @default(now())
-
-  @@index([userId])
-  @@index([token])
-}
-
-model PasswordResetToken {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  token     String   @unique
-  expiresAt DateTime
-  used      Boolean  @default(false)
-
-  createdAt DateTime @default(now())
-
-  @@index([token])
-}
-
-// ─────────────────────────────────────────────
-// LOCATION DATA
-// ─────────────────────────────────────────────
-
-model Country {
-  code      String     @id
-  name      String
-  flag      String?
-  active    Boolean    @default(true)
+// ─── GEOGRAPHY ────────────────────────────────────────────────────────────────
+
+model Region {
+  id        String     @id @default(uuid())
+  name      String     @unique
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
 
   districts District[]
+
+  @@map("regions")
 }
 
 model District {
-  id          String   @id @default(cuid())
-  name        String
-  countryCode String
-  country     Country  @relation(fields: [countryCode], references: [code], onDelete: Cascade)
+  id        String   @id @default(uuid())
+  name      String
+  regionId  String   @map("region_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  towns       Town[]
+  region               Region                @relation(fields: [regionId], references: [id])
+  traditionalAuthorities TraditionalAuthority[]
 
-  @@index([countryCode])
+  @@unique([name, regionId])
+  @@map("districts")
 }
 
-model Town {
-  id         String   @id @default(cuid())
+model TraditionalAuthority {
+  id         String   @id @default(uuid())
   name       String
-  districtId String
-  district   District @relation(fields: [districtId], references: [id], onDelete: Cascade)
+  districtId String   @map("district_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
-  @@index([districtId])
+  district          District           @relation(fields: [districtId], references: [id])
+  zones             Zone[]
+  userTaAllocations UserTaAllocation[]
+
+  @@unique([name, districtId])
+  @@map("traditional_authorities")
+}
+
+model Zone {
+  id        String   @id @default(uuid())
+  name      String
+  taId      String   @map("ta_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  ta                   TraditionalAuthority  @relation(fields: [taId], references: [id])
+  villages             Village[]
+  userZoneAllocations  UserZoneAllocation[]
+
+  @@unique([name, taId])
+  @@map("zones")
+}
+
+model Village {
+  id              String   @id @default(uuid())
+  name            String
+  zoneId          String   @map("zone_id")
+  gpsLat          Float?   @map("gps_lat")
+  gpsLng          Float?   @map("gps_lng")
+  createdByUserId String   @map("created_by_user_id")
+  isVerified      Boolean  @default(false) @map("is_verified")
+  canonicalVillageId String? @map("canonical_village_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  zone            Zone        @relation(fields: [zoneId], references: [id])
+  createdByUser   User        @relation("VillageCreator", fields: [createdByUserId], references: [id])
+  canonicalOf     Village?    @relation("VillageCanonical", fields: [canonicalVillageId], references: [id])
+  aliases         Village[]   @relation("VillageCanonical")
+  households      Household[]
+
+  @@map("villages")
+}
+
+// ─── USERS & ALLOCATIONS ──────────────────────────────────────────────────────
+
+model User {
+  id          String   @id @default(uuid())
+  fullName    String   @map("full_name")
+  phoneNumber String   @unique @map("phone_number")
+  pinHash     String   @map("pin_hash")
+  role        Role
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  zoneAllocations     UserZoneAllocation[] @relation("AllocatedUser")
+  taAllocations       UserTaAllocation[]   @relation("AllocatedTaUser")
+  allocatedByZone     UserZoneAllocation[] @relation("ZoneAllocator")
+  allocatedByTa       UserTaAllocation[]   @relation("TaAllocator")
+  createdVillages     Village[]            @relation("VillageCreator")
+  registeredHouseholds Household[]         @relation("HouseholdRegistrar")
+  visits              Visit[]
+  referralsMade       Referral[]           @relation("ReferringUser")
+  immunisationsGiven  Immunisation[]
+  drugDispenses       DrugDispense[]
+  drugStock           DrugStock[]
+  stockRequests       StockRequest[]       @relation("StockRequester")
+  stockApprovals      StockRequest[]       @relation("StockApprover")
+  auditLogs           AuditLog[]
+  assignedMembers     HouseholdMember[]    @relation("AssignedCCW")
+
+  @@map("users")
+}
+
+model UserZoneAllocation {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  zoneId          String   @map("zone_id")
+  allocatedById   String   @map("allocated_by_id")
+  allocatedAt     DateTime @default(now()) @map("allocated_at")
+
+  user        User @relation("AllocatedUser", fields: [userId], references: [id])
+  zone        Zone @relation(fields: [zoneId], references: [id])
+  allocatedBy User @relation("ZoneAllocator", fields: [allocatedById], references: [id])
+
+  @@unique([userId, zoneId])
+  @@map("user_zone_allocations")
+}
+
+model UserTaAllocation {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  taId          String   @map("ta_id")
+  allocatedById String   @map("allocated_by_id")
+  allocatedAt   DateTime @default(now()) @map("allocated_at")
+
+  user        User                 @relation("AllocatedTaUser", fields: [userId], references: [id])
+  ta          TraditionalAuthority @relation(fields: [taId], references: [id])
+  allocatedBy User                 @relation("TaAllocator", fields: [allocatedById], references: [id])
+
+  @@unique([userId, taId])
+  @@map("user_ta_allocations")
+}
+
+// ─── HOUSEHOLDS ───────────────────────────────────────────────────────────────
+
+model Household {
+  id                  String          @id @default(uuid())
+  localId             String          @unique @map("local_id")
+  householdNumber     String          @unique @map("household_number")
+  villageId           String          @map("village_id")
+  headOfHouseholdName String          @map("head_of_household_name")
+  headPhone           String?         @map("head_phone")
+  structureType       StructureType   @map("structure_type")
+  waterSource         WaterSource     @map("water_source")
+  latrinePresent      Boolean         @map("latrine_present")
+  latrineType         LatrineType?    @map("latrine_type")
+  handwashingFacility Boolean         @map("handwashing_facility")
+  handwashingWithSoap Boolean?        @map("handwashing_with_soap")
+  distanceToFacility  DistanceToFacility @map("distance_to_facility")
+  mosquitoNets        String?         @map("mosquito_nets")
+  numberOfRooms       Int?            @map("number_of_rooms")
+  landmark            String?
+  gpsLat              Float?          @map("gps_lat")
+  gpsLng              Float?          @map("gps_lng")
+  registeredByUserId  String          @map("registered_by_user_id")
+  status              HouseholdStatus @default(ACTIVE)
+  syncedAt            DateTime?       @map("synced_at")
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
+
+  village        Village         @relation(fields: [villageId], references: [id])
+  registeredBy   User            @relation("HouseholdRegistrar", fields: [registeredByUserId], references: [id])
+  members        HouseholdMember[]
+
+  @@map("households")
+}
+
+model HouseholdMember {
+  id                  String       @id @default(uuid())
+  localId             String       @unique @map("local_id")
+  householdId         String       @map("household_id")
+  fullName            String       @map("full_name")
+  dateOfBirth         DateTime?    @map("date_of_birth")
+  estimatedAge        Int?         @map("estimated_age")
+  sex                 Sex
+  relationshipToHead  Relationship @map("relationship_to_head")
+  isPregnant          Boolean      @default(false) @map("is_pregnant")
+  lmpDate             DateTime?    @map("lmp_date")
+  expectedDeliveryDate DateTime?   @map("expected_delivery_date")
+  chronicIllnesses    Json?        @map("chronic_illnesses")
+  hasDisability       Boolean      @default(false) @map("has_disability")
+  disabilityType      String?      @map("disability_type")
+  phone               String?
+  status              MemberStatus @default(ACTIVE)
+  archivedAt          DateTime?    @map("archived_at")
+  assignedCcwId       String?      @map("assigned_ccw_id")
+  syncedAt            DateTime?    @map("synced_at")
+  createdAt           DateTime     @default(now()) @map("created_at")
+  updatedAt           DateTime     @updatedAt @map("updated_at")
+
+  household             Household              @relation(fields: [householdId], references: [id])
+  assignedCcw           User?                  @relation("AssignedCCW", fields: [assignedCcwId], references: [id])
+  visits                Visit[]
+  referrals             Referral[]
+  immunisations         Immunisation[]
+  immunisationSchedules ImmunisationSchedule[]
+  ancVisits             AncVisit[]
+  drugDispenses         DrugDispense[]
+
+  @@map("household_members")
+}
+
+// ─── VISITS ───────────────────────────────────────────────────────────────────
+
+model Visit {
+  id             String     @id @default(uuid())
+  localId        String     @unique @map("local_id")
+  memberId       String     @map("member_id")
+  householdId    String     @map("household_id")
+  chwId          String     @map("chw_id")
+  visitedAt      DateTime   @map("visited_at")
+  visitType      VisitType  @map("visit_type")
+  symptoms       Json?
+  temperature    Float?
+  muacMm         Int?       @map("muac_mm")
+  muacStatus     MuacStatus? @map("muac_status")
+  dangerSigns    Json?      @map("danger_signs")
+  referralNeeded Boolean    @default(false) @map("referral_needed")
+  gpsLat         Float?     @map("gps_lat")
+  gpsLng         Float?     @map("gps_lng")
+  notes          String?
+  conflictFlag   Boolean    @default(false) @map("conflict_flag")
+  syncedAt       DateTime?  @map("synced_at")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+
+  member    HouseholdMember @relation(fields: [memberId], references: [id])
+  chw       User            @relation(fields: [chwId], references: [id])
+  referrals Referral[]
+  dispenses DrugDispense[]
+
+  @@map("visits")
+}
+
+// ─── REFERRALS ────────────────────────────────────────────────────────────────
+
+model Facility {
+  id        String   @id @default(uuid())
+  name      String
+  gpsLat    Float?   @map("gps_lat")
+  gpsLng    Float?   @map("gps_lng")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  referrals Referral[]
+
+  @@map("facilities")
+}
+
+model Referral {
+  id                  String          @id @default(uuid())
+  localId             String          @unique @map("local_id")
+  visitId             String          @map("visit_id")
+  memberId            String          @map("member_id")
+  referringUserId     String          @map("referring_user_id")
+  destinationFacilityId String?       @map("destination_facility_id")
+  reason              String
+  urgency             ReferralUrgency
+  status              ReferralStatus  @default(PENDING)
+  dueBy               DateTime?       @map("due_by")
+  arrivedAt           DateTime?       @map("arrived_at")
+  treatedAt           DateTime?       @map("treated_at")
+  diagnosis           String?
+  treatmentGiven      String?         @map("treatment_given")
+  feedbackNote        String?         @map("feedback_note")
+  resolvedAt          DateTime?       @map("resolved_at")
+  syncedAt            DateTime?       @map("synced_at")
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
+
+  visit               Visit           @relation(fields: [visitId], references: [id])
+  member              HouseholdMember @relation(fields: [memberId], references: [id])
+  referringUser       User            @relation("ReferringUser", fields: [referringUserId], references: [id])
+  destinationFacility Facility?       @relation(fields: [destinationFacilityId], references: [id])
+
+  @@map("referrals")
+}
+
+// ─── IMMUNISATIONS ────────────────────────────────────────────────────────────
+
+model Immunisation {
+  id                String   @id @default(uuid())
+  localId           String   @unique @map("local_id")
+  memberId          String   @map("member_id")
+  vaccineCode       String   @map("vaccine_code")
+  doseNumber        Int      @map("dose_number")
+  givenAt           DateTime @map("given_at")
+  givenByUserId     String   @map("given_by_user_id")
+  batchNumber       String?  @map("batch_number")
+  route             String?
+  nextDueDate       DateTime? @map("next_due_date")
+  facilityOrOutreach String? @map("facility_or_outreach")
+  syncedAt          DateTime? @map("synced_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  member      HouseholdMember @relation(fields: [memberId], references: [id])
+  givenByUser User            @relation(fields: [givenByUserId], references: [id])
+
+  @@map("immunisations")
+}
+
+model ImmunisationSchedule {
+  id          String             @id @default(uuid())
+  memberId    String             @map("member_id")
+  vaccineCode String             @map("vaccine_code")
+  doseNumber  Int                @map("dose_number")
+  dueDate     DateTime           @map("due_date")
+  status      ImmunisationStatus @default(DUE)
+  givenAt     DateTime?          @map("given_at")
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @updatedAt @map("updated_at")
+
+  member HouseholdMember @relation(fields: [memberId], references: [id])
+
+  @@unique([memberId, vaccineCode, doseNumber])
+  @@map("immunisation_schedules")
+}
+
+// ─── ANC ──────────────────────────────────────────────────────────────────────
+
+model AncVisit {
+  id           String    @id @default(uuid())
+  memberId     String    @map("member_id")
+  ancNumber    Int       @map("anc_number")
+  expectedDate DateTime  @map("expected_date")
+  status       AncStatus @default(SCHEDULED)
+  attendedDate DateTime? @map("attended_date")
+  facilityId   String?   @map("facility_id")
+  notes        String?
+  syncedAt     DateTime? @map("synced_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  member HouseholdMember @relation(fields: [memberId], references: [id])
+
+  @@unique([memberId, ancNumber])
+  @@map("anc_visits")
+}
+
+// ─── DRUGS ────────────────────────────────────────────────────────────────────
+
+model Drug {
+  id               String  @id @default(uuid())
+  drugCode         String  @unique @map("drug_code")
+  nameEnglish      String  @map("name_english")
+  nameChichewa     String  @map("name_chichewa")
+  unit             String
+  minimumThreshold Int     @map("minimum_threshold")
+  isActive         Boolean @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  stock     DrugStock[]
+  dispenses DrugDispense[]
+  requests  StockRequest[]
+
+  @@map("drugs")
+}
+
+model DrugStock {
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  drugId           String   @map("drug_id")
+  quantityCurrent  Int      @map("quantity_current")
+  quantityMinimum  Int      @map("quantity_minimum")
+  lastRestockedAt  DateTime? @map("last_restocked_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id])
+  drug Drug @relation(fields: [drugId], references: [id])
+
+  @@unique([userId, drugId])
+  @@map("drug_stock")
+}
+
+model DrugDispense {
+  id               String   @id @default(uuid())
+  localId          String   @unique @map("local_id")
+  visitId          String   @map("visit_id")
+  memberId         String   @map("member_id")
+  drugId           String   @map("drug_id")
+  quantityDispensed Int     @map("quantity_dispensed")
+  dispensedById    String   @map("dispensed_by_id")
+  dispensedAt      DateTime @map("dispensed_at")
+  syncedAt         DateTime? @map("synced_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  visit       Visit           @relation(fields: [visitId], references: [id])
+  member      HouseholdMember @relation(fields: [memberId], references: [id])
+  drug        Drug            @relation(fields: [drugId], references: [id])
+  dispensedBy User            @relation(fields: [dispensedById], references: [id])
+
+  @@map("drug_dispenses")
+}
+
+model StockRequest {
+  id                String             @id @default(uuid())
+  requestingUserId  String             @map("requesting_user_id")
+  drugId            String             @map("drug_id")
+  quantityRequested Int                @map("quantity_requested")
+  status            StockRequestStatus @default(PENDING)
+  approvedById      String?            @map("approved_by_id")
+  fulfilledAt       DateTime?          @map("fulfilled_at")
+  notes             String?
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+
+  requestingUser User @relation("StockRequester", fields: [requestingUserId], references: [id])
+  drug           Drug @relation(fields: [drugId], references: [id])
+  approvedBy     User? @relation("StockApprover", fields: [approvedById], references: [id])
+
+  @@map("stock_requests")
+}
+
+// ─── SYNC CONFLICTS ───────────────────────────────────────────────────────────
+
+model SyncConflict {
+  id             String         @id @default(uuid())
+  localId        String         @map("local_id")
+  recordType     SyncRecordType @map("record_type")
+  winningPayload Json           @map("winning_payload")
+  losingPayload  Json           @map("losing_payload")
+  resolved       Boolean        @default(false)
+  resolvedById   String?        @map("resolved_by_id")
+  resolvedAt     DateTime?      @map("resolved_at")
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  @@map("sync_conflicts")
+}
+
+// ─── AUDIT LOG ────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  action     String
+  recordType String   @map("record_type")
+  recordId   String   @map("record_id")
+  oldValue   Json?    @map("old_value")
+  newValue   Json?    @map("new_value")
+  ipAddress  String?  @map("ip_address")
+  deviceId   String?  @map("device_id")
+  loggedAt   DateTime @default(now()) @map("logged_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("audit_log")
 }
