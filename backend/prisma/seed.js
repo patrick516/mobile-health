@@ -306,9 +306,9 @@ async function main() {
       });
     }
   }
-  console.log("✅ Drug stock initialised for CCWs");
+  console.log(" Drug stock initialised for CCWs");
 
-  console.log("\n🎉 Seed complete!");
+  console.log("\n Seed complete!");
   console.log("─────────────────────────────────────");
   console.log("Login credentials (all use PIN: 1234)");
   console.log("Admin:           0999000001");
@@ -321,7 +321,7 @@ async function main() {
 
 main()
   .catch((e) => {
-    console.error("❌ Seed failed:", e);
+    console.error(" Seed failed:", e);
     process.exit(1);
   })
   .finally(async () => {

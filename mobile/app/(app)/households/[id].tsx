@@ -299,7 +299,7 @@ export default function HouseholdDetailScreen() {
               style={styles.visitNowBtn}
               onPress={() => {
                 useAppStore.getState().setSelectedHousehold(household.id);
-                router.push("/(app)/visits/add");
+                router.push('/(app)/visits/add' as any)
               }}
             >
               <Ionicons
@@ -412,7 +412,7 @@ export default function HouseholdDetailScreen() {
               style={styles.addMemberBtn}
               onPress={() => {
                 useAppStore.getState().setSelectedHousehold(household.id);
-                router.push("/(app)/households/members/add");
+                router.push('/(app)/households/members/add' as any)
               }}
             >
               <Ionicons
@@ -438,7 +438,7 @@ export default function HouseholdDetailScreen() {
                   key={m.local_id}
                   style={styles.memberCard}
                   onPress={() =>
-                    router.push(`/(app)/households/members/${m.local_id}`)
+                   router.push(`/(app)/households/members/${m.local_id}` as any)
                   }
                 >
                   <View
