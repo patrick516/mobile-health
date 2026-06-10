@@ -1,0 +1,235 @@
+import { useQuery } from "@tanstack/react-query";
+import {
+  Users,
+  AlertTriangle,
+  CheckCircle,
+  FlaskConical,
+  Shield,
+  Heart,
+  TrendingUp,
+  Clock,
+} from "lucide-react";
+import api from "../../services/api";
+import type { OverviewStats, ChwActivity, MapEvent } from "../../types";
+import { MapContainer, TileLayer, CircleMarker, Popup } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
+
+const DOT_COLOR = {
+  green: "#16a34a",
+  yellow: "#d97706",
+  red: "#dc2626",
+  blue: "#2563eb",
+};
+
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  color,
+}: {
+  icon: any;
+  label: string;
+  value: number;
+  color: string;
+}) {
+  return (
+    <div className="card p-5 flex items-center gap-4">
+      <div
+        className={`w-12 h-12 rounded-xl flex items-center justify-center ${color}`}
+      >
+        <Icon size={22} className="text-white" />
+      </div>
+      <div>
+        <p className="text-2xl font-bold text-gray-900">{value}</p>
+        <p className="text-sm text-gray-500">{label}</p>
+      </div>
+    </div>
+  );
+}
+
+export default function Overview() {
+  const { data: stats } = useQuery<OverviewStats>({
+    queryKey: ["overview"],
+    queryFn: () => api.get("/analytics/overview").then((r) => r.data.data),
+    refetchInterval: 30000,
+  });
+
+  const { data: chwData } = useQuery<ChwActivity[]>({
+    queryKey: ["chw-activity"],
+    queryFn: () => api.get("/analytics/chw-activity").then((r) => r.data.data),
+  });
+
+  const { data: mapData } = useQuery<MapEvent[]>({
+    queryKey: ["map-events"],
+    queryFn: () => api.get("/map/events").then((r) => r.data.data),
+  });
+
+  const unsynced = chwData?.filter((c) => c.status !== "ACTIVE") || [];
+
+  return (
+    <div className="space-y-6">
+      {/* Alert banner */}
+      {unsynced.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center gap-3">
+          <AlertTriangle size={18} className="text-amber-600 shrink-0" />
+          <p className="text-sm text-amber-800 font-medium">
+            {unsynced.length} CHW{unsynced.length > 1 ? "s" : ""} have not
+            synced in the last 48 hours
+          </p>
+        </div>
+      )}
+
+      {/* Metric cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+        <StatCard
+          icon={TrendingUp}
+          label="Visits This Week"
+          value={stats?.totalVisitsWeek ?? 0}
+          color="bg-teal-700"
+        />
+        <StatCard
+          icon={AlertTriangle}
+          label="Active Referrals"
+          value={stats?.activeReferrals ?? 0}
+          color="bg-yellow-500"
+        />
+        <StatCard
+          icon={CheckCircle}
+          label="Missed Referrals"
+          value={stats?.missedReferrals ?? 0}
+          color="bg-red-500"
+        />
+        <StatCard
+          icon={FlaskConical}
+          label="Low Drug Stock"
+          value={stats?.drugsLowStock ?? 0}
+          color="bg-orange-500"
+        />
+        <StatCard
+          icon={Shield}
+          label="Vaccines Due"
+          value={stats?.vaccinesDue ?? 0}
+          color="bg-purple-600"
+        />
+        <StatCard
+          icon={Heart}
+          label="ANC Overdue"
+          value={stats?.ancOverdue ?? 0}
+          color="bg-pink-600"
+        />
+      </div>
+
+      {/* Map + CHW table */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        {/* Map */}
+        <div className="xl:col-span-2 card overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+            <h2 className="font-bold text-gray-900">Visit & Household Map</h2>
+            <div className="flex items-center gap-4 text-xs text-gray-500">
+              {[
+                ["green", "Routine"],
+                ["yellow", "Referral"],
+                ["red", "Emergency"],
+                ["blue", "Household"],
+              ].map(([c, l]) => (
+                <span key={c} className="flex items-center gap-1">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full inline-block"
+                    style={{
+                      backgroundColor: DOT_COLOR[c as keyof typeof DOT_COLOR],
+                    }}
+                  />
+                  {l}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="h-96">
+            <MapContainer
+              center={[-13.9626, 33.7741]}
+              zoom={7}
+              style={{ height: "100%", width: "100%" }}
+              scrollWheelZoom={false}
+            >
+              <TileLayer
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                attribution="© OpenStreetMap contributors"
+              />
+              {mapData?.map((ev) => (
+                <CircleMarker
+                  key={ev.id}
+                  center={[ev.lat, ev.lng]}
+                  radius={ev.type === "household" ? 6 : 5}
+                  pathOptions={{
+                    fillColor: DOT_COLOR[ev.colour],
+                    fillOpacity: 0.8,
+                    color: DOT_COLOR[ev.colour],
+                    weight: 1,
+                  }}
+                >
+                  <Popup>
+                    <div className="text-xs">
+                      <p className="font-semibold">{ev.label}</p>
+                      <p className="text-gray-500 capitalize">{ev.type}</p>
+                      {ev.timestamp && (
+                        <p className="text-gray-400">
+                          {new Date(ev.timestamp).toLocaleDateString()}
+                        </p>
+                      )}
+                    </div>
+                  </Popup>
+                </CircleMarker>
+              ))}
+            </MapContainer>
+          </div>
+        </div>
+
+        {/* CHW Activity */}
+        <div className="card">
+          <div className="px-5 py-4 border-b border-gray-100">
+            <h2 className="font-bold text-gray-900">CHW Activity</h2>
+          </div>
+          <div className="divide-y divide-gray-50 overflow-y-auto max-h-96">
+            {chwData?.length === 0 && (
+              <p className="text-sm text-gray-400 p-5 text-center">
+                No CHW data
+              </p>
+            )}
+            {chwData?.map((chw) => (
+              <div
+                key={chw.id}
+                className="px-5 py-3 flex items-center justify-between"
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-2 h-2 rounded-full ${
+                      chw.status === "ACTIVE"
+                        ? "bg-green-500"
+                        : chw.status === "UNSYNCED"
+                          ? "bg-yellow-400"
+                          : "bg-gray-300"
+                    }`}
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      {chw.fullName}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      {chw.zones.join(", ")}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-semibold text-teal-700">
+                    {chw.visitsThisWeek}
+                  </p>
+                  <p className="text-xs text-gray-400">visits</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

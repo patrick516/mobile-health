@@ -4,10 +4,10 @@ generator client {
 
 datasource db {
   provider = "postgresql"
- 
+//  url      = env("DATABASE_URL")
 }
 
-// ─── ENUMS ────────────────────────────────────────────────────────────────────
+// ─── ENUMS 
 
 enum Role {
   CCW
@@ -136,7 +136,7 @@ enum SyncRecordType {
   ANC_VISIT
 }
 
-// ─── GEOGRAPHY ────────────────────────────────────────────────────────────────
+// ─── GEOGRAPHY 
 
 model Region {
   id        String     @id @default(uuid())
@@ -214,7 +214,7 @@ model Village {
   @@map("villages")
 }
 
-// ─── USERS & ALLOCATIONS ──────────────────────────────────────────────────────
+// ─── USERS & ALLOCATIONS 
 
 model User {
   id          String   @id @default(uuid())
@@ -275,7 +275,7 @@ model UserTaAllocation {
   @@map("user_ta_allocations")
 }
 
-// ─── HOUSEHOLDS ───────────────────────────────────────────────────────────────
+// ─── HOUSEHOLDS 
 
 model Household {
   id                  String          @id @default(uuid())
@@ -344,7 +344,7 @@ model HouseholdMember {
   @@map("household_members")
 }
 
-// ─── VISITS ───────────────────────────────────────────────────────────────────
+// ─── VISITS 
 
 model Visit {
   id             String     @id @default(uuid())
@@ -376,7 +376,7 @@ model Visit {
   @@map("visits")
 }
 
-// ─── REFERRALS ────────────────────────────────────────────────────────────────
+// ─── REFERRALS 
 
 model Facility {
   id        String   @id @default(uuid())
@@ -419,7 +419,7 @@ model Referral {
   @@map("referrals")
 }
 
-// ─── IMMUNISATIONS ────────────────────────────────────────────────────────────
+// ─── IMMUNISATIONS 
 
 model Immunisation {
   id                String   @id @default(uuid())
@@ -460,7 +460,7 @@ model ImmunisationSchedule {
   @@map("immunisation_schedules")
 }
 
-// ─── ANC ──────────────────────────────────────────────────────────────────────
+// ─── ANC 
 
 model AncVisit {
   id           String    @id @default(uuid())
@@ -481,7 +481,7 @@ model AncVisit {
   @@map("anc_visits")
 }
 
-// ─── DRUGS ────────────────────────────────────────────────────────────────────
+// ─── DRUGS 
 
 model Drug {
   id               String  @id @default(uuid())
@@ -557,7 +557,7 @@ model StockRequest {
   @@map("stock_requests")
 }
 
-// ─── SYNC CONFLICTS ───────────────────────────────────────────────────────────
+// ─── SYNC CONFLICTS 
 
 model SyncConflict {
   id             String         @id @default(uuid())
@@ -573,7 +573,7 @@ model SyncConflict {
   @@map("sync_conflicts")
 }
 
-// ─── AUDIT LOG ────────────────────────────────────────────────────────────────
+// ─── AUDIT LOG 
 
 model AuditLog {
   id         String   @id @default(uuid())
