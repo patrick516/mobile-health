@@ -40,6 +40,7 @@ export const syncBatch = async (req, res, next) => {
             });
             break;
           }
+
           case "HOUSEHOLD": {
             // Check if village exists on server
             const villageExists = await prisma.village.findFirst({
@@ -69,10 +70,16 @@ export const syncBatch = async (req, res, next) => {
             });
             break;
           }
+
           case "MEMBER": {
             // Check if household exists before saving member
             const householdExists = await prisma.household.findFirst({
-              where: { id: payload.householdId, localId: payload.householdId },
+              where: {
+                OR: [
+                  { id: payload.householdId },
+                  { localId: payload.householdId },
+                ],
+              },
             });
 
             if (!householdExists) {
@@ -90,8 +97,9 @@ export const syncBatch = async (req, res, next) => {
             });
             break;
           }
+
           case "VISIT": {
-            // Remove dispenses field if it's an empty array
+            // Remove dispenses field if it exists (it's handled separately)
             const { dispenses, ...visitPayload } = payload;
 
             await prisma.visit.upsert({
@@ -106,8 +114,9 @@ export const syncBatch = async (req, res, next) => {
             });
             break;
           }
+
           case "REFERRAL": {
-            // Remove 'notes' field - it doesn't exist in the schema
+            // Remove notes field - it doesn't exist in the schema
             const { notes, ...referralPayload } = payload;
 
             await prisma.referral.upsert({
@@ -122,6 +131,7 @@ export const syncBatch = async (req, res, next) => {
             });
             break;
           }
+
           case "IMMUNISATION": {
             await prisma.immunisation.upsert({
               where: { localId },
@@ -143,6 +153,7 @@ export const syncBatch = async (req, res, next) => {
             });
             break;
           }
+
           case "DRUG_DISPENSE": {
             await prisma.drugDispense.upsert({
               where: { localId },
@@ -156,6 +167,7 @@ export const syncBatch = async (req, res, next) => {
             });
             break;
           }
+
           case "STOCK_REQUEST": {
             const existing = await prisma.stockRequest.findFirst({
               where: {
@@ -171,6 +183,7 @@ export const syncBatch = async (req, res, next) => {
             }
             break;
           }
+
           case "ANC_VISIT": {
             await prisma.ancVisit.upsert({
               where: {
@@ -184,6 +197,7 @@ export const syncBatch = async (req, res, next) => {
             });
             break;
           }
+
           default:
             failed.push({ localId, reason: `Unknown record type: ${type}` });
             continue;
