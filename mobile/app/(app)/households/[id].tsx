@@ -84,17 +84,22 @@ export default function HouseholdDetailScreen() {
       if (!hh) return;
       setHousehold(hh);
 
-      // Load members
+      // Load members using BOTH id and local_id to find matches
       const mems = await db.getAllAsync<Member>(
-        `SELECT * FROM members WHERE household_id = ? AND status = 'ACTIVE' ORDER BY full_name ASC`,
-        [hh.id],
+        `SELECT * FROM members 
+       WHERE (household_id = ? OR household_id = ?) 
+       AND status = 'ACTIVE' 
+       ORDER BY full_name ASC`,
+        [hh.id, hh.local_id],
       );
       setMembers(mems);
 
-      // Load visits
+      // Load visits using BOTH id and local_id
       const vis = await db.getAllAsync<Visit>(
-        `SELECT * FROM visits WHERE household_id = ? ORDER BY visited_at DESC LIMIT 20`,
-        [hh.id],
+        `SELECT * FROM visits 
+       WHERE household_id = ? OR household_id = ?
+       ORDER BY visited_at DESC LIMIT 20`,
+        [hh.id, hh.local_id],
       );
       setVisits(vis);
       if (vis.length > 0) setLastVisit(vis[0]);
@@ -299,7 +304,7 @@ export default function HouseholdDetailScreen() {
               style={styles.visitNowBtn}
               onPress={() => {
                 useAppStore.getState().setSelectedHousehold(household.id);
-                router.push('/(app)/visits/add' as any)
+                router.push("/(app)/visits/add" as any);
               }}
             >
               <Ionicons
@@ -412,7 +417,7 @@ export default function HouseholdDetailScreen() {
               style={styles.addMemberBtn}
               onPress={() => {
                 useAppStore.getState().setSelectedHousehold(household.id);
-                router.push('/(app)/households/members/add' as any)
+                router.push("/(app)/households/members/add" as any);
               }}
             >
               <Ionicons
@@ -438,7 +443,9 @@ export default function HouseholdDetailScreen() {
                   key={m.local_id}
                   style={styles.memberCard}
                   onPress={() =>
-                   router.push(`/(app)/households/members/${m.local_id}` as any)
+                    router.push(
+                      `/(app)/households/members/${m.local_id}` as any,
+                    )
                   }
                 >
                   <View

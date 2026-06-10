@@ -242,6 +242,23 @@ export default function AddHouseholdScreen() {
                   gpsLng,
                 });
                 const v = r2.data.data;
+
+                //  Save to local SQLite
+                const db = await getDb();
+                await db.runAsync(
+                  "INSERT OR REPLACE INTO villages (id, name, zone_id, zone_name) VALUES (?,?,?,?)",
+                  [v.id, v.name, selectedZoneId, ""],
+                );
+
+                // Enqueue village for sync
+                await enqueue("VILLAGE", {
+                  id: v.id,
+                  name: v.name,
+                  zoneId: selectedZoneId,
+                  gpsLat,
+                  gpsLng,
+                });
+
                 setVillages((p) => [...p, v]);
                 setSelectedVillageId(v.id);
                 setShowNewVillage(false);
@@ -252,11 +269,23 @@ export default function AddHouseholdScreen() {
         return;
       }
       const v = res.data.data;
+
       const db = await getDb();
       await db.runAsync(
         "INSERT OR REPLACE INTO villages (id, name, zone_id, zone_name) VALUES (?,?,?,?)",
         [v.id, v.name, selectedZoneId, ""],
       );
+
+      // ADD THIS - Enqueue village for sync
+      await enqueue("VILLAGE", {
+        id: v.id,
+        name: v.name,
+        zoneId: selectedZoneId,
+        gpsLat,
+        gpsLng,
+      });
+
+      setVillages((p) => [...p, v]);
       setVillages((p) => [...p, v]);
       setSelectedVillageId(v.id);
       setShowNewVillage(false);

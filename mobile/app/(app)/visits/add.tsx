@@ -226,7 +226,10 @@ export default function AddVisitScreen() {
 
       // If referral needed, go straight to referral screen
       if (referralNeeded) {
+        // Set both the member AND the visit ID so referral screen has everything
+        useAppStore.getState().setSelectedVisit(visitId);
         useAppStore.getState().setSelectedMember(member.id);
+
         Alert.alert(
           "Visit Saved ✓",
           muacStatus === "SEVERE_MALNUTRITION"

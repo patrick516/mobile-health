@@ -15,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Crypto from "expo-crypto";
 import { COLORS, SIZES, SHADOWS } from "../../../constants/theme";
 import { useAppStore } from "../../../src/store";
+import api from "../../../src/services/api";
 import { getDb } from "../../../src/db/schema";
 import { enqueue } from "../../../src/db/sync-queue";
 import { REFERRAL_REASONS } from "../../../constants/diseases";
@@ -33,6 +34,7 @@ export default function AddReferralScreen() {
   const language = useAppStore((s) => s.language);
   const selectedMemberId = useAppStore((s) => s.selectedMemberId);
   const selectedHouseholdId = useAppStore((s) => s.selectedHouseholdId);
+  const selectedVisitId = useAppStore((s) => s.selectedVisitId);
 
   const [memberName, setMemberName] = useState("");
   const [lastVisitId, setLastVisitId] = useState("");
@@ -54,25 +56,37 @@ export default function AddReferralScreen() {
       const db = await getDb();
 
       if (selectedMemberId) {
-        const m = await db.getFirstAsync<{ full_name: string }>(
-          "SELECT full_name FROM members WHERE id = ? OR local_id = ?",
+        // Try all possible ID formats
+        const m = await db.getFirstAsync<{ full_name: string; id: string }>(
+          "SELECT id, full_name FROM members WHERE id = ? OR local_id = ?",
           [selectedMemberId, selectedMemberId],
         );
-        if (m) setMemberName(m.full_name);
+        if (m) {
+          setMemberName(m.full_name);
 
-        const v = await db.getFirstAsync<Visit>(
-          "SELECT id FROM visits WHERE member_id = ? ORDER BY visited_at DESC LIMIT 1",
-          [selectedMemberId],
-        );
-        if (v) setLastVisitId(v.id);
+          // ✅ USE selectedVisitId DIRECTLY if available
+          if (selectedVisitId) {
+            setLastVisitId(selectedVisitId);
+          } else {
+            // Fallback: Find last visit for this member
+            const v = await db.getFirstAsync<{ id: string }>(
+              `SELECT id FROM visits 
+           WHERE member_id = ? 
+           ORDER BY visited_at DESC LIMIT 1`,
+              [m.id],
+            );
+            if (v) setLastVisitId(v.id);
+          }
+        }
       }
 
-      // Try to load facilities from API fallback to empty
+      // Load facilities from API
       try {
-        const { default: api } = await import("../../../src/services/api");
         const res = await api.get("/admin/facilities");
         setFacilities(res.data.data || []);
-      } catch {}
+      } catch {
+        // No facilities — that's fine
+      }
     } catch (err) {
       console.error("Load referral context error:", err);
     }

@@ -1,6 +1,7 @@
 import { getDb } from "./schema";
 import * as Crypto from "expo-crypto";
 const uuidv4 = () => Crypto.randomUUID();
+
 export type SyncRecordType =
   | "HOUSEHOLD"
   | "MEMBER"
@@ -9,7 +10,8 @@ export type SyncRecordType =
   | "IMMUNISATION"
   | "DRUG_DISPENSE"
   | "STOCK_REQUEST"
-  | "ANC_VISIT";
+  | "ANC_VISIT"
+  | "VILLAGE"; // ← ADD THIS LINE
 
 export interface SyncRecord {
   localId: string;
@@ -34,7 +36,6 @@ export const enqueue = async (
   return localId;
 };
 
-// Get all unsynced records
 export const getPending = async (): Promise<SyncRecord[]> => {
   const db = await getDb();
   const rows = await db.getAllAsync<{
@@ -44,7 +45,20 @@ export const getPending = async (): Promise<SyncRecord[]> => {
   }>(
     `SELECT local_id, record_type, payload FROM sync_queue
      WHERE synced = 0 AND sync_attempts < 10
-     ORDER BY created_at ASC
+      ORDER BY 
+       CASE record_type
+         WHEN 'VILLAGE' THEN 0       -- ← Sync villages FIRST
+         WHEN 'HOUSEHOLD' THEN 1
+         WHEN 'MEMBER' THEN 2
+         WHEN 'VISIT' THEN 3
+         WHEN 'REFERRAL' THEN 4
+         WHEN 'IMMUNISATION' THEN 5
+         WHEN 'DRUG_DISPENSE' THEN 6
+         WHEN 'STOCK_REQUEST' THEN 7
+         WHEN 'ANC_VISIT' THEN 8
+         ELSE 9
+       END,
+       created_at ASC
      LIMIT 50`,
   );
   return rows.map((r) => ({

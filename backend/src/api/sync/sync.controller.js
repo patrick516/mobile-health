@@ -19,7 +19,43 @@ export const syncBatch = async (req, res, next) => {
         const { type, localId, payload } = record;
 
         switch (type) {
+          case "VILLAGE": {
+            await prisma.village.upsert({
+              where: { id: payload.id || localId },
+              update: {
+                name: payload.name,
+                updatedAt: new Date(),
+              },
+              create: {
+                id: payload.id || localId,
+                name: payload.name,
+                zoneId: payload.zoneId,
+                gpsLat: payload.gpsLat || null,
+                gpsLng: payload.gpsLng || null,
+                createdByUserId: req.user.id,
+                isVerified: false,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              },
+            });
+            break;
+          }
           case "HOUSEHOLD": {
+            // Check if village exists on server
+            const villageExists = await prisma.village.findFirst({
+              where: { id: payload.villageId },
+            });
+
+            if (!villageExists) {
+              // Skip for now — village needs to sync first
+              // But we don't want to fail — just mark as needing retry
+              failed.push({
+                localId,
+                reason: "Village not yet on server — will retry",
+              });
+              continue;
+            }
+
             await prisma.household.upsert({
               where: { localId },
               update: { ...payload, syncedAt: new Date() },
@@ -28,6 +64,9 @@ export const syncBatch = async (req, res, next) => {
                 localId,
                 registeredByUserId: req.user.id,
                 syncedAt: new Date(),
+                householdNumber:
+                  payload.householdNumber ||
+                  payload.localId.substring(0, 8).toUpperCase(),
               },
             });
             break;

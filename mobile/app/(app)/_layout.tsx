@@ -3,6 +3,7 @@ import { Tabs } from "expo-router";
 import { TouchableOpacity, View, Text, StyleSheet, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Updates from "expo-updates";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COLORS, SIZES } from "../../constants/theme";
 import { useAppStore } from "../../src/store";
 import { router } from "expo-router";
@@ -19,6 +20,7 @@ function TabIcon({ name, focused }: { name: any; focused: boolean }) {
 
 export default function AppLayout() {
   const pendingCount = useAppStore((s) => s.pendingCount);
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     async function checkForUpdate() {
@@ -57,8 +59,9 @@ export default function AppLayout() {
           borderTopWidth: 1,
           borderTopColor: COLORS.border,
           backgroundColor: COLORS.white,
-          height: 60,
-          paddingBottom: 8,
+          height: 60 + Math.max(0, insets.bottom - 8),
+          paddingBottom: 8 + Math.max(0, insets.bottom - 8),
+          paddingTop: 4,
         },
         tabBarLabelStyle: { fontSize: 11, fontWeight: "600" },
       }}

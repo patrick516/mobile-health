@@ -31,8 +31,10 @@ interface AppState {
   // Selected context
   selectedHouseholdId: string | null;
   selectedMemberId: string | null;
+  selectedVisitId: string | null;
   setSelectedHousehold: (id: string | null) => void;
   setSelectedMember: (id: string | null) => void;
+  setSelectedVisit: (id: string | null) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -54,6 +56,8 @@ export const useAppStore = create<AppState>((set) => ({
 
   selectedHouseholdId: null,
   selectedMemberId: null,
+  selectedVisitId: null,
   setSelectedHousehold: (id) => set({ selectedHouseholdId: id }),
   setSelectedMember: (id) => set({ selectedMemberId: id }),
+  setSelectedVisit: (id) => set({ selectedVisitId: id }),
 }));
