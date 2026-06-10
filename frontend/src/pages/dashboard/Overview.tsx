@@ -119,6 +119,35 @@ export default function Overview() {
         />
       </div>
 
+      {/* Additional Stats Row - Using Users and Clock */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="card p-5 flex items-center gap-4 bg-gradient-to-r from-blue-50 to-white">
+          <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-blue-600">
+            <Users size={22} className="text-white" />
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-gray-900">
+              {chwData?.length ?? 0}
+            </p>
+            <p className="text-sm text-gray-500">Total CHWs</p>
+            <p className="text-xs text-gray-400 mt-1">
+              Community Health Workers
+            </p>
+          </div>
+        </div>
+        <div className="card p-5 flex items-center gap-4 bg-gradient-to-r from-teal-50 to-white">
+          <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-teal-600">
+            <Clock size={22} className="text-white" />
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-gray-900">
+              {new Date().toLocaleTimeString()}
+            </p>
+            <p className="text-sm text-gray-500">Current Time</p>
+            <p className="text-xs text-gray-400 mt-1">Dashboard refreshed</p>
+          </div>
+        </div>
+      </div>
       {/* Map + CHW table */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Map */}

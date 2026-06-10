@@ -29,6 +29,40 @@ export default function DrugStock() {
 
   return (
     <div className="space-y-4">
+      {/* Stats Cards with FlaskConical */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="card p-4 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-teal-100 flex items-center justify-center">
+            <FlaskConical size={20} className="text-teal-700" />
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-gray-900">
+              {data?.length ?? 0}
+            </p>
+            <p className="text-xs text-gray-500">Total Drug Types</p>
+          </div>
+        </div>
+        <div className="card p-4 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
+            <div className="text-green-700 text-xl font-bold">✓</div>
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-gray-900">
+              {data?.filter((d) => !isLow(d)).length ?? 0}
+            </p>
+            <p className="text-xs text-gray-500">Adequate Stock</p>
+          </div>
+        </div>
+        <div className="card p-4 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center">
+            <AlertTriangle size={20} className="text-red-600" />
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-red-600">{lowCount}</p>
+            <p className="text-xs text-gray-500">Low Stock Items</p>
+          </div>
+        </div>
+      </div>
       {lowCount > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center gap-3">
           <AlertTriangle size={18} className="text-red-600 shrink-0" />

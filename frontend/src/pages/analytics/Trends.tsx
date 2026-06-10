@@ -83,7 +83,54 @@ export default function Trends() {
           </div>
         )}
       </div>
-
+      {/* Line Chart Trends - Using LineChart, Line, and Legend */}
+      <div className="card p-6">
+        <h2 className="font-bold text-gray-900 mb-4">
+          Comparative Trends (7-Day Moving Average)
+        </h2>
+        {trends && trends.length > 0 ? (
+          <ResponsiveContainer width="100%" height={280}>
+            <LineChart data={trends}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+              <XAxis
+                dataKey="visitedAt"
+                tick={{ fontSize: 11 }}
+                tickFormatter={(v) =>
+                  new Date(v).toLocaleDateString("en-GB", {
+                    day: "numeric",
+                    month: "short",
+                  })
+                }
+              />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip />
+              <Legend />
+              <Line
+                type="monotone"
+                dataKey="_count"
+                name="Daily Visits"
+                stroke="#0f766e"
+                strokeWidth={2}
+                dot={{ r: 3 }}
+                activeDot={{ r: 6 }}
+              />
+              <Line
+                type="monotone"
+                dataKey="movingAvg"
+                name="7-Day Average"
+                stroke="#f59e0b"
+                strokeWidth={2}
+                strokeDasharray="5 5"
+                dot={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="h-64 flex items-center justify-center text-gray-400 text-sm">
+            No trend data available for line chart
+          </div>
+        )}
+      </div>
       {/* CHW performance table */}
       <div className="card overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100">

@@ -30,6 +30,17 @@ export default function ImmunisationTracker() {
 
   return (
     <div className="space-y-4">
+      {/* Overdue Alert Banner with AlertTriangle */}
+      {counts.OVERDUE > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center gap-3">
+          <AlertTriangle size={18} className="text-red-600 shrink-0" />
+          <p className="text-sm text-red-800 font-medium">
+            {counts.OVERDUE} immunisation{counts.OVERDUE > 1 ? "s are" : " is"}{" "}
+            overdue! Please attend to {counts.OVERDUE > 1 ? "them" : "it"}{" "}
+            immediately.
+          </p>
+        </div>
+      )}
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-4">
         {[
@@ -38,22 +49,29 @@ export default function ImmunisationTracker() {
             value: counts.OVERDUE,
             color: "bg-red-50 border-red-200",
             text: "text-red-700",
+            icon: AlertTriangle,
+            iconColor: "text-red-600",
           },
           {
             label: "Due Soon",
             value: counts.DUE,
             color: "bg-yellow-50 border-yellow-200",
             text: "text-yellow-700",
+            icon: null,
           },
           {
             label: "Total Pending",
             value: data?.length ?? 0,
             color: "bg-gray-50 border-gray-200",
             text: "text-gray-700",
+            icon: null,
           },
         ].map((s) => (
           <div key={s.label} className={`rounded-xl border p-4 ${s.color}`}>
-            <p className={`text-3xl font-bold ${s.text}`}>{s.value}</p>
+            <div className="flex items-center justify-between">
+              <p className={`text-3xl font-bold ${s.text}`}>{s.value}</p>
+              {s.icon && <s.icon size={24} className={s.iconColor} />}
+            </div>
             <p className={`text-sm ${s.text}`}>{s.label}</p>
           </div>
         ))}
@@ -151,9 +169,14 @@ export default function ImmunisationTracker() {
                   </p>
                 </td>
                 <td className="px-4 py-3">
-                  <span className={statusStyle[s.status] ?? "badge-gray"}>
-                    {s.status}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {s.status === "OVERDUE" && (
+                      <AlertTriangle size={14} className="text-red-500" />
+                    )}
+                    <span className={statusStyle[s.status] ?? "badge-gray"}>
+                      {s.status}
+                    </span>
+                  </div>
                 </td>
               </tr>
             ))}

@@ -66,7 +66,56 @@ export default function HouseholdList() {
           </span>
         )}
       </div>
-
+      {/* Summary Cards with Home Icon */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="card p-4 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-teal-100 flex items-center justify-center">
+            <Home size={20} className="text-teal-700" />
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-gray-900">
+              {data?.pagination?.total ?? 0}
+            </p>
+            <p className="text-xs text-gray-500">Total Households</p>
+          </div>
+        </div>
+        <div className="card p-4 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+            <Users size={20} className="text-blue-700" />
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-gray-900">
+              {data?.data?.reduce(
+                (sum, h) => sum + (h._count?.members ?? 0),
+                0,
+              ) ?? 0}
+            </p>
+            <p className="text-xs text-gray-500">Total Members</p>
+          </div>
+        </div>
+        <div className="card p-4 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
+            <div className="text-green-700 text-xl font-bold">✓</div>
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-gray-900">
+              {data?.data?.filter((h) => score(h) >= 75).length ?? 0}
+            </p>
+            <p className="text-xs text-gray-500">Good Health Score</p>
+          </div>
+        </div>
+        <div className="card p-4 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
+            <MapPin size={20} className="text-purple-700" />
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-gray-900">
+              {new Set(data?.data?.map((h) => h.village?.name)).size ?? 0}
+            </p>
+            <p className="text-xs text-gray-500">Villages Covered</p>
+          </div>
+        </div>
+      </div>
       {/* Table */}
       <div className="card overflow-hidden">
         <table className="w-full">
@@ -113,9 +162,12 @@ export default function HouseholdList() {
             {data?.data.map((h) => (
               <tr key={h.id} className="hover:bg-gray-50 transition-colors">
                 <td className="px-4 py-3">
-                  <span className="font-mono text-sm font-semibold text-teal-700">
-                    {h.householdNumber || "—"}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <Home size={14} className="text-teal-500 shrink-0" />
+                    <span className="font-mono text-sm font-semibold text-teal-700">
+                      {h.householdNumber || "—"}
+                    </span>
+                  </div>
                 </td>
                 <td className="px-4 py-3">
                   <p className="text-sm font-medium text-gray-900">

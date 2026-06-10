@@ -108,6 +108,40 @@ export default function ReferralQueue() {
           ))}
         </div>
 
+        {/* Overdue Alert Banner */}
+        {(() => {
+          const overdueCount =
+            data?.data.filter((ref) => ref.status === "OVERDUE").length ?? 0;
+          return (
+            overdueCount > 0 && (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center gap-3">
+                <AlertTriangle size={18} className="text-red-600 shrink-0" />
+                <p className="text-sm text-red-800 font-medium">
+                  {overdueCount} referral{overdueCount > 1 ? "s are" : " is"}{" "}
+                  overdue! Immediate attention required.
+                </p>
+              </div>
+            )
+          );
+        })()}
+
+        {/* Pending Alert Banner with Clock */}
+        {(() => {
+          const pendingCount =
+            data?.data.filter((ref) => ref.status === "PENDING").length ?? 0;
+          return (
+            pendingCount > 0 && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3 flex items-center gap-3">
+                <Clock size={18} className="text-yellow-600 shrink-0" />
+                <p className="text-sm text-yellow-800 font-medium">
+                  {pendingCount} pending referral
+                  {pendingCount > 1 ? "s waiting" : " waiting"} for action.
+                </p>
+              </div>
+            )
+          );
+        })()}
+
         {isLoading && (
           <p className="text-center text-gray-400 py-12 text-sm">Loading...</p>
         )}
@@ -123,6 +157,15 @@ export default function ReferralQueue() {
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
+                    {ref.urgency === "EMERGENCY" && (
+                      <AlertTriangle
+                        size={14}
+                        className="text-red-500 shrink-0"
+                      />
+                    )}
+                    {ref.status === "OVERDUE" && (
+                      <Clock size={14} className="text-red-500 shrink-0" />
+                    )}
                     <p className="font-semibold text-sm text-gray-900 truncate">
                       {ref.member.fullName}
                     </p>
@@ -240,10 +283,30 @@ export default function ReferralQueue() {
             </div>
 
             <div className="space-y-2 text-sm">
+              <div className="flex justify-between items-center">
+                <span className="text-gray-500">Urgency</span>
+                <div className="flex items-center gap-2">
+                  {selected.urgency === "EMERGENCY" && (
+                    <AlertTriangle size={14} className="text-red-500" />
+                  )}
+                  <span className="font-medium text-gray-900">
+                    {selected.urgency}
+                  </span>
+                </div>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-500">Status</span>
+                <div className="flex items-center gap-2">
+                  {selected.status === "OVERDUE" && (
+                    <Clock size={14} className="text-red-500" />
+                  )}
+                  <span className="font-medium text-gray-900">
+                    {selected.status.replace("_", " ")}
+                  </span>
+                </div>
+              </div>
               {[
                 ["Reason", selected.reason.replace("_", " ")],
-                ["Urgency", selected.urgency],
-                ["Status", selected.status.replace("_", " ")],
                 [
                   "Due",
                   selected.dueBy
