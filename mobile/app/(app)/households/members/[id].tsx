@@ -273,8 +273,10 @@ export default function MemberDetailScreen() {
         <TouchableOpacity
           style={styles.qAction}
           onPress={() => {
+            setSelectedHousehold(member.household_id);
             setSelectedMember(member.id);
-            router.push("/(app)/referrals/add" as any);
+            // Small delay ensures Zustand state is set before screen mounts
+            setTimeout(() => router.push("/(app)/referrals/add" as any), 50);
           }}
         >
           <Ionicons name="medical-outline" size={20} color={COLORS.danger} />

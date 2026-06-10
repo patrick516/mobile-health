@@ -11,7 +11,7 @@ const prisma = new PrismaClient({ adapter });
 async function main() {
   console.log("🌱 Seeding MobileHealth Malawi database...");
 
-  // ─── REGIONS ──────────────────────────────────────────────────────────────
+  //  REGIONS
   const southern = await prisma.region.upsert({
     where: { name: "Southern Region" },
     update: {},
@@ -29,7 +29,7 @@ async function main() {
   });
   console.log("✅ Regions seeded");
 
-  // ─── DISTRICTS ────────────────────────────────────────────────────────────
+  //  DISTRICTS
   const blantyre = await prisma.district.upsert({
     where: { name_regionId: { name: "Blantyre", regionId: southern.id } },
     update: {},
@@ -52,7 +52,7 @@ async function main() {
   });
   console.log("✅ Districts seeded");
 
-  // ─── TRADITIONAL AUTHORITIES ──────────────────────────────────────────────
+  //  TRADITIONAL AUTHORITIES
   const taKapeni = await prisma.traditionalAuthority.upsert({
     where: { name_districtId: { name: "TA Kapeni", districtId: blantyre.id } },
     update: {},
@@ -72,7 +72,7 @@ async function main() {
   });
   console.log("✅ Traditional Authorities seeded");
 
-  // ─── ZONES ────────────────────────────────────────────────────────────────
+  //  ZONES
   const zone1 = await prisma.zone.upsert({
     where: { name_taId: { name: "Kapeni Zone 1", taId: taKapeni.id } },
     update: {},
@@ -90,7 +90,7 @@ async function main() {
   });
   console.log("✅ Zones seeded");
 
-  // ─── FACILITIES ───────────────────────────────────────────────────────────
+  //  FACILITIES
   await prisma.facility.upsert({
     where: {
       id:
@@ -121,7 +121,7 @@ async function main() {
   });
   console.log("✅ Facilities seeded");
 
-  // ─── DRUGS ────────────────────────────────────────────────────────────────
+  //  DRUGS
   const drugs = [
     {
       drugCode: "ORS",
@@ -204,7 +204,7 @@ async function main() {
   }
   console.log("✅ Drugs seeded");
 
-  // ─── ADMIN USER ───────────────────────────────────────────────────────────
+  //  ADMIN USER
   const adminPin = await bcrypt.hash("1234", 12);
   const admin = await prisma.user.upsert({
     where: { phoneNumber: "0999000001" },
@@ -219,7 +219,7 @@ async function main() {
   });
   console.log("✅ Admin user created — Phone: 0999000001 | PIN: 1234");
 
-  // ─── NURSE USER ───────────────────────────────────────────────────────────
+  //  NURSE USER
   const nursePin = await bcrypt.hash("1234", 12);
   const nurse = await prisma.user.upsert({
     where: { phoneNumber: "0999000002" },
@@ -234,7 +234,7 @@ async function main() {
   });
   console.log("✅ Nurse user created — Phone: 0999000002 | PIN: 1234");
 
-  // ─── DISTRICT OFFICER ─────────────────────────────────────────────────────
+  // ─── DISTRICT OFFICER
   const dhoPin = await bcrypt.hash("1234", 12);
   const dho = await prisma.user.upsert({
     where: { phoneNumber: "0999000003" },
@@ -249,7 +249,7 @@ async function main() {
   });
   console.log("✅ District Officer created — Phone: 0999000003 | PIN: 1234");
 
-  // ─── CCW USERS ────────────────────────────────────────────────────────────
+  //  CCW USERS
   const ccwPin = await bcrypt.hash("1234", 12);
   const ccw1 = await prisma.user.upsert({
     where: { phoneNumber: "0999000004" },
@@ -277,7 +277,7 @@ async function main() {
     "✅ CCW users created — Phones: 0999000004, 0999000005 | PIN: 1234",
   );
 
-  // ─── ALLOCATIONS ──────────────────────────────────────────────────────────
+  //  ALLOCATIONS OF CCWs TO ZONES
   await prisma.userZoneAllocation.upsert({
     where: { userId_zoneId: { userId: ccw1.id, zoneId: zone1.id } },
     update: {},
@@ -290,7 +290,7 @@ async function main() {
   });
   console.log("✅ Zone allocations done");
 
-  // ─── DRUG STOCK FOR CCWs ──────────────────────────────────────────────────
+  //  DRUG STOCK FOR CCWs
   const allDrugs = await prisma.drug.findMany();
   for (const ccw of [ccw1, ccw2]) {
     for (const drug of allDrugs) {

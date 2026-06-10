@@ -28,6 +28,8 @@ import {
   STRUCTURE_TYPES,
   DISTANCE_OPTIONS,
 } from "../../../constants/diseases";
+// Check if we have internet connection
+import NetInfo from "@react-native-community/netinfo";
 
 interface Village {
   id: string;
@@ -349,23 +351,89 @@ export default function AddHouseholdScreen() {
         ],
       );
 
-      await enqueue("HOUSEHOLD", {
-        localId,
-        villageId: selectedVillageId,
-        headOfHouseholdName: headName.trim(),
-        headPhone: headPhone.trim() || null,
-        householdNumber: idPreview,
-        structureType,
-        waterSource,
-        latrinePresent,
-        handwashingFacility: handwashing,
-        distanceToFacility,
-        mosquitoNets: mosquitoNets || null,
-        numberOfRooms: numberOfRooms ? parseInt(numberOfRooms) : null,
-        landmark: landmark.trim() || null,
-        gpsLat,
-        gpsLng,
-      });
+      const netState = await NetInfo.fetch();
+
+      if (netState.isConnected) {
+        // Try to sync immediately to server
+        try {
+          const response = await api.post("/households", {
+            localId,
+            villageId: selectedVillageId,
+            headOfHouseholdName: headName.trim(),
+            headPhone: headPhone.trim() || null,
+            householdNumber: idPreview,
+            structureType,
+            waterSource,
+            latrinePresent,
+            handwashingFacility: handwashing,
+            distanceToFacility,
+            mosquitoNets: mosquitoNets || null,
+            numberOfRooms: numberOfRooms ? parseInt(numberOfRooms) : null,
+            landmark: landmark.trim() || null,
+            gpsLat,
+            gpsLng,
+          });
+
+          if (response.data.success) {
+            // Successfully synced to server, mark as synced
+            await db.runAsync(
+              "UPDATE households SET synced = 1, id = ? WHERE local_id = ?",
+              [response.data.data.id, localId],
+            );
+          }
+        } catch (err) {
+          console.error("Online sync failed, queueing for later:", err);
+          // Failed to sync online, add to queue
+          await enqueue("HOUSEHOLD", {
+            localId,
+            villageId: selectedVillageId,
+            headOfHouseholdName: headName.trim(),
+            headPhone: headPhone.trim() || null,
+            householdNumber: idPreview,
+            structureType,
+            waterSource,
+            latrinePresent,
+            handwashingFacility: handwashing,
+            distanceToFacility,
+            mosquitoNets: mosquitoNets || null,
+            numberOfRooms: numberOfRooms ? parseInt(numberOfRooms) : null,
+            landmark: landmark.trim() || null,
+            gpsLat,
+            gpsLng,
+          });
+        }
+      } else {
+        // Offline - add to queue
+        await enqueue("HOUSEHOLD", {
+          localId,
+          villageId: selectedVillageId,
+          headOfHouseholdName: headName.trim(),
+          headPhone: headPhone.trim() || null,
+          householdNumber: idPreview,
+          structureType,
+          waterSource,
+          latrinePresent,
+          handwashingFacility: handwashing,
+          distanceToFacility,
+          mosquitoNets: mosquitoNets || null,
+          numberOfRooms: numberOfRooms ? parseInt(numberOfRooms) : null,
+          landmark: landmark.trim() || null,
+          gpsLat,
+          gpsLng,
+        });
+      }
+
+      Alert.alert(
+        "Saved ✓",
+        `Household ${idPreview} registered successfully.`,
+        [
+          {
+            text: "Add Members",
+            onPress: () => router.replace(`/(app)/households/${localId}`),
+          },
+          { text: "Done", onPress: () => router.back() },
+        ],
+      );
 
       Alert.alert(
         "Saved ✓",

@@ -42,36 +42,68 @@ export const syncBatch = async (req, res, next) => {
           }
 
           case "HOUSEHOLD": {
-            // Check if village exists on server
-            const villageExists = await prisma.village.findFirst({
-              where: { id: payload.villageId },
-            });
-
-            if (!villageExists) {
-              failed.push({
-                localId,
-                reason: "Village not yet on server — will retry",
+            try {
+              // Check if village exists on server
+              const villageExists = await prisma.village.findFirst({
+                where: { id: payload.villageId },
               });
+
+              if (!villageExists) {
+                failed.push({
+                  localId,
+                  reason: "Village not yet on server — will retry",
+                });
+                continue;
+              }
+
+              // Check if household with this number already exists
+              const existingHousehold = await prisma.household.findUnique({
+                where: { householdNumber: payload.householdNumber },
+              });
+
+              if (existingHousehold) {
+                // Update existing instead of creating new
+                await prisma.household.update({
+                  where: { id: existingHousehold.id },
+                  data: { ...payload, syncedAt: new Date() },
+                });
+              } else {
+                await prisma.household.upsert({
+                  where: { localId },
+                  update: { ...payload, syncedAt: new Date() },
+                  create: {
+                    ...payload,
+                    localId,
+                    registeredByUserId: req.user.id,
+                    syncedAt: new Date(),
+                    householdNumber:
+                      payload.householdNumber ||
+                      payload.localId.substring(0, 8).toUpperCase(),
+                  },
+                });
+              }
+              break;
+            } catch (err) {
+              console.error(`[SYNC] Household error:`, err.message);
+              failed.push({ localId, reason: err.message });
               continue;
             }
-
-            await prisma.household.upsert({
-              where: { localId },
-              update: { ...payload, syncedAt: new Date() },
-              create: {
-                ...payload,
-                localId,
-                registeredByUserId: req.user.id,
-                syncedAt: new Date(),
-                householdNumber:
-                  payload.householdNumber ||
-                  payload.localId.substring(0, 8).toUpperCase(),
-              },
-            });
-            break;
           }
 
           case "MEMBER": {
+            console.log(
+              "[SYNC DEBUG] Member payload:",
+              JSON.stringify(
+                {
+                  localId,
+                  householdId: payload.householdId,
+                  fullName: payload.fullName,
+                },
+                null,
+                2,
+              ),
+            );
+
             // Check if household exists before saving member
             const householdExists = await prisma.household.findFirst({
               where: {
@@ -81,6 +113,11 @@ export const syncBatch = async (req, res, next) => {
                 ],
               },
             });
+
+            console.log(
+              "[SYNC DEBUG] Household exists?",
+              householdExists ? "YES" : "NO",
+            );
 
             if (!householdExists) {
               failed.push({

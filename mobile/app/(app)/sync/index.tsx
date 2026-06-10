@@ -41,7 +41,6 @@ export default function SyncScreen() {
     const count = await getPendingCount();
     setPendingCount(count);
 
-    // Group by type
     const grouped: Record<string, number> = {};
     records.forEach((r) => {
       grouped[r.type] = (grouped[r.type] || 0) + 1;
@@ -84,7 +83,6 @@ export default function SyncScreen() {
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
-          {/* Main sync button */}
           <TouchableOpacity
             style={[
               styles.syncBtn,
@@ -127,7 +125,6 @@ export default function SyncScreen() {
             )}
           </TouchableOpacity>
 
-          {/* Last result */}
           {lastResult && (
             <View
               style={[
@@ -163,7 +160,6 @@ export default function SyncScreen() {
             </View>
           )}
 
-          {/* Pending breakdown */}
           {pendingItems.length > 0 && (
             <View style={styles.pendingCard}>
               <Text style={styles.pendingTitle}>Pending Records</Text>
@@ -180,9 +176,7 @@ export default function SyncScreen() {
                               ? "calendar-outline"
                               : item.type === "REFERRAL"
                                 ? "medical-outline"
-                                : item.type === "IMMUNISATION"
-                                  ? "shield-checkmark-outline"
-                                  : "flask-outline"
+                                : "flask-outline"
                       }
                       size={16}
                       color={COLORS.primary}
@@ -197,7 +191,6 @@ export default function SyncScreen() {
             </View>
           )}
 
-          {/* Info */}
           <View style={styles.infoCard}>
             <Ionicons
               name="information-circle-outline"

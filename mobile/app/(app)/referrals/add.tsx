@@ -24,17 +24,20 @@ interface Facility {
   id: string;
   name: string;
 }
-interface Visit {
-  id: string;
-  visited_at: string;
-  symptoms: string;
-}
 
 export default function AddReferralScreen() {
   const language = useAppStore((s) => s.language);
-  const selectedMemberId = useAppStore((s) => s.selectedMemberId);
-  const selectedHouseholdId = useAppStore((s) => s.selectedHouseholdId);
-  const selectedVisitId = useAppStore((s) => s.selectedVisitId);
+
+  // ─── FIX: Read from getState() directly to avoid race condition ───
+  // useAppStore hook may not reflect latest Zustand state when this screen
+  // first mounts immediately after router.push() from member detail screen.
+  // getState() always returns the current value synchronously.
+  const selectedMemberId =
+    useAppStore((s) => s.selectedMemberId) ??
+    useAppStore.getState().selectedMemberId;
+  const selectedVisitId =
+    useAppStore((s) => s.selectedVisitId) ??
+    useAppStore.getState().selectedVisitId;
 
   const [memberName, setMemberName] = useState("");
   const [lastVisitId, setLastVisitId] = useState("");
@@ -49,43 +52,46 @@ export default function AddReferralScreen() {
 
   useEffect(() => {
     loadContext();
-  }, []);
+  }, [selectedMemberId]); // ─── FIX: re-run if selectedMemberId changes
 
   const loadContext = async () => {
     try {
       const db = await getDb();
 
-      if (selectedMemberId) {
-        // Try all possible ID formats
+      // ─── FIX: Re-read from store at call time in case hook value is stale
+      const memberId =
+        selectedMemberId ?? useAppStore.getState().selectedMemberId;
+      const visitId = selectedVisitId ?? useAppStore.getState().selectedVisitId;
+
+      if (memberId) {
         const m = await db.getFirstAsync<{ full_name: string; id: string }>(
           "SELECT id, full_name FROM members WHERE id = ? OR local_id = ?",
-          [selectedMemberId, selectedMemberId],
+          [memberId, memberId],
         );
         if (m) {
           setMemberName(m.full_name);
 
-          // ✅ USE selectedVisitId DIRECTLY if available
-          if (selectedVisitId) {
-            setLastVisitId(selectedVisitId);
+          if (visitId) {
+            // Visit ID passed directly from visit flow
+            setLastVisitId(visitId);
           } else {
-            // Fallback: Find last visit for this member
+            // Fallback: find most recent visit for this member
             const v = await db.getFirstAsync<{ id: string }>(
-              `SELECT id FROM visits 
-           WHERE member_id = ? 
-           ORDER BY visited_at DESC LIMIT 1`,
+              `SELECT id FROM visits WHERE member_id = ? ORDER BY visited_at DESC LIMIT 1`,
               [m.id],
             );
             if (v) setLastVisitId(v.id);
+            // If still no visit — that is fine, visit_id is now optional
           }
         }
       }
 
-      // Load facilities from API
+      // Load facilities (non-blocking — failure is acceptable offline)
       try {
         const res = await api.get("/admin/facilities");
         setFacilities(res.data.data || []);
       } catch {
-        // No facilities — that's fine
+        // Offline or no facilities configured — silently ignore
       }
     } catch (err) {
       console.error("Load referral context error:", err);
@@ -93,25 +99,26 @@ export default function AddReferralScreen() {
   };
 
   const handleSave = async () => {
-    if (!selectedMemberId)
+    // ─── FIX: Re-read from store directly at save time — belt and braces
+    const memberId =
+      selectedMemberId ?? useAppStore.getState().selectedMemberId;
+
+    if (!memberId) {
       return Alert.alert(
-        "Error",
-        "No patient selected. Go back and select a patient first.",
+        "No Patient Selected",
+        "Go back and tap a patient, then tap Refer.",
       );
-    if (!reason)
+    }
+    if (!reason) {
       return Alert.alert("Required", "Please select a reason for referral.");
-    if (!lastVisitId)
-      return Alert.alert(
-        "Required",
-        "A visit must be recorded before creating a referral.",
-      );
+    }
+    // ─── FIX: visit_id is now optional — removed the hard block
 
     setSaving(true);
     try {
       const localId = Crypto.randomUUID();
       const db = await getDb();
 
-      // Calculate due date based on urgency
       const dueBy = new Date();
       if (urgency === "EMERGENCY") dueBy.setHours(dueBy.getHours() + 6);
       else if (urgency === "URGENT") dueBy.setDate(dueBy.getDate() + 2);
@@ -119,11 +126,11 @@ export default function AddReferralScreen() {
 
       const member = await db.getFirstAsync<{ id: string }>(
         "SELECT id FROM members WHERE id = ? OR local_id = ?",
-        [selectedMemberId, selectedMemberId],
+        [memberId, memberId],
       );
-      if (!member) throw new Error("Member not found");
+      if (!member) throw new Error("Member not found in local database.");
 
-      // Save to local SQLite
+      // ─── FIX: visit_id uses lastVisitId || null — no longer required
       await db.runAsync(
         `INSERT INTO referrals (
           id, local_id, visit_id, member_id, reason, urgency,
@@ -132,7 +139,7 @@ export default function AddReferralScreen() {
         [
           localId,
           localId,
-          lastVisitId,
+          lastVisitId || null,
           member.id,
           reason,
           urgency,
@@ -141,10 +148,9 @@ export default function AddReferralScreen() {
         ],
       );
 
-      // Enqueue for sync
       await enqueue("REFERRAL", {
         localId,
-        visitId: lastVisitId,
+        visitId: lastVisitId || null,
         memberId: member.id,
         destinationFacilityId: selectedFacilityId || null,
         reason,
