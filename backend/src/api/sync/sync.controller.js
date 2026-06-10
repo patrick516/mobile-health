@@ -47,8 +47,6 @@ export const syncBatch = async (req, res, next) => {
             });
 
             if (!villageExists) {
-              // Skip for now — village needs to sync first
-              // But we don't want to fail — just mark as needing retry
               failed.push({
                 localId,
                 reason: "Village not yet on server — will retry",
@@ -72,6 +70,19 @@ export const syncBatch = async (req, res, next) => {
             break;
           }
           case "MEMBER": {
+            // Check if household exists before saving member
+            const householdExists = await prisma.household.findFirst({
+              where: { id: payload.householdId, localId: payload.householdId },
+            });
+
+            if (!householdExists) {
+              failed.push({
+                localId,
+                reason: "Household not yet on server — will retry",
+              });
+              continue;
+            }
+
             await prisma.householdMember.upsert({
               where: { localId },
               update: { ...payload, syncedAt: new Date() },
@@ -80,11 +91,14 @@ export const syncBatch = async (req, res, next) => {
             break;
           }
           case "VISIT": {
+            // Remove dispenses field if it's an empty array
+            const { dispenses, ...visitPayload } = payload;
+
             await prisma.visit.upsert({
               where: { localId },
-              update: { ...payload, syncedAt: new Date() },
+              update: { ...visitPayload, syncedAt: new Date() },
               create: {
-                ...payload,
+                ...visitPayload,
                 localId,
                 chwId: req.user.id,
                 syncedAt: new Date(),
@@ -93,11 +107,14 @@ export const syncBatch = async (req, res, next) => {
             break;
           }
           case "REFERRAL": {
+            // Remove 'notes' field - it doesn't exist in the schema
+            const { notes, ...referralPayload } = payload;
+
             await prisma.referral.upsert({
               where: { localId },
-              update: { ...payload, syncedAt: new Date() },
+              update: { ...referralPayload, syncedAt: new Date() },
               create: {
-                ...payload,
+                ...referralPayload,
                 localId,
                 referringUserId: req.user.id,
                 syncedAt: new Date(),

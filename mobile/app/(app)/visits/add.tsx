@@ -206,7 +206,7 @@ export default function AddVisitScreen() {
       }
 
       // Enqueue visit for sync
-      await enqueue("VISIT", {
+      const visitPayload: any = {
         localId: visitId,
         memberId: member.id,
         householdId: selectedHouseholdId,
@@ -221,9 +221,14 @@ export default function AddVisitScreen() {
         gpsLat,
         gpsLng,
         notes: notes.trim() || null,
-        dispenses: dispensePayloads,
-      });
+      };
 
+      // Only add dispenses if there are any
+      if (dispensePayloads.length > 0) {
+        visitPayload.dispenses = dispensePayloads;
+      }
+
+      await enqueue("VISIT", visitPayload);
       // If referral needed, go straight to referral screen
       if (referralNeeded) {
         // Set both the member AND the visit ID so referral screen has everything
