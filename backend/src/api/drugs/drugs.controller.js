@@ -17,9 +17,17 @@ export const getStock = async (req, res, next) => {
     const { userId } = req.query;
     const targetUser = userId || req.user.id;
 
+    // Admin sees all stock, others see only their own
+    const where = ["ADMIN", "NURSE", "DISTRICT_OFFICER"].includes(req.user.role)
+      ? {} // Admin sees everyone
+      : { userId: req.user.id }; // CCW sees only own
+
     const stock = await prisma.drugStock.findMany({
-      where: { userId: targetUser },
-      include: { drug: true },
+      where,
+      include: {
+        drug: true,
+        user: { select: { id: true, fullName: true, role: true } },
+      },
       orderBy: { drug: { nameEnglish: "asc" } },
     });
     res.json({ success: true, data: stock });
@@ -54,12 +62,10 @@ export const createStockRequest = async (req, res, next) => {
   try {
     const { drugId, quantityRequested, notes } = req.body;
     if (!drugId || !quantityRequested) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "drugId and quantityRequested are required.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "drugId and quantityRequested are required.",
+      });
     }
     const request = await prisma.stockRequest.create({
       data: {
