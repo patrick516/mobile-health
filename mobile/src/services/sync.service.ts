@@ -1,6 +1,47 @@
 import NetInfo from "@react-native-community/netinfo";
 import { getPending, markSynced, incrementRetry } from "../db/sync-queue";
 import api from "./api";
+import { getDb } from "../db/schema";
+
+// Download drug stock from server
+const downloadDrugStock = async () => {
+  try {
+    const response = await api.get("/drugs/stock");
+    const stockData = response.data.data;
+
+    if (!stockData || stockData.length === 0) {
+      console.log("[SYNC] No drug stock to download");
+      return;
+    }
+
+    const db = await getDb();
+
+    for (const item of stockData) {
+      // Insert or replace drug stock in local database
+      await db.runAsync(
+        `INSERT OR REPLACE INTO drug_stock (
+          id, drug_id, drug_code, name_english, name_chichewa, 
+          unit, quantity_current, quantity_minimum, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          item.id,
+          item.drugId,
+          item.drug.drugCode,
+          item.drug.nameEnglish,
+          item.drug.nameChichewa,
+          item.drug.unit,
+          item.quantityCurrent,
+          item.quantityMinimum,
+          new Date().toISOString(),
+        ],
+      );
+    }
+
+    console.log(`[SYNC] Downloaded ${stockData.length} drug stock records`);
+  } catch (err) {
+    console.error("[SYNC] Failed to download drug stock:", err);
+  }
+};
 
 export const runSync = async (): Promise<{
   synced: number;
@@ -16,11 +57,12 @@ export const runSync = async (): Promise<{
     const pending = await getPending();
     if (pending.length === 0) {
       console.log("[SYNC] Nothing to sync");
+      // Still try to download latest data
+      await downloadDrugStock();
       return { synced: 0, failed: 0 };
     }
 
     console.log(`[SYNC] Sending ${pending.length} records...`);
-    console.log("[SYNC] Records:", JSON.stringify(pending, null, 2)); // ← add this
 
     const BATCH_SIZE = 20;
     let totalSynced = 0;
@@ -38,8 +80,6 @@ export const runSync = async (): Promise<{
           })),
         });
 
-        console.log("[SYNC] Response:", JSON.stringify(response.data)); // ← add this
-
         const { confirmed, failed } = response.data;
 
         if (confirmed?.length > 0) {
@@ -48,7 +88,7 @@ export const runSync = async (): Promise<{
         }
 
         if (failed?.length > 0) {
-          console.log("[SYNC] Failed records:", JSON.stringify(failed)); // ← add this
+          console.log("[SYNC] Failed records:", JSON.stringify(failed));
           await incrementRetry(
             failed.map((f: { localId: string }) => f.localId),
           );
@@ -60,6 +100,9 @@ export const runSync = async (): Promise<{
         totalFailed += batch.length;
       }
     }
+
+    // After uploading, download latest drug stock
+    await downloadDrugStock();
 
     return { synced: totalSynced, failed: totalFailed };
   } catch (err) {

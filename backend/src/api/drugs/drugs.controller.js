@@ -39,16 +39,21 @@ export const getStock = async (req, res, next) => {
 export const updateStock = async (req, res, next) => {
   try {
     const { drugId } = req.params;
-    const { quantityCurrent } = req.body;
+    const { quantityCurrent, userId } = req.body;
+
+    // Admin can set stock for any user, others only for themselves
+    const targetUserId =
+      req.user.role === "ADMIN" && userId ? userId : req.user.id;
 
     const stock = await prisma.drugStock.upsert({
-      where: { userId_drugId: { userId: req.user.id, drugId } },
-      update: { quantityCurrent },
+      where: { userId_drugId: { userId: targetUserId, drugId } },
+      update: { quantityCurrent, lastRestockedAt: new Date() },
       create: {
-        userId: req.user.id,
+        userId: targetUserId,
         drugId,
         quantityCurrent,
         quantityMinimum: 5,
+        lastRestockedAt: new Date(),
       },
       include: { drug: true },
     });
