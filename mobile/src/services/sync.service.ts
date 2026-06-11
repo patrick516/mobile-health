@@ -20,8 +20,8 @@ export const runSync = async (): Promise<{
     }
 
     console.log(`[SYNC] Sending ${pending.length} records...`);
+    console.log("[SYNC] Records:", JSON.stringify(pending, null, 2)); // ← add this
 
-    // Send in batches of 20
     const BATCH_SIZE = 20;
     let totalSynced = 0;
     let totalFailed = 0;
@@ -38,6 +38,8 @@ export const runSync = async (): Promise<{
           })),
         });
 
+        console.log("[SYNC] Response:", JSON.stringify(response.data)); // ← add this
+
         const { confirmed, failed } = response.data;
 
         if (confirmed?.length > 0) {
@@ -46,19 +48,19 @@ export const runSync = async (): Promise<{
         }
 
         if (failed?.length > 0) {
+          console.log("[SYNC] Failed records:", JSON.stringify(failed)); // ← add this
           await incrementRetry(
             failed.map((f: { localId: string }) => f.localId),
           );
           totalFailed += failed.length;
         }
-      } catch (err) {
-        console.error("[SYNC] Batch failed:", err);
+      } catch (err: any) {
+        console.error("[SYNC] Batch error:", err.response?.data || err.message);
         await incrementRetry(batch.map((r) => r.localId));
         totalFailed += batch.length;
       }
     }
 
-    console.log(`[SYNC] Done — ${totalSynced} synced, ${totalFailed} failed`);
     return { synced: totalSynced, failed: totalFailed };
   } catch (err) {
     console.error("[SYNC] Unexpected error:", err);

@@ -136,14 +136,65 @@ export const syncBatch = async (req, res, next) => {
           }
 
           case "VISIT": {
-            // Remove dispenses field if it exists (it's handled separately)
-            const { dispenses, ...visitPayload } = payload;
+            const { dispenses, ...vp } = payload;
+
+            // Resolve memberId from localId → server id
+            const member = await prisma.householdMember.findFirst({
+              where: {
+                OR: [{ id: vp.memberId }, { localId: vp.memberId }],
+              },
+            });
+            if (!member) {
+              failed.push({
+                localId,
+                reason: "Member not yet on server — will retry",
+              });
+              continue;
+            }
+
+            // Resolve householdId from localId → server id
+            const household = await prisma.household.findFirst({
+              where: {
+                OR: [{ id: vp.householdId }, { localId: vp.householdId }],
+              },
+            });
+            if (!household) {
+              failed.push({
+                localId,
+                reason: "Household not yet on server — will retry",
+              });
+              continue;
+            }
+
+            const visitData = {
+              memberId: member.id, // ← resolved server id
+              householdId: household.id, // ← resolved server id
+              visitedAt: new Date(vp.visitedAt || vp.visited_at),
+              visitType: vp.visitType || vp.visit_type,
+              symptoms: vp.symptoms
+                ? typeof vp.symptoms === "string"
+                  ? JSON.parse(vp.symptoms)
+                  : vp.symptoms
+                : null,
+              temperature: vp.temperature || null,
+              muacMm: vp.muacMm || vp.muac_mm || null,
+              muacStatus: vp.muacStatus || vp.muac_status || null,
+              dangerSigns: vp.dangerSigns
+                ? typeof vp.dangerSigns === "string"
+                  ? JSON.parse(vp.dangerSigns)
+                  : vp.dangerSigns
+                : null,
+              referralNeeded: vp.referralNeeded ?? vp.referral_needed ?? false,
+              gpsLat: vp.gpsLat || vp.gps_lat || null,
+              gpsLng: vp.gpsLng || vp.gps_lng || null,
+              notes: vp.notes || null,
+            };
 
             await prisma.visit.upsert({
               where: { localId },
-              update: { ...visitPayload, syncedAt: new Date() },
+              update: { ...visitData, syncedAt: new Date() },
               create: {
-                ...visitPayload,
+                ...visitData,
                 localId,
                 chwId: req.user.id,
                 syncedAt: new Date(),
@@ -151,16 +202,52 @@ export const syncBatch = async (req, res, next) => {
             });
             break;
           }
-
           case "REFERRAL": {
-            // Remove notes field - it doesn't exist in the schema
-            const { notes, ...referralPayload } = payload;
+            const rp = payload;
+
+            // Resolve visitId from localId → server id
+            const visit = await prisma.visit.findFirst({
+              where: {
+                OR: [{ id: rp.visitId }, { localId: rp.visitId }],
+              },
+            });
+            if (!visit) {
+              failed.push({
+                localId,
+                reason: "Visit not yet on server — will retry",
+              });
+              continue;
+            }
+
+            // Resolve memberId from localId → server id
+            const member = await prisma.householdMember.findFirst({
+              where: {
+                OR: [{ id: rp.memberId }, { localId: rp.memberId }],
+              },
+            });
+            if (!member) {
+              failed.push({
+                localId,
+                reason: "Member not yet on server — will retry",
+              });
+              continue;
+            }
+
+            const referralData = {
+              visitId: visit.id, // ← resolved server id
+              memberId: member.id, // ← resolved server id
+              destinationFacilityId: rp.destinationFacilityId || null,
+              reason: rp.reason,
+              urgency: rp.urgency,
+              status: rp.status || "PENDING",
+              dueBy: rp.dueBy ? new Date(rp.dueBy) : null,
+            };
 
             await prisma.referral.upsert({
               where: { localId },
-              update: { ...referralPayload, syncedAt: new Date() },
+              update: { ...referralData, syncedAt: new Date() },
               create: {
-                ...referralPayload,
+                ...referralData,
                 localId,
                 referringUserId: req.user.id,
                 syncedAt: new Date(),
