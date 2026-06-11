@@ -127,11 +127,102 @@ export const syncBatch = async (req, res, next) => {
               continue;
             }
 
-            await prisma.householdMember.upsert({
+            const member = await prisma.householdMember.upsert({
               where: { localId },
               update: { ...payload, syncedAt: new Date() },
               create: { ...payload, localId, syncedAt: new Date() },
             });
+
+            // Auto-create immunisation schedule for children under 5
+            const dob = payload.dateOfBirth
+              ? new Date(payload.dateOfBirth)
+              : null;
+            const ageYears = dob
+              ? (Date.now() - dob.getTime()) / (1000 * 60 * 60 * 24 * 365)
+              : payload.estimatedAge;
+
+            if (dob && ageYears < 5) {
+              const VACCINE_SCHEDULE = [
+                { code: "BCG", dose: 1, weeksAfterBirth: 0 },
+                { code: "OPV0", dose: 1, weeksAfterBirth: 0 },
+                { code: "OPV1", dose: 1, weeksAfterBirth: 6 },
+                { code: "OPV2", dose: 2, weeksAfterBirth: 10 },
+                { code: "OPV3", dose: 3, weeksAfterBirth: 14 },
+                { code: "DPT1", dose: 1, weeksAfterBirth: 6 },
+                { code: "DPT2", dose: 2, weeksAfterBirth: 10 },
+                { code: "DPT3", dose: 3, weeksAfterBirth: 14 },
+                { code: "PCV1", dose: 1, weeksAfterBirth: 6 },
+                { code: "PCV2", dose: 2, weeksAfterBirth: 10 },
+                { code: "PCV3", dose: 3, weeksAfterBirth: 14 },
+                { code: "ROTA1", dose: 1, weeksAfterBirth: 6 },
+                { code: "ROTA2", dose: 2, weeksAfterBirth: 10 },
+                { code: "MEASLES1", dose: 1, weeksAfterBirth: 36 },
+                { code: "MEASLES2", dose: 2, weeksAfterBirth: 60 },
+                { code: "VITA1", dose: 1, weeksAfterBirth: 24 },
+                { code: "DEWORM1", dose: 1, weeksAfterBirth: 48 },
+              ];
+
+              for (const v of VACCINE_SCHEDULE) {
+                const dueDate = new Date(dob);
+                dueDate.setDate(dueDate.getDate() + v.weeksAfterBirth * 7);
+
+                await prisma.immunisationSchedule.upsert({
+                  where: {
+                    memberId_vaccineCode_doseNumber: {
+                      memberId: member.id,
+                      vaccineCode: v.code,
+                      doseNumber: v.dose,
+                    },
+                  },
+                  update: {},
+                  create: {
+                    memberId: member.id,
+                    vaccineCode: v.code,
+                    doseNumber: v.dose,
+                    dueDate,
+                    status: dueDate < new Date() ? "OVERDUE" : "DUE",
+                  },
+                });
+              }
+              console.log(
+                `[SYNC] Created immunisation schedule for child ${member.fullName}`,
+              );
+            }
+
+            // Auto-create ANC schedule for pregnant women
+            if (payload.isPregnant && payload.lmpDate) {
+              const lmp = new Date(payload.lmpDate);
+              const ancSchedule = [
+                { ancNumber: 1, weeksFromLmp: 16 },
+                { ancNumber: 2, weeksFromLmp: 28 },
+                { ancNumber: 3, weeksFromLmp: 32 },
+                { ancNumber: 4, weeksFromLmp: 36 },
+              ];
+              for (const a of ancSchedule) {
+                const expectedDate = new Date(lmp);
+                expectedDate.setDate(
+                  expectedDate.getDate() + a.weeksFromLmp * 7,
+                );
+                await prisma.ancVisit.upsert({
+                  where: {
+                    memberId_ancNumber: {
+                      memberId: member.id,
+                      ancNumber: a.ancNumber,
+                    },
+                  },
+                  update: {},
+                  create: {
+                    memberId: member.id,
+                    ancNumber: a.ancNumber,
+                    expectedDate,
+                    status: "SCHEDULED",
+                  },
+                });
+              }
+              console.log(
+                `[SYNC] Created ANC schedule for pregnant woman ${member.fullName}`,
+              );
+            }
             break;
           }
 
@@ -167,8 +258,8 @@ export const syncBatch = async (req, res, next) => {
             }
 
             const visitData = {
-              memberId: member.id, // ← resolved server id
-              householdId: household.id, // ← resolved server id
+              memberId: member.id,
+              householdId: household.id,
               visitedAt: new Date(vp.visitedAt || vp.visited_at),
               visitType: vp.visitType || vp.visit_type,
               symptoms: vp.symptoms
@@ -202,6 +293,7 @@ export const syncBatch = async (req, res, next) => {
             });
             break;
           }
+
           case "REFERRAL": {
             const rp = payload;
 
@@ -234,8 +326,8 @@ export const syncBatch = async (req, res, next) => {
             }
 
             const referralData = {
-              visitId: visit.id, // ← resolved server id
-              memberId: member.id, // ← resolved server id
+              visitId: visit.id,
+              memberId: member.id,
               destinationFacilityId: rp.destinationFacilityId || null,
               reason: rp.reason,
               urgency: rp.urgency,

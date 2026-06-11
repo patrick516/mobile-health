@@ -4,14 +4,53 @@ import prisma from "../../config/db.js";
 export const getSchedules = async (req, res, next) => {
   try {
     const { memberId } = req.query;
+
+    const where = {
+      ...(memberId ? { memberId } : {}),
+      // Scope to CHW's zones
+      ...(req.user.zoneIds && req.user.zoneIds.length > 0
+        ? {
+            member: {
+              household: {
+                village: {
+                  zoneId: { in: req.user.zoneIds },
+                },
+              },
+            },
+          }
+        : {}),
+    };
+
     const schedules = await prisma.immunisationSchedule.findMany({
-      where: { ...(memberId ? { memberId } : {}) },
+      where,
       include: {
-        member: { select: { id: true, fullName: true, dateOfBirth: true } },
+        member: {
+          select: {
+            id: true,
+            fullName: true,
+            dateOfBirth: true,
+            household: {
+              include: { village: true },
+            },
+          },
+        },
       },
       orderBy: { dueDate: "asc" },
+      take: 500,
     });
-    res.json({ success: true, data: schedules });
+
+    // Transform to match mobile expectations
+    const data = schedules.map((s) => ({
+      id: s.id,
+      memberId: s.memberId,
+      vaccineCode: s.vaccineCode,
+      doseNumber: s.doseNumber,
+      dueDate: s.dueDate,
+      status: s.status,
+      givenAt: s.givenAt,
+    }));
+
+    res.json({ success: true, data });
   } catch (err) {
     next(err);
   }
@@ -29,7 +68,7 @@ export const getDue = async (req, res, next) => {
         dueDate: { lte: in14Days },
         member: {
           status: "ACTIVE",
-          ...(req.user.zoneIds.length > 0
+          ...(req.user.zoneIds && req.user.zoneIds.length > 0
             ? {
                 household: { village: { zoneId: { in: req.user.zoneIds } } },
               }
