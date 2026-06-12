@@ -71,13 +71,24 @@ export const getTrends = async (req, res, next) => {
     const from = new Date();
     from.setDate(from.getDate() - parseInt(days));
 
-    const visits = await prisma.visit.groupBy({
-      by: ["visitedAt"],
-      where: { visitedAt: { gte: from } },
-      _count: true,
-    });
+    // Use raw SQL to group by date only (truncate timestamp to day)
+    const visits = await prisma.$queryRaw`
+      SELECT 
+        DATE(visited_at) AS "visitedAt",
+        COUNT(*) AS "_count"
+      FROM visits
+      WHERE visited_at >= ${from}
+      GROUP BY DATE(visited_at)
+      ORDER BY DATE(visited_at) ASC
+    `;
 
-    res.json({ success: true, data: visits });
+    const data = visits.map((row) => ({
+      visitedAt: new Date(row.visitedAt).toISOString().split("T")[0],
+      count: Number(row._count),
+    }));
+    console.log("Trends data:", JSON.stringify(data));
+
+    res.json({ success: true, data });
   } catch (err) {
     next(err);
   }
@@ -144,6 +155,160 @@ export const getChwActivity = async (req, res, next) => {
     });
 
     res.json({ success: true, data: activity });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getSymptomTrends = async (req, res, next) => {
+  try {
+    const { days = 30 } = req.query;
+    const from = new Date();
+    from.setDate(from.getDate() - parseInt(days));
+
+    const visits = await prisma.visit.findMany({
+      where: {
+        visitedAt: { gte: from },
+        symptoms: { not: null },
+      },
+      select: { symptoms: true, visitedAt: true },
+    });
+
+    // Count each symptom code across all visits
+    const counts = {};
+    for (const v of visits) {
+      if (!v.symptoms) continue;
+      let arr;
+      try {
+        arr =
+          typeof v.symptoms === "string" ? JSON.parse(v.symptoms) : v.symptoms;
+      } catch {
+        continue;
+      }
+      for (const s of arr) {
+        counts[s] = (counts[s] || 0) + 1;
+      }
+    }
+
+    const data = Object.entries(counts)
+      .map(([symptom, count]) => ({ symptom, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getReferralStats = async (req, res, next) => {
+  try {
+    const { days = 30 } = req.query;
+    const from = new Date();
+    from.setDate(from.getDate() - parseInt(days));
+
+    const [total, completed, missed, pending] = await Promise.all([
+      prisma.referral.count({ where: { createdAt: { gte: from } } }),
+      prisma.referral.count({
+        where: {
+          createdAt: { gte: from },
+          status: { in: ["TREATED", "COMPLETED"] },
+        },
+      }),
+      prisma.referral.count({
+        where: { createdAt: { gte: from }, status: "MISSED" },
+      }),
+      prisma.referral.count({
+        where: {
+          createdAt: { gte: from },
+          status: { in: ["PENDING", "OVERDUE"] },
+        },
+      }),
+    ]);
+
+    const completionRate =
+      total > 0 ? Math.round((completed / total) * 100) : 0;
+    const missedRate = total > 0 ? Math.round((missed / total) * 100) : 0;
+
+    res.json({
+      success: true,
+      data: { total, completed, missed, pending, completionRate, missedRate },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getMuacTrends = async (req, res, next) => {
+  try {
+    const { days = 30 } = req.query;
+    const from = new Date();
+    from.setDate(from.getDate() - parseInt(days));
+
+    const [normal, moderate, severe] = await Promise.all([
+      prisma.visit.count({
+        where: { visitedAt: { gte: from }, muacStatus: "NORMAL" },
+      }),
+      prisma.visit.count({
+        where: {
+          visitedAt: { gte: from },
+          muacStatus: "MODERATE_MALNUTRITION",
+        },
+      }),
+      prisma.visit.count({
+        where: { visitedAt: { gte: from }, muacStatus: "SEVERE_MALNUTRITION" },
+      }),
+    ]);
+
+    const total = normal + moderate + severe;
+    res.json({
+      success: true,
+      data: [
+        {
+          status: "Normal (Green)",
+          count: normal,
+          pct: total > 0 ? Math.round((normal / total) * 100) : 0,
+        },
+        {
+          status: "Moderate (Yellow)",
+          count: moderate,
+          pct: total > 0 ? Math.round((moderate / total) * 100) : 0,
+        },
+        {
+          status: "Severe (Red)",
+          count: severe,
+          pct: total > 0 ? Math.round((severe / total) * 100) : 0,
+        },
+      ],
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getImmunisationCoverage = async (req, res, next) => {
+  try {
+    const [given, due, overdue, missed] = await Promise.all([
+      prisma.immunisationSchedule.count({ where: { status: "GIVEN" } }),
+      prisma.immunisationSchedule.count({ where: { status: "DUE" } }),
+      prisma.immunisationSchedule.count({ where: { status: "OVERDUE" } }),
+      prisma.immunisationSchedule.count({ where: { status: "MISSED" } }),
+    ]);
+
+    const total = given + due + overdue + missed;
+    const coverageRate = total > 0 ? Math.round((given / total) * 100) : 0;
+
+    res.json({
+      success: true,
+      data: [
+        { status: "Given", count: given, color: "#16a34a" },
+        { status: "Due", count: due, color: "#f59e0b" },
+        { status: "Overdue", count: overdue, color: "#dc2626" },
+        { status: "Missed", count: missed, color: "#6b7280" },
+      ],
+      coverageRate,
+      total,
+    });
   } catch (err) {
     next(err);
   }

@@ -57,8 +57,8 @@ export default function RecordImmunisationScreen() {
 
     const schedules = await db.getAllAsync<PendingVaccine>(
       `SELECT id as schedule_id, vaccine_code, dose_number, due_date, status
-       FROM immunisation_schedules WHERE member_id = ? AND status IN ('DUE','OVERDUE')
-       ORDER BY due_date ASC`,
+     FROM immunisation_schedules WHERE member_id = ? AND status IN ('DUE','OVERDUE')
+     ORDER BY due_date ASC`,
       [selectedMemberId],
     );
     setPending(schedules);

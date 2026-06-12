@@ -37,17 +37,36 @@ export default function ImmunisationsScreen() {
   const load = useCallback(async () => {
     try {
       const db = await getDb();
+
+      // DEBUG: Check what IDs exist
+      const members = await db.getAllAsync(
+        "SELECT id, local_id, full_name FROM members",
+      );
+      console.log("=== MEMBERS IN DB ===");
+      console.log(members);
+
+      const schedules = await db.getAllAsync(
+        "SELECT id, member_id, vaccine_code FROM immunisation_schedules",
+      );
+      console.log("=== SCHEDULES IN DB ===");
+      console.log(schedules);
+
       const rows = await db.getAllAsync<DueVaccine>(
         `SELECT
-           s.id as schedule_id, s.member_id, s.vaccine_code,
-           s.dose_number, s.due_date, s.status,
-           m.full_name, h.household_number, h.village_name
-         FROM immunisation_schedules s
-         LEFT JOIN members m ON m.id = s.member_id
-         LEFT JOIN households h ON h.id = m.household_id
-         WHERE s.status IN ('DUE', 'OVERDUE')
-         ORDER BY s.due_date ASC`,
+         s.id as schedule_id, s.member_id, s.vaccine_code,
+         s.dose_number, s.due_date, s.status,
+         m.full_name, h.household_number, h.village_name
+       FROM immunisation_schedules s
+       LEFT JOIN members m ON m.id = s.member_id
+       LEFT JOIN households h ON h.id = m.household_id
+       WHERE s.status IN ('DUE', 'OVERDUE')
+       ORDER BY s.due_date ASC`,
       );
+      console.log("=== JOIN RESULT (should have member names) ===");
+      console.log(
+        rows.map((r) => ({ full_name: r.full_name, member_id: r.member_id })),
+      );
+
       setDueVaccines(rows);
     } catch (err) {
       console.error("Load immunisations error:", err);
