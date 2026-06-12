@@ -58,6 +58,11 @@ export default function Trends() {
       api.get("/analytics/immunisation-coverage").then((r) => r.data),
   });
 
+  const { data: ancData } = useQuery({
+    queryKey: ["anc-attendance"],
+    queryFn: () =>
+      api.get("/analytics/anc-attendance").then((r) => r.data.data),
+  });
   return (
     <div className="space-y-6">
       {/* Controls */}
@@ -411,6 +416,64 @@ export default function Trends() {
         ) : (
           <div className="h-48 flex items-center justify-center text-gray-400 text-sm">
             No immunisation data available
+          </div>
+        )}
+      </div>
+
+      {/* ANC Attendance Rate */}
+      <div className="card p-6">
+        <h2 className="font-bold text-gray-900 mb-4">ANC Attendance Rate</h2>
+        {ancData ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-3xl font-bold text-pink-600">
+                {ancData.attendanceRate}%
+              </span>
+              <span className="text-sm text-gray-500">
+                {ancData.attended} of {ancData.total} ANC visits attended
+              </span>
+            </div>
+            <div className="w-full bg-gray-100 rounded-full h-3">
+              <div
+                className="bg-pink-500 h-3 rounded-full transition-all"
+                style={{ width: `${ancData.attendanceRate}%` }}
+              />
+            </div>
+            <div className="grid grid-cols-4 gap-3 pt-2">
+              {[
+                {
+                  label: "Attended",
+                  value: ancData.attended,
+                  color: "text-green-600",
+                },
+                {
+                  label: "Scheduled",
+                  value: ancData.scheduled,
+                  color: "text-blue-600",
+                },
+                {
+                  label: "Overdue",
+                  value: ancData.overdue,
+                  color: "text-yellow-600",
+                },
+                {
+                  label: "Missed",
+                  value: ancData.missed,
+                  color: "text-red-600",
+                },
+              ].map((s) => (
+                <div key={s.label} className="text-center">
+                  <div className={`text-2xl font-bold ${s.color}`}>
+                    {s.value}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">{s.label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="h-48 flex items-center justify-center text-gray-400 text-sm">
+            No ANC data available
           </div>
         )}
       </div>

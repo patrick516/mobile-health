@@ -9,17 +9,29 @@ const pullFromServer = async () => {
     const db = await getDb();
 
     // 1. Pull immunisation schedules for children in our households
-    const schedulesRes = await api.get("/immunisations/schedules");
+    const schedulesRes = await api.get("/immunisations/schedules", {
+      params: { _t: Date.now() },
+    });
     const schedules = schedulesRes.data.data || [];
-
     for (const s of schedules) {
+      // Resolve server memberId to local member id
+      // The server may have a different UUID than what's stored locally
+      const localMember = await db.getFirstAsync<{ id: string }>(
+        `SELECT id FROM members WHERE id = ? OR local_id = ?`,
+        [s.memberId, s.memberId],
+      );
+
+      // If no local match, try matching by the server's member localId
+      // stored in our members table
+      const resolvedMemberId = localMember?.id ?? s.memberId;
+
       await db.runAsync(
         `INSERT OR REPLACE INTO immunisation_schedules 
          (id, member_id, vaccine_code, dose_number, due_date, status, given_at)
          VALUES (?,?,?,?,?,?,?)`,
         [
           s.id,
-          s.memberId,
+          resolvedMemberId,
           s.vaccineCode,
           s.doseNumber,
           s.dueDate,
@@ -73,6 +85,12 @@ const pullFromServer = async () => {
         ],
       );
     }
+
+    // // Clean up orphaned schedules whose member_id doesn't match any local member
+    // await db.runAsync(
+    //   `DELETE FROM immunisation_schedules
+    //    WHERE member_id NOT IN (SELECT id FROM members)`,
+    // );
 
     console.log(
       `[SYNC] Pulled ${schedules.length} vaccine schedules, ${referrals.length} referrals, ${stocks.length} drug stocks`,

@@ -27,6 +27,7 @@ export const getSchedules = async (req, res, next) => {
         member: {
           select: {
             id: true,
+            localId: true,
             fullName: true,
             dateOfBirth: true,
             household: {
@@ -39,17 +40,16 @@ export const getSchedules = async (req, res, next) => {
       take: 500,
     });
 
-    // Transform to match mobile expectations
     const data = schedules.map((s) => ({
       id: s.id,
-      memberId: s.memberId,
+      memberId: s.member?.localId || s.memberId,
       vaccineCode: s.vaccineCode,
       doseNumber: s.doseNumber,
       dueDate: s.dueDate,
       status: s.status,
       givenAt: s.givenAt,
     }));
-
+    console.log("Schedules sample:", JSON.stringify(data[0]));
     res.json({ success: true, data });
   } catch (err) {
     next(err);

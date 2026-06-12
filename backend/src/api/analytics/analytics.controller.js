@@ -35,12 +35,10 @@ export const getOverview = async (req, res, next) => {
         where: { status: { in: ["PENDING", "OVERDUE"] } },
       }),
       prisma.referral.count({ where: { status: "MISSED" } }),
-      prisma.drugStock.count({
-        where: {
-          quantityCurrent: { lte: prisma.drugStock.fields?.quantityMinimum },
-          userId: req.user.zoneIds.length > 0 ? undefined : undefined,
-        },
-      }),
+      prisma.$queryRaw`
+  SELECT COUNT(*) as count FROM drug_stock 
+  WHERE quantity_current <= quantity_minimum
+`.then((r) => Number(r[0]?.count ?? 0)),
       prisma.immunisationSchedule.count({
         where: { status: { in: ["DUE", "OVERDUE"] } },
       }),
@@ -308,6 +306,27 @@ export const getImmunisationCoverage = async (req, res, next) => {
       ],
       coverageRate,
       total,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getAncAttendance = async (req, res, next) => {
+  try {
+    const [scheduled, attended, missed, overdue] = await Promise.all([
+      prisma.ancVisit.count({ where: { status: "SCHEDULED" } }),
+      prisma.ancVisit.count({ where: { status: "ATTENDED" } }),
+      prisma.ancVisit.count({ where: { status: "MISSED" } }),
+      prisma.ancVisit.count({ where: { status: "OVERDUE" } }),
+    ]);
+
+    const total = scheduled + attended + missed + overdue;
+    const attendanceRate = total > 0 ? Math.round((attended / total) * 100) : 0;
+
+    res.json({
+      success: true,
+      data: { scheduled, attended, missed, overdue, attendanceRate, total },
     });
   } catch (err) {
     next(err);

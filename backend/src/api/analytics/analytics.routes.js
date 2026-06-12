@@ -7,6 +7,7 @@ import {
   getReferralStats,
   getMuacTrends,
   getImmunisationCoverage,
+  getAncAttendance,
 } from "./analytics.controller.js";
 import { authenticate } from "../../middleware/auth.js";
 
@@ -20,5 +21,6 @@ router.get("/symptom-trends", getSymptomTrends);
 router.get("/referral-stats", getReferralStats);
 router.get("/muac-trends", getMuacTrends);
 router.get("/immunisation-coverage", getImmunisationCoverage);
+router.get("/anc-attendance", getAncAttendance);
 
 export default router;

@@ -47,19 +47,26 @@ export default function RecordImmunisationScreen() {
   }, []);
 
   const loadContext = async () => {
-    if (!selectedMemberId) return;
+    const memberId =
+      selectedMemberId ?? useAppStore.getState().selectedMemberId;
+    if (!memberId) return;
     const db = await getDb();
-    const m = await db.getFirstAsync<{ full_name: string }>(
-      "SELECT full_name FROM members WHERE id = ? OR local_id = ?",
-      [selectedMemberId, selectedMemberId],
+
+    // Find member by either id or local_id
+    const m = await db.getFirstAsync<{ full_name: string; id: string }>(
+      "SELECT id, full_name FROM members WHERE id = ? OR local_id = ?",
+      [memberId, memberId],
     );
     if (m) setMemberName(m.full_name);
+
+    // Use the actual DB id (not the passed-in memberId) for schedule lookup
+    const actualId = m?.id ?? memberId;
 
     const schedules = await db.getAllAsync<PendingVaccine>(
       `SELECT id as schedule_id, vaccine_code, dose_number, due_date, status
      FROM immunisation_schedules WHERE member_id = ? AND status IN ('DUE','OVERDUE')
      ORDER BY due_date ASC`,
-      [selectedMemberId],
+      [actualId],
     );
     setPending(schedules);
     if (schedules.length > 0) {
@@ -69,7 +76,9 @@ export default function RecordImmunisationScreen() {
   };
 
   const handleSave = async () => {
-    if (!selectedMemberId) return Alert.alert("Error", "No patient selected.");
+    const memberId =
+      selectedMemberId ?? useAppStore.getState().selectedMemberId;
+    if (!memberId) return Alert.alert("Error", "No patient selected.");
     if (!selectedVaccine)
       return Alert.alert("Required", "Please select a vaccine.");
 
@@ -77,10 +86,9 @@ export default function RecordImmunisationScreen() {
     try {
       const localId = Crypto.randomUUID();
       const db = await getDb();
-
       const member = await db.getFirstAsync<{ id: string }>(
         "SELECT id FROM members WHERE id = ? OR local_id = ?",
-        [selectedMemberId, selectedMemberId],
+        [memberId, memberId],
       );
       if (!member) throw new Error("Member not found");
 
