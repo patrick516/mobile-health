@@ -18,6 +18,10 @@ export const syncBatch = async (req, res, next) => {
       try {
         const { type, localId, payload } = record;
 
+        console.log(
+          `[SYNC] Processing record: type=${type}, localId=${localId}`,
+        );
+
         switch (type) {
           case "VILLAGE": {
             await prisma.village.upsert({
@@ -43,7 +47,6 @@ export const syncBatch = async (req, res, next) => {
 
           case "HOUSEHOLD": {
             try {
-              // Check if village exists on server
               const villageExists = await prisma.village.findFirst({
                 where: { id: payload.villageId },
               });
@@ -56,13 +59,11 @@ export const syncBatch = async (req, res, next) => {
                 continue;
               }
 
-              // Check if household with this number already exists
               const existingHousehold = await prisma.household.findUnique({
                 where: { householdNumber: payload.householdNumber },
               });
 
               if (existingHousehold) {
-                // Update existing instead of creating new
                 await prisma.household.update({
                   where: { id: existingHousehold.id },
                   data: { ...payload, syncedAt: new Date() },
@@ -104,7 +105,6 @@ export const syncBatch = async (req, res, next) => {
               ),
             );
 
-            // Check if household exists before saving member
             const householdExists = await prisma.household.findFirst({
               where: {
                 OR: [
@@ -133,7 +133,6 @@ export const syncBatch = async (req, res, next) => {
               create: { ...payload, localId, syncedAt: new Date() },
             });
 
-            // Auto-create immunisation schedule for children under 5
             const dob = payload.dateOfBirth
               ? new Date(payload.dateOfBirth)
               : null;
@@ -189,7 +188,6 @@ export const syncBatch = async (req, res, next) => {
               );
             }
 
-            // Auto-create ANC schedule for pregnant women
             if (payload.isPregnant && payload.lmpDate) {
               const lmp = new Date(payload.lmpDate);
               const ancSchedule = [
@@ -229,7 +227,6 @@ export const syncBatch = async (req, res, next) => {
           case "VISIT": {
             const { dispenses, ...vp } = payload;
 
-            // Resolve memberId from localId → server id
             const member = await prisma.householdMember.findFirst({
               where: {
                 OR: [{ id: vp.memberId }, { localId: vp.memberId }],
@@ -243,7 +240,6 @@ export const syncBatch = async (req, res, next) => {
               continue;
             }
 
-            // Resolve householdId from localId → server id
             const household = await prisma.household.findFirst({
               where: {
                 OR: [{ id: vp.householdId }, { localId: vp.householdId }],
@@ -295,15 +291,37 @@ export const syncBatch = async (req, res, next) => {
           }
 
           case "REFERRAL": {
+            console.log(
+              `[SYNC] Processing REFERRAL update:`,
+              JSON.stringify(
+                {
+                  localId,
+                  payload: {
+                    id: payload.id,
+                    visitId: payload.visitId,
+                    memberId: payload.memberId,
+                    reason: payload.reason,
+                    urgency: payload.urgency,
+                    status: payload.status,
+                    dueBy: payload.dueBy,
+                  },
+                },
+                null,
+                2,
+              ),
+            );
+
             const rp = payload;
 
-            // Resolve visitId from localId → server id
             const visit = await prisma.visit.findFirst({
               where: {
                 OR: [{ id: rp.visitId }, { localId: rp.visitId }],
               },
             });
             if (!visit) {
+              console.log(
+                `[SYNC] REFERRAL failed: Visit not found for ${rp.visitId}`,
+              );
               failed.push({
                 localId,
                 reason: "Visit not yet on server — will retry",
@@ -311,13 +329,15 @@ export const syncBatch = async (req, res, next) => {
               continue;
             }
 
-            // Resolve memberId from localId → server id
             const member = await prisma.householdMember.findFirst({
               where: {
                 OR: [{ id: rp.memberId }, { localId: rp.memberId }],
               },
             });
             if (!member) {
+              console.log(
+                `[SYNC] REFERRAL failed: Member not found for ${rp.memberId}`,
+              );
               failed.push({
                 localId,
                 reason: "Member not yet on server — will retry",
@@ -334,6 +354,10 @@ export const syncBatch = async (req, res, next) => {
               status: rp.status || "PENDING",
               dueBy: rp.dueBy ? new Date(rp.dueBy) : null,
             };
+
+            console.log(
+              `[SYNC] Updating referral to status: ${referralData.status}`,
+            );
 
             await prisma.referral.upsert({
               where: { localId },

@@ -12,6 +12,7 @@ import DHIS2Export from "./pages/export/DHIS2Export";
 import Users from "./pages/admin/Users";
 import Geography from "./pages/admin/Geography";
 import Allocations from "./pages/admin/Allocations";
+import Reports from "./pages/reports/Reports";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token);
@@ -46,6 +47,7 @@ export default function App() {
           <Route path="drugs" element={<DrugStock />} />
           <Route path="analytics" element={<Trends />} />
           <Route path="export" element={<DHIS2Export />} />
+          <Route path="reports" element={<Reports />} />
           <Route
             path="admin/users"
             element={

@@ -7,12 +7,14 @@ import {
   TouchableOpacity,
   StatusBar,
   RefreshControl,
+  Alert,
 } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { COLORS, SIZES, SHADOWS } from "../../../constants/theme";
 import { getDb } from "../../../src/db/schema";
 import { useAppStore } from "../../../src/store";
+import { enqueue } from "../../../src/db/sync-queue";
 
 interface Referral {
   id: string;
@@ -74,6 +76,65 @@ export default function ReferralsScreen() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const markAsCompleted = async (referral: Referral) => {
+    if (referral.status === "COMPLETED") {
+      Alert.alert(
+        "Already Completed",
+        "This referral is already marked as completed.",
+      );
+      return;
+    }
+
+    Alert.alert(
+      "Mark as Completed",
+      `Have you followed up with ${referral.member_name || "the patient"} and confirmed treatment worked?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Yes, Complete",
+          onPress: async () => {
+            try {
+              const db = await getDb();
+
+              // Update local status
+              await db.runAsync(
+                `UPDATE referrals SET status = 'COMPLETED', synced = 0 WHERE id = ?`,
+                [referral.id],
+              );
+
+              // Enqueue for sync - send ALL required fields
+              await enqueue("REFERRAL", {
+                id: referral.id,
+                localId: referral.local_id,
+                visitId: referral.visit_id,
+                memberId: referral.member_id,
+                reason: referral.reason,
+                urgency: referral.urgency,
+                status: "COMPLETED",
+                dueBy: referral.due_by,
+                destinationFacilityId: null,
+              });
+
+              // Refresh the list
+              await load();
+
+              Alert.alert(
+                "Success",
+                "Referral marked as completed. It will sync to the server.",
+              );
+            } catch (err) {
+              console.error("Mark as completed error:", err);
+              Alert.alert(
+                "Error",
+                "Failed to mark as completed. Please try again.",
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
 
   const filtered =
     filter === "ALL"
@@ -193,7 +254,7 @@ export default function ReferralsScreen() {
         </View>
       ) : null}
 
-      {/* Bottom row */}
+      {/* Bottom row with Complete button */}
       <View style={styles.cardFooter}>
         <View
           style={[
@@ -231,6 +292,19 @@ export default function ReferralsScreen() {
             {item.urgency}
           </Text>
         </View>
+        {(item.status === "TREATED" || item.status === "FEEDBACK_SENT") && (
+          <TouchableOpacity
+            style={styles.completeBtn}
+            onPress={() => markAsCompleted(item)}
+          >
+            <Ionicons
+              name="checkmark-done-circle-outline"
+              size={16}
+              color={COLORS.white}
+            />
+            <Text style={styles.completeBtnText}>Complete</Text>
+          </TouchableOpacity>
+        )}
         {!item.synced ? (
           <View style={styles.unsyncedBadge}>
             <Ionicons
@@ -430,6 +504,21 @@ const styles = StyleSheet.create({
     borderRadius: SIZES.radiusFull,
   },
   urgencyText: { fontSize: 10, fontWeight: "600" },
+  completeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: COLORS.primary,
+    borderRadius: SIZES.radiusMd,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginLeft: "auto",
+  },
+  completeBtnText: {
+    color: COLORS.white,
+    fontSize: 10,
+    fontWeight: "bold",
+  },
   unsyncedBadge: {
     flexDirection: "row",
     alignItems: "center",

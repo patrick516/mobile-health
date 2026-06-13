@@ -172,6 +172,15 @@ export const initDb = async (): Promise<void> => {
         gps_lng REAL,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
+      CREATE TABLE IF NOT EXISTS notifications (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        type TEXT NOT NULL,
+        related_id TEXT,
+        is_read INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
     `);
     console.log("[DB] SQLite initialised successfully");
   } catch (err) {

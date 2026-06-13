@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -6,8 +6,10 @@ import {
   FlatList,
   TouchableOpacity,
   StatusBar,
+  RefreshControl,
+  Alert,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { COLORS, SIZES, SHADOWS } from "../../../constants/theme";
 import { getDb } from "../../../src/db/schema";
@@ -15,141 +17,84 @@ import { useAppStore } from "../../../src/store";
 
 interface Notification {
   id: string;
-  type: string;
   title: string;
-  body: string;
-  read: number;
+  message: string;
+  type: string;
+  related_id: string;
+  is_read: number;
   created_at: string;
-  action_id?: string;
 }
 
 export default function NotificationsScreen() {
   const language = useAppStore((s) => s.language);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Generate smart notifications from local data
-  useEffect(() => {
-    generateNotifications();
-  }, []);
-
-  const generateNotifications = async () => {
+  const loadNotifications = async () => {
     try {
       const db = await getDb();
-      const generated: Notification[] = [];
 
-      // Overdue referrals
-      const overdueReferrals = await db.getAllAsync<{
-        id: string;
-        member_name: string;
-        created_at: string;
-      }>(
-        `SELECT r.id, m.full_name as member_name, r.created_at
-         FROM referrals r
-         LEFT JOIN members m ON m.id = r.member_id
-         WHERE r.status = 'PENDING'
-         AND r.due_by < datetime('now')
-         LIMIT 5`,
+      // Get all notifications from the notifications table
+      const rows = await db.getAllAsync<Notification>(
+        `SELECT * FROM notifications ORDER BY created_at DESC`,
       );
-      overdueReferrals.forEach((r) => {
-        generated.push({
-          id: `ref-${r.id}`,
-          type: "OVERDUE_REFERRAL",
-          title: "⚠ Overdue Referral",
-          body: `${r.member_name || "A patient"} has not arrived at the clinic yet.`,
-          read: 0,
-          created_at: r.created_at,
-          action_id: r.id,
-        });
-      });
 
-      // Vaccines due
-      const vaccinesDue = await db.getAllAsync<{
-        member_id: string;
-        full_name: string;
-        vaccine_code: string;
-      }>(
-        `SELECT s.member_id, m.full_name, s.vaccine_code
-         FROM immunisation_schedules s
-         LEFT JOIN members m ON m.id = s.member_id
-         WHERE s.status IN ('DUE', 'OVERDUE')
-         AND s.due_date <= date('now', '+7 days')
-         LIMIT 5`,
-      );
-      if (vaccinesDue.length > 0) {
-        generated.push({
-          id: "vaccines-due",
-          type: "VACCINE_DUE",
-          title: "💉 Vaccines Due",
-          body: `${vaccinesDue.length} child${vaccinesDue.length > 1 ? "ren" : ""} have vaccines due in the next 7 days.`,
-          read: 0,
-          created_at: new Date().toISOString(),
-        });
-      }
-
-      // Households never visited
-      const neverVisited = await db.getAllAsync<{
-        id: string;
-        head_of_household_name: string;
-      }>(
-        `SELECT h.id, h.head_of_household_name
-         FROM households h
-         WHERE h.status = 'ACTIVE'
-         AND NOT EXISTS (SELECT 1 FROM visits v WHERE v.household_id = h.id)
-         LIMIT 3`,
-      );
-      if (neverVisited.length > 0) {
-        generated.push({
-          id: "never-visited",
-          type: "UNVISITED",
-          title: "🏠 Households Not Yet Visited",
-          body: `${neverVisited.length} household${neverVisited.length > 1 ? "s" : ""} have never been visited.`,
-          read: 0,
-          created_at: new Date().toISOString(),
-        });
-      }
-
-      // Low stock
-      const lowStock = await db.getAllAsync<{ name_english: string }>(
-        "SELECT name_english FROM drug_stock WHERE quantity_current <= quantity_minimum LIMIT 3",
-      );
-      if (lowStock.length > 0) {
-        generated.push({
-          id: "low-stock",
-          type: "LOW_STOCK",
-          title: "⚕ Drug Stock Low",
-          body: `${lowStock.map((d) => d.name_english).join(", ")} running low. Request restock.`,
-          read: 0,
-          created_at: new Date().toISOString(),
-        });
-      }
-
-      setNotifications(generated);
+      console.log("=== LOADED NOTIFICATIONS ===", rows.length);
+      setNotifications(rows);
     } catch (err) {
-      console.error("Generate notifications error:", err);
+      console.error("Load notifications error:", err);
     }
   };
 
-  const iconFor = (type: string) => {
-    if (type === "OVERDUE_REFERRAL")
-      return { name: "alert-circle", color: COLORS.danger };
-    if (type === "VACCINE_DUE")
-      return { name: "shield-checkmark-outline", color: "#7C3AED" };
-    if (type === "UNVISITED")
-      return { name: "home-outline", color: COLORS.warning };
-    if (type === "LOW_STOCK")
-      return { name: "flask-outline", color: COLORS.warning };
-    return { name: "notifications-outline", color: COLORS.primary };
+  // Load when screen focuses
+  useFocusEffect(
+    useCallback(() => {
+      loadNotifications();
+    }, []),
+  );
+
+  const markAsRead = async (id: string) => {
+    try {
+      const db = await getDb();
+      await db.runAsync(`UPDATE notifications SET is_read = 1 WHERE id = ?`, [
+        id,
+      ]);
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, is_read: 1 } : n)),
+      );
+    } catch (err) {
+      console.error("Mark as read error:", err);
+    }
   };
 
-  const handleTap = (n: Notification) => {
-    if (n.type === "OVERDUE_REFERRAL")
-      router.push("/(app)/referrals/index" as any);
-    else if (n.type === "VACCINE_DUE")
-      router.push("/(app)/immunisations/index" as any);
-    else if (n.type === "UNVISITED")
-      router.push("/(app)/households/index" as any);
-    else if (n.type === "LOW_STOCK") router.push("/(app)/drugs/index" as any);
+  const handleTap = async (n: Notification) => {
+    if (!n.is_read) {
+      await markAsRead(n.id);
+    }
+
+    if (n.type === "REFERRAL" || n.related_id) {
+      // Use correct route path
+      router.push("/referrals");
+    } else {
+      router.back();
+    }
   };
+
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const hours = diff / (1000 * 60 * 60);
+
+    if (hours < 1) return "Just now";
+    if (hours < 24) return `${Math.floor(hours)} hours ago`;
+    return date.toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+    });
+  };
+
+  const unreadCount = notifications.filter((n) => !n.is_read).length;
 
   return (
     <View style={styles.container}>
@@ -160,7 +105,11 @@ export default function NotificationsScreen() {
           <Ionicons name="arrow-back" size={24} color={COLORS.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Notifications</Text>
-        <View style={{ width: 24 }} />
+        {unreadCount > 0 && (
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>{unreadCount}</Text>
+          </View>
+        )}
       </View>
 
       <FlatList
@@ -168,6 +117,17 @@ export default function NotificationsScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={async () => {
+              setRefreshing(true);
+              await loadNotifications();
+              setRefreshing(false);
+            }}
+            colors={[COLORS.primary]}
+          />
+        }
         ListEmptyComponent={
           <View style={styles.empty}>
             <Ionicons
@@ -176,40 +136,34 @@ export default function NotificationsScreen() {
               color={COLORS.border}
             />
             <Text style={styles.emptyTitle}>All clear</Text>
-            <Text style={styles.emptyText}>No alerts at this time</Text>
+            <Text style={styles.emptyText}>No notifications yet</Text>
           </View>
         }
-        renderItem={({ item }) => {
-          const icon = iconFor(item.type);
-          return (
-            <TouchableOpacity
-              style={styles.card}
-              onPress={() => handleTap(item)}
-            >
-              <View
-                style={[
-                  styles.iconCircle,
-                  { backgroundColor: icon.color + "18" },
-                ]}
-              >
-                <Ionicons
-                  name={icon.name as any}
-                  size={22}
-                  color={icon.color}
-                />
-              </View>
-              <View style={styles.cardBody}>
-                <Text style={styles.cardTitle}>{item.title}</Text>
-                <Text style={styles.cardBody2}>{item.body}</Text>
-              </View>
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            style={[styles.card, !item.is_read && styles.cardUnread]}
+            onPress={() => handleTap(item)}
+          >
+            <View style={styles.iconCircle}>
               <Ionicons
-                name="chevron-forward"
-                size={16}
-                color={COLORS.textMuted}
+                name="notifications-outline"
+                size={22}
+                color={COLORS.primary}
               />
-            </TouchableOpacity>
-          );
-        }}
+            </View>
+            <View style={styles.cardBody}>
+              <Text style={styles.cardTitle}>{item.title}</Text>
+              <Text style={styles.cardBody2}>{item.message}</Text>
+              <Text style={styles.cardTime}>{formatDate(item.created_at)}</Text>
+            </View>
+            {!item.is_read && <View style={styles.unreadDot} />}
+            <Ionicons
+              name="chevron-forward"
+              size={16}
+              color={COLORS.textMuted}
+            />
+          </TouchableOpacity>
+        )}
       />
     </View>
   );
@@ -231,6 +185,20 @@ const styles = StyleSheet.create({
     fontSize: SIZES.fontLg,
     fontWeight: "bold",
   },
+  badge: {
+    backgroundColor: COLORS.danger,
+    borderRadius: 12,
+    minWidth: 24,
+    height: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 6,
+  },
+  badgeText: {
+    color: COLORS.white,
+    fontSize: 12,
+    fontWeight: "bold",
+  },
   list: { padding: SIZES.lg, gap: SIZES.sm },
   card: {
     flexDirection: "row",
@@ -243,10 +211,15 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     ...SHADOWS.sm,
   },
+  cardUnread: {
+    backgroundColor: COLORS.primaryLight,
+    borderColor: COLORS.primary,
+  },
   iconCircle: {
     width: 48,
     height: 48,
     borderRadius: 24,
+    backgroundColor: COLORS.primaryLight,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -257,6 +230,18 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     marginTop: 3,
     lineHeight: 18,
+  },
+  cardTime: {
+    fontSize: SIZES.fontXs,
+    color: COLORS.textMuted,
+    marginTop: 4,
+  },
+  unreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: COLORS.primary,
+    marginRight: 4,
   },
   empty: { flex: 1, alignItems: "center", paddingTop: 80, gap: SIZES.sm },
   emptyTitle: {
