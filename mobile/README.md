@@ -16,7 +16,7 @@
 
 | Component         | URL                                                                                                    |
 | ----------------- | ------------------------------------------------------------------------------------------------------ |
-| **Web Dashboard** | [https://mobile-health-dashboard.vercel.app](https://mobile-health-dashboard.vercel.app)               |
+| **Web Dashboard** | [https://mobile-health.vercel.app](https://mobile-health.vercel.app)                                   |
 | **Backend API**   | [https://mobile-health-api.onrender.com/api/health](https://mobile-health-api.onrender.com/api/health) |
 | **Mobile App**    | Available via Expo Go (scan QR code)                                                                   |
 
