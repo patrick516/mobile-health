@@ -67,6 +67,44 @@ export default function NotificationsScreen() {
     }
   };
 
+  const markAllAsRead = async () => {
+    try {
+      const db = await getDb();
+      await db.runAsync(
+        `UPDATE notifications SET is_read = 1 WHERE is_read = 0`,
+      );
+      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: 1 })));
+      Alert.alert("Success", "All notifications marked as read");
+    } catch (err) {
+      console.error("Mark all as read error:", err);
+      Alert.alert("Error", "Failed to mark all as read");
+    }
+  };
+
+  const deleteNotification = async (id: string) => {
+    Alert.alert(
+      "Delete Notification",
+      "Are you sure you want to delete this notification?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const db = await getDb();
+              await db.runAsync(`DELETE FROM notifications WHERE id = ?`, [id]);
+              setNotifications((prev) => prev.filter((n) => n.id !== id));
+            } catch (err) {
+              console.error("Delete notification error:", err);
+              Alert.alert("Error", "Failed to delete notification");
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const handleTap = async (n: Notification) => {
     if (!n.is_read) {
       await markAsRead(n.id);
@@ -105,11 +143,20 @@ export default function NotificationsScreen() {
           <Ionicons name="arrow-back" size={24} color={COLORS.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Notifications</Text>
-        {unreadCount > 0 && (
+        <View style={styles.headerRight}>
+          {unreadCount > 0 && (
+            <TouchableOpacity onPress={markAllAsRead} style={styles.markAllBtn}>
+              <Ionicons
+                name="checkmark-done-circle-outline"
+                size={22}
+                color={COLORS.white}
+              />
+            </TouchableOpacity>
+          )}
           <View style={styles.badge}>
             <Text style={styles.badgeText}>{unreadCount}</Text>
           </View>
-        )}
+        </View>
       </View>
 
       <FlatList
@@ -143,6 +190,7 @@ export default function NotificationsScreen() {
           <TouchableOpacity
             style={[styles.card, !item.is_read && styles.cardUnread]}
             onPress={() => handleTap(item)}
+            activeOpacity={0.7}
           >
             <View style={styles.iconCircle}>
               <Ionicons
@@ -157,11 +205,24 @@ export default function NotificationsScreen() {
               <Text style={styles.cardTime}>{formatDate(item.created_at)}</Text>
             </View>
             {!item.is_read && <View style={styles.unreadDot} />}
-            <Ionicons
-              name="chevron-forward"
-              size={16}
-              color={COLORS.textMuted}
-            />
+            <View style={styles.cardActions}>
+              <TouchableOpacity
+                onPress={() => deleteNotification(item.id)}
+                style={styles.deleteBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons
+                  name="trash-outline"
+                  size={18}
+                  color={COLORS.textMuted}
+                />
+              </TouchableOpacity>
+              <Ionicons
+                name="chevron-forward"
+                size={16}
+                color={COLORS.textMuted}
+              />
+            </View>
           </TouchableOpacity>
         )}
       />
@@ -236,6 +297,15 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     marginTop: 4,
   },
+
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  markAllBtn: {
+    padding: 4,
+  },
   unreadDot: {
     width: 8,
     height: 8,
@@ -250,4 +320,13 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
   },
   emptyText: { fontSize: SIZES.fontSm, color: COLORS.textMuted },
+
+  cardActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  deleteBtn: {
+    padding: 4,
+  },
 });

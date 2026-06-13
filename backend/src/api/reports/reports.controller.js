@@ -710,3 +710,162 @@ export const exportReportPDF = async (req, res, next) => {
     next(err);
   }
 };
+
+// 5. PREGNANT WOMEN & ANC REPORT
+export const getAncReport = async (req, res, next) => {
+  try {
+    const { from, to, zoneId, districtId, regionId } = req.query;
+    const { fromDate, toDate } = getDateRange(from, to);
+
+    const members = await prisma.householdMember.findMany({
+      where: {
+        isPregnant: true,
+        status: "ACTIVE",
+        createdAt: { gte: fromDate, lte: toDate },
+        ...(zoneId || districtId || regionId
+          ? {
+              household: {
+                village: {
+                  ...(zoneId ? { zoneId } : {}),
+                  ...(districtId || regionId
+                    ? {
+                        zone: {
+                          ta: {
+                            ...(districtId ? { districtId } : {}),
+                            ...(regionId ? { district: { regionId } } : {}),
+                          },
+                        },
+                      }
+                    : {}),
+                },
+              },
+            }
+          : {}),
+      },
+      include: {
+        household: {
+          include: {
+            village: {
+              include: {
+                zone: {
+                  include: {
+                    ta: {
+                      include: { district: { include: { region: true } } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        ancVisits: { orderBy: { ancNumber: "asc" } },
+      },
+      orderBy: { fullName: "asc" },
+    });
+
+    const total = members.length;
+    const allAnc = members.flatMap((m) => m.ancVisits);
+    const attended = allAnc.filter((a) => a.status === "ATTENDED").length;
+    const overdue = allAnc.filter(
+      (a) => a.status === "OVERDUE" || a.status === "MISSED",
+    ).length;
+    const scheduled = allAnc.filter((a) => a.status === "SCHEDULED").length;
+
+    res.json({
+      success: true,
+      summary: {
+        total,
+        totalAncVisits: allAnc.length,
+        attended,
+        overdue,
+        scheduled,
+      },
+      data: members,
+      dateRange: { from: fromDate, to: toDate },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// 6. CHILDREN UNDER 5 REPORT
+export const getChildrenUnder5Report = async (req, res, next) => {
+  try {
+    const { from, to, zoneId, districtId, regionId } = req.query;
+    const { fromDate, toDate } = getDateRange(from, to);
+
+    const fiveYearsAgo = new Date();
+    fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 5);
+
+    const members = await prisma.householdMember.findMany({
+      where: {
+        status: "ACTIVE",
+        OR: [
+          { dateOfBirth: { gte: fiveYearsAgo } },
+          { estimatedAge: { lte: 5 } },
+        ],
+        createdAt: { gte: fromDate, lte: toDate },
+        ...(zoneId || districtId || regionId
+          ? {
+              household: {
+                village: {
+                  ...(zoneId ? { zoneId } : {}),
+                  ...(districtId || regionId
+                    ? {
+                        zone: {
+                          ta: {
+                            ...(districtId ? { districtId } : {}),
+                            ...(regionId ? { district: { regionId } } : {}),
+                          },
+                        },
+                      }
+                    : {}),
+                },
+              },
+            }
+          : {}),
+      },
+      include: {
+        household: {
+          include: {
+            village: {
+              include: {
+                zone: { include: { ta: { include: { district: true } } } },
+              },
+            },
+          },
+        },
+        immunisationSchedules: {
+          orderBy: { dueDate: "asc" },
+        },
+      },
+      orderBy: { fullName: "asc" },
+    });
+
+    const total = members.length;
+    const allSchedules = members.flatMap((m) => m.immunisationSchedules);
+    const given = allSchedules.filter((s) => s.status === "GIVEN").length;
+    const overdue = allSchedules.filter((s) => s.status === "OVERDUE").length;
+    const due = allSchedules.filter((s) => s.status === "DUE").length;
+    const coverageRate =
+      allSchedules.length > 0
+        ? Math.round((given / allSchedules.length) * 100)
+        : 0;
+
+    res.json({
+      success: true,
+      summary: {
+        total,
+        totalSchedules: allSchedules.length,
+        given,
+        overdue,
+        due,
+        coverageRate,
+      },
+      data: members,
+      dateRange: { from: fromDate, to: toDate },
+    });
+  } catch (err) {
+    next(err);
+  }
+};

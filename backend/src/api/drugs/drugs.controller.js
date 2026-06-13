@@ -124,9 +124,36 @@ export const updateStockRequest = async (req, res, next) => {
       data,
       include: {
         drug: true,
-        requestingUser: { select: { id: true, fullName: true } },
+        requestingUser: {
+          select: { id: true, fullName: true, phoneNumber: true },
+        },
       },
     });
+
+    // Create notification if status is FULFILLED or REJECTED
+    if (status === "FULFILLED" || status === "REJECTED") {
+      await prisma.notification.create({
+        data: {
+          id: crypto.randomUUID(),
+          title:
+            status === "FULFILLED"
+              ? "Stock Request Fulfilled"
+              : "Stock Request Rejected",
+          message:
+            status === "FULFILLED"
+              ? `Your request for ${request.quantityRequested} ${request.drug.unit}s of ${request.drug.nameEnglish} has been fulfilled.`
+              : `Your request for ${request.drug.nameEnglish} has been rejected.`,
+          type: "STOCK_REQUEST",
+          relatedId: request.id,
+          userId: request.requestingUserId,
+          isRead: false,
+        },
+      });
+      console.log(
+        `[STOCK] Notification created for user ${request.requestingUserId}`,
+      );
+    }
+
     res.json({ success: true, data: request });
   } catch (err) {
     next(err);

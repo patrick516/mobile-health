@@ -159,6 +159,38 @@ const pullFromServer = async () => {
       }
     }
 
+    // 3. Pull ANC visits for pregnant women in our households
+    try {
+      const ancRes = await api.get("/anc/schedules", {
+        params: { _t: Date.now() },
+      });
+      const ancVisits = ancRes.data.data || [];
+      for (const a of ancVisits) {
+        const localMember = await db.getFirstAsync<{ id: string }>(
+          `SELECT id FROM members WHERE id = ? OR local_id = ?`,
+          [a.memberId, a.memberId],
+        );
+        const resolvedMemberId = localMember?.id ?? a.memberId;
+        await db.runAsync(
+          `INSERT OR REPLACE INTO anc_visits
+           (id, member_id, anc_number, expected_date, status, attended_date, notes)
+           VALUES (?,?,?,?,?,?,?)`,
+          [
+            a.id,
+            resolvedMemberId,
+            a.ancNumber,
+            a.expectedDate,
+            a.status,
+            a.attendedDate || null,
+            a.notes || null,
+          ],
+        );
+      }
+      console.log(`[SYNC] Pulled ${ancVisits.length} ANC visits`);
+    } catch (ancErr) {
+      console.log("[SYNC] ANC pull skipped (endpoint may not exist yet)");
+    }
+
     // 3. Pull drug stock from server
     const stockRes = await api.get("/drugs/stock");
     const stocks = stockRes.data.data || [];
@@ -180,7 +212,58 @@ const pullFromServer = async () => {
         ],
       );
     }
+    // 4. Pull stock request updates (fulfilled/rejected)
+    try {
+      const stockReqsRes = await api.get("/drugs/requests", {
+        params: { limit: 50 },
+      });
+      const stockRequests = stockReqsRes.data.data || [];
 
+      for (const req of stockRequests) {
+        // Find local stock request
+        const existing = await db.getFirstAsync<{ id: string }>(
+          `SELECT id FROM stock_requests WHERE id = ? OR local_id = ?`,
+          [req.id, req.localId],
+        );
+
+        if (existing && req.status !== "PENDING") {
+          await db.runAsync(
+            `UPDATE stock_requests SET status = ?, synced = 1 WHERE id = ?`,
+            [req.status, existing.id],
+          );
+
+          // Create notification for status change
+          if (req.status === "FULFILLED" || req.status === "REJECTED") {
+            const notifId = Crypto.randomUUID();
+            await db.runAsync(
+              `INSERT INTO notifications (id, title, message, type, related_id, is_read, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)`,
+              [
+                notifId,
+                req.status === "FULFILLED"
+                  ? "✅ Stock Request Fulfilled"
+                  : "❌ Stock Request Rejected",
+                req.status === "FULFILLED"
+                  ? `Your request for ${req.quantityRequested} ${req.drug?.unit}s of ${req.drug?.nameEnglish} is ready.`
+                  : `Your stock request for ${req.drug?.nameEnglish} was rejected.`,
+                "STOCK_REQUEST",
+                req.id,
+                0,
+                new Date().toISOString(),
+              ],
+            );
+            console.log(
+              `[SYNC] 🔔 Created stock notification for request ${req.id}`,
+            );
+          }
+        }
+      }
+      console.log(
+        `[SYNC] Pulled ${stockRequests.length} stock request updates`,
+      );
+    } catch (err: any) {
+      console.log("[SYNC] Stock requests pull skipped:", err.message);
+    }
     // Clear old test notifications if any
     await db.runAsync(
       `DELETE FROM notifications WHERE type = 'TEST' OR title = '📱 System Test'`,
@@ -195,7 +278,7 @@ const pullFromServer = async () => {
     console.log(
       `[SYNC] Pulled ${schedules.length} vaccine schedules, ${referrals.length} referrals, ${stocks.length} drug stocks`,
     );
-  } catch (err) {
+  } catch (err: any) {
     console.error("[SYNC] Pull error:", err);
   }
 };
@@ -280,7 +363,7 @@ export const runSync = async (): Promise<{
 
     console.log(`[SYNC] Done — ${totalSynced} synced, ${totalFailed} failed`);
     return { synced: totalSynced, failed: totalFailed };
-  } catch (err) {
+  } catch (err: any) {
     console.error("[SYNC] Unexpected error:", err);
     return { synced: 0, failed: 0 };
   }

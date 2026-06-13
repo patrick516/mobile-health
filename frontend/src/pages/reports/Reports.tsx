@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Download,
   FileSpreadsheet,
@@ -11,7 +12,13 @@ import {
 import api from "../../services/api";
 
 // ─── Types
-type ReportType = "households" | "referrals" | "visits" | "immunisations";
+type ReportType =
+  | "households"
+  | "referrals"
+  | "visits"
+  | "immunisations"
+  | "anc"
+  | "children-under-5";
 
 interface SummaryBox {
   label: string;
@@ -42,8 +49,14 @@ const REPORT_TYPES: {
     icon: Shield,
     color: "purple",
   },
+  { key: "anc", label: "Pregnant Women & ANC", icon: Activity, color: "pink" },
+  {
+    key: "children-under-5",
+    label: "Children Under 5",
+    icon: Shield,
+    color: "green",
+  },
 ];
-
 // ─── Summary Card
 function SummaryCard({ label, value, color }: SummaryBox) {
   return (
@@ -68,7 +81,35 @@ export default function Reports() {
   const [reportType, setReportType] = useState<ReportType>("referrals");
   const [from, setFrom] = useState(thirtyDaysAgo);
   const [to, setTo] = useState(today);
+  const [regionId, setRegionId] = useState("");
+  const [districtId, setDistrictId] = useState("");
+  const [zoneId, setZoneId] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const { data: regions } = useQuery({
+    queryKey: ["regions"],
+    queryFn: () => api.get("/geography/tree").then((r) => r.data.data),
+  });
+  const { data: districts } = useQuery({
+    queryKey: ["districts"],
+    queryFn: () => api.get("/geography/districts").then((r) => r.data.data),
+  });
+  const { data: zones } = useQuery({
+    queryKey: ["zones"],
+    queryFn: () => api.get("/geography/zones").then((r) => r.data.data),
+  });
+
+  const filteredDistricts = districtId
+    ? districts
+    : regionId
+      ? districts?.filter((d: any) => d.regionId === regionId)
+      : districts;
+
+  const filteredZones = zoneId
+    ? zones
+    : districtId
+      ? zones?.filter((z: any) => z.ta?.districtId === districtId)
+      : zones;
   const [exporting, setExporting] = useState<"excel" | "pdf" | null>(null);
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState("");
@@ -76,7 +117,7 @@ export default function Reports() {
   // Auto-load when type or date changes
   useEffect(() => {
     loadReport();
-  }, [reportType, from, to]);
+  }, [reportType, from, to, regionId, districtId, zoneId]);
 
   const loadReport = async () => {
     setLoading(true);
@@ -84,7 +125,13 @@ export default function Reports() {
     setData(null);
     try {
       const res = await api.get(`/reports/${reportType}`, {
-        params: { from, to },
+        params: {
+          from,
+          to,
+          ...(regionId ? { regionId } : {}),
+          ...(districtId ? { districtId } : {}),
+          ...(zoneId ? { zoneId } : {}),
+        },
       });
       setData(res.data);
     } catch (err: any) {
@@ -179,6 +226,65 @@ export default function Reports() {
             onChange={(e) => setTo(e.target.value)}
             className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
           />
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">
+            Region
+          </label>
+          <select
+            value={regionId}
+            onChange={(e) => {
+              setRegionId(e.target.value);
+              setDistrictId("");
+              setZoneId("");
+            }}
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+          >
+            <option value="">All Regions</option>
+            {regions?.map((r: any) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">
+            District
+          </label>
+          <select
+            value={districtId}
+            onChange={(e) => {
+              setDistrictId(e.target.value);
+              setZoneId("");
+            }}
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+          >
+            <option value="">All Districts</option>
+            {filteredDistricts?.map((d: any) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">
+            Zone
+          </label>
+          <select
+            value={zoneId}
+            onChange={(e) => setZoneId(e.target.value)}
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+          >
+            <option value="">All Zones</option>
+            {filteredZones?.map((z: any) => (
+              <option key={z.id} value={z.id}>
+                {z.name}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="flex-1" />
@@ -782,6 +888,245 @@ export default function Reports() {
                         className="text-center py-8 text-gray-400"
                       >
                         No immunisation records in this period
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── ANC / PREGNANT WOMEN REPORT ── */}
+      {!loading && data && reportType === "anc" && (
+        <div className="space-y-5">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <SummaryCard
+              label="Pregnant Women"
+              value={data.summary?.total ?? 0}
+              color="text-pink-600"
+            />
+            <SummaryCard
+              label="Total ANC Visits"
+              value={data.summary?.totalAncVisits ?? 0}
+              color="text-teal-700"
+            />
+            <SummaryCard
+              label="Attended"
+              value={data.summary?.attended ?? 0}
+              color="text-green-600"
+            />
+            <SummaryCard
+              label="Overdue / Missed"
+              value={data.summary?.overdue ?? 0}
+              color="text-red-600"
+            />
+            <SummaryCard
+              label="Scheduled"
+              value={data.summary?.scheduled ?? 0}
+              color="text-yellow-600"
+            />
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+            <h3 className="text-sm font-bold text-gray-700 mb-3">
+              Pregnant Women ({data.data.length})
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-gray-500 uppercase border-b border-gray-100 bg-gray-50">
+                    <th className="text-left px-3 py-2">Name</th>
+                    <th className="text-left px-3 py-2">Village</th>
+                    <th className="text-left px-3 py-2">Zone</th>
+                    <th className="text-left px-3 py-2">LMP</th>
+                    <th className="text-left px-3 py-2">Expected Delivery</th>
+                    <th className="text-center px-3 py-2">ANC 1</th>
+                    <th className="text-center px-3 py-2">ANC 2</th>
+                    <th className="text-center px-3 py-2">ANC 3</th>
+                    <th className="text-center px-3 py-2">ANC 4</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data.data ?? []).map((m: any, i: number) => {
+                    const ancByNum: Record<number, any> = {};
+                    m.ancVisits?.forEach((a: any) => {
+                      ancByNum[a.ancNumber] = a;
+                    });
+                    const ancBadge = (num: number) => {
+                      const a = ancByNum[num];
+                      if (!a) return <span className="text-gray-300">—</span>;
+                      const color =
+                        a.status === "ATTENDED"
+                          ? "bg-green-100 text-green-700"
+                          : a.status === "OVERDUE" || a.status === "MISSED"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-yellow-100 text-yellow-700";
+                      return (
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-xs font-semibold ${color}`}
+                        >
+                          {a.status}
+                        </span>
+                      );
+                    };
+                    return (
+                      <tr
+                        key={i}
+                        className={`border-b border-gray-50 hover:bg-pink-50/30 ${i % 2 === 0 ? "" : "bg-gray-50/50"}`}
+                      >
+                        <td className="px-3 py-2 font-medium text-gray-800">
+                          {m.fullName}
+                        </td>
+                        <td className="px-3 py-2 text-gray-600">
+                          {m.household?.village?.name || "—"}
+                        </td>
+                        <td className="px-3 py-2 text-gray-500 text-xs">
+                          {m.household?.village?.zone?.name || "—"}
+                        </td>
+                        <td className="px-3 py-2 text-gray-500 text-xs">
+                          {fmt(m.lmpDate)}
+                        </td>
+                        <td className="px-3 py-2 text-gray-500 text-xs">
+                          {fmt(m.expectedDeliveryDate)}
+                        </td>
+                        <td className="px-3 py-2 text-center">{ancBadge(1)}</td>
+                        <td className="px-3 py-2 text-center">{ancBadge(2)}</td>
+                        <td className="px-3 py-2 text-center">{ancBadge(3)}</td>
+                        <td className="px-3 py-2 text-center">{ancBadge(4)}</td>
+                      </tr>
+                    );
+                  })}
+                  {data.data.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={9}
+                        className="text-center py-8 text-gray-400"
+                      >
+                        No pregnant women in this period
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── CHILDREN UNDER 5 REPORT ── */}
+      {!loading && data && reportType === "children-under-5" && (
+        <div className="space-y-5">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <SummaryCard
+              label="Children Under 5"
+              value={data.summary?.total ?? 0}
+              color="text-teal-700"
+            />
+            <SummaryCard
+              label="Vaccines Given"
+              value={data.summary?.given ?? 0}
+              color="text-green-600"
+            />
+            <SummaryCard
+              label="Overdue Vaccines"
+              value={data.summary?.overdue ?? 0}
+              color="text-red-600"
+            />
+            <SummaryCard
+              label="Coverage Rate"
+              value={`${data.summary?.coverageRate ?? 0}%`}
+              color="text-teal-700"
+            />
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+            <h3 className="text-sm font-bold text-gray-700 mb-3">
+              Children Under 5 ({data.data.length})
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-gray-500 uppercase border-b border-gray-100 bg-gray-50">
+                    <th className="text-left px-3 py-2">Name</th>
+                    <th className="text-left px-3 py-2">Village</th>
+                    <th className="text-left px-3 py-2">Zone</th>
+                    <th className="text-left px-3 py-2">District</th>
+                    <th className="text-center px-3 py-2">Age</th>
+                    <th className="text-center px-3 py-2">Sex</th>
+                    <th className="text-center px-3 py-2">Vaccines Given</th>
+                    <th className="text-center px-3 py-2">Overdue</th>
+                    <th className="text-center px-3 py-2">Due</th>
+                    <th className="text-left px-3 py-2">Household</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data.data ?? []).map((m: any, i: number) => {
+                    const schedules = m.immunisationSchedules ?? [];
+                    const given = schedules.filter(
+                      (s: any) => s.status === "GIVEN",
+                    ).length;
+                    const overdue = schedules.filter(
+                      (s: any) => s.status === "OVERDUE",
+                    ).length;
+                    const due = schedules.filter(
+                      (s: any) => s.status === "DUE",
+                    ).length;
+                    const age =
+                      m.estimatedAge ||
+                      (m.dateOfBirth
+                        ? Math.floor(
+                            (Date.now() - new Date(m.dateOfBirth).getTime()) /
+                              (1000 * 60 * 60 * 24 * 365),
+                          )
+                        : "?");
+                    return (
+                      <tr
+                        key={i}
+                        className={`border-b border-gray-50 hover:bg-green-50/30 ${i % 2 === 0 ? "" : "bg-gray-50/50"}`}
+                      >
+                        <td className="px-3 py-2 font-medium text-gray-800">
+                          {m.fullName}
+                        </td>
+                        <td className="px-3 py-2 text-gray-600">
+                          {m.household?.village?.name || "—"}
+                        </td>
+                        <td className="px-3 py-2 text-gray-500 text-xs">
+                          {m.household?.village?.zone?.name || "—"}
+                        </td>
+                        <td className="px-3 py-2 text-gray-500 text-xs">
+                          {m.household?.village?.zone?.ta?.district?.name ||
+                            "—"}
+                        </td>
+                        <td className="px-3 py-2 text-center text-gray-600">
+                          {age}y
+                        </td>
+                        <td className="px-3 py-2 text-center text-gray-600">
+                          {m.sex}
+                        </td>
+                        <td className="px-3 py-2 text-center font-bold text-green-600">
+                          {given}
+                        </td>
+                        <td className="px-3 py-2 text-center font-bold text-red-600">
+                          {overdue}
+                        </td>
+                        <td className="px-3 py-2 text-center font-bold text-yellow-600">
+                          {due}
+                        </td>
+                        <td className="px-3 py-2 text-xs font-mono text-teal-700">
+                          {m.household?.householdNumber || "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {data.data.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={10}
+                        className="text-center py-8 text-gray-400"
+                      >
+                        No children under 5 in this period
                       </td>
                     </tr>
                   )}

@@ -19,6 +19,7 @@ import analyticsRoutes from "./api/analytics/analytics.routes.js";
 import adminRoutes from "./api/admin/admin.routes.js";
 import exportRoutes from "./api/export/export.routes.js";
 import reportsRoutes from "./api/reports/reports.routes.js";
+import ancRoutes from "./api/anc/anc.routes.js";
 
 const app = express();
 
@@ -55,6 +56,7 @@ app.use("/api/analytics", analyticsRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/export", exportRoutes);
 app.use("/api/reports", reportsRoutes);
+app.use("/api/anc", ancRoutes);
 
 //  404
 app.use((req, res) => {
