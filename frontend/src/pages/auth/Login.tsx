@@ -56,7 +56,7 @@ export default function Login() {
         <div className="bg-white rounded-2xl shadow-xl p-8">
           <h2 className="text-xl font-bold text-gray-900 mb-1">Sign in</h2>
           <p className="text-gray-500 text-sm mb-6">
-            Enter your phone number and 4-digit PIN
+            Enter your phone number and PIN
           </p>
 
           {error && (
@@ -88,7 +88,7 @@ export default function Login() {
                 type="password"
                 value={pin}
                 onChange={(e) => setPin(e.target.value)}
-                placeholder="4-digit PIN"
+                placeholder=" PIN"
                 maxLength={4}
                 autoComplete="current-password"
               />

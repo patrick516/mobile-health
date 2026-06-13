@@ -77,9 +77,7 @@ export default function LoginScreen() {
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Sign In</Text>
-          <Text style={styles.cardSub}>
-            Enter your phone number and 4-digit PIN
-          </Text>
+          <Text style={styles.cardSub}>Enter your phone number and PIN</Text>
 
           <Text style={styles.label}>Phone Number</Text>
           <TextInput
@@ -87,7 +85,7 @@ export default function LoginScreen() {
             value={phone}
             onChangeText={setPhone}
             keyboardType="phone-pad"
-            placeholder="e.g. 0999000001"
+            placeholder="e.g. 0999999991"
             placeholderTextColor={COLORS.placeholder}
             autoCapitalize="none"
           />
@@ -100,7 +98,7 @@ export default function LoginScreen() {
             keyboardType="number-pad"
             secureTextEntry
             maxLength={4}
-            placeholder="4-digit PIN"
+            placeholder=" PIN"
             placeholderTextColor={COLORS.placeholder}
           />
 

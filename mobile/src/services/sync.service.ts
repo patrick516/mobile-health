@@ -1,4 +1,5 @@
 import NetInfo from "@react-native-community/netinfo";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getPending, markSynced, incrementRetry } from "../db/sync-queue";
 import api from "./api";
 import { getDb } from "../db/schema";
@@ -7,6 +8,13 @@ import * as Crypto from "expo-crypto";
 // Pull immunisation schedules, drug stock and referral feedback from server
 const pullFromServer = async () => {
   try {
+    // Check if user is authenticated before pulling
+    const token = await AsyncStorage.getItem("auth_token");
+    if (!token) {
+      console.log("[SYNC] No auth token, skipping pull");
+      return;
+    }
+
     const db = await getDb();
 
     // Check if notifications table exists, create if not
@@ -212,6 +220,7 @@ const pullFromServer = async () => {
         ],
       );
     }
+
     // 4. Pull stock request updates (fulfilled/rejected)
     try {
       const stockReqsRes = await api.get("/drugs/requests", {
@@ -264,6 +273,7 @@ const pullFromServer = async () => {
     } catch (err: any) {
       console.log("[SYNC] Stock requests pull skipped:", err.message);
     }
+
     // Clear old test notifications if any
     await db.runAsync(
       `DELETE FROM notifications WHERE type = 'TEST' OR title = '📱 System Test'`,
