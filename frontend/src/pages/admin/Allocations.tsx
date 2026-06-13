@@ -46,8 +46,11 @@ export default function Allocations() {
       setForm((p) => ({ ...p, userId: "", zoneId: "", taId: "" }));
       setError("");
     },
-    onError: (err: any) =>
-      setError(err.response?.data?.message || "Allocation failed."),
+    onError: (err: any) => {
+      setError(
+        err.response?.data?.message || "Allocation failed. Please try again.",
+      );
+    },
   });
 
   const ccws = users?.filter((u: any) => u.role === "CCW") || [];
@@ -143,9 +146,14 @@ export default function Allocations() {
                 <option value="">Select zone...</option>
                 {zones?.map((z: any) => (
                   <option key={z.id} value={z.id}>
-                    {z.name} — {z.ta?.name}
+                    {z.name} — {z.ta?.name ?? ""}
                   </option>
                 ))}
+                {(!zones || zones.length === 0) && (
+                  <option disabled value="">
+                    No zones found — add zones in Geography first
+                  </option>
+                )}
               </select>
             </div>
           ) : (

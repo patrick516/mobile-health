@@ -46,6 +46,12 @@ export default function Users() {
       queryClient.invalidateQueries({ queryKey: ["admin-users"] }),
   });
 
+  const activateMutation = useMutation({
+    mutationFn: (id: string) => api.patch(`/admin/users/${id}/reactivate`),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] }),
+  });
+
   const roleColor: Record<string, string> = {
     ADMIN: "badge-red",
     DISTRICT_OFFICER: "badge-blue",
@@ -195,13 +201,21 @@ export default function Users() {
                   </span>
                 </td>
                 <td className="px-4 py-3">
-                  {u.isActive && (
+                  {u.isActive ? (
                     <button
                       onClick={() => deactivateMutation.mutate(u.id)}
                       className="flex items-center gap-1 text-xs text-red-600 hover:text-red-800 transition-colors"
                     >
                       <UserX size={13} />
                       Deactivate
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => activateMutation.mutate(u.id)}
+                      className="flex items-center gap-1 text-xs text-green-600 hover:text-green-800 transition-colors"
+                    >
+                      <UserPlus size={13} />
+                      Activate
                     </button>
                   )}
                 </td>

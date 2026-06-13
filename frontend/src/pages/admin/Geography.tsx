@@ -60,8 +60,11 @@ export default function Geography() {
       setForm({ type: "", name: "", parentId: "" });
       setError("");
     },
-    onError: (err: any) =>
-      setError(err.response?.data?.message || "Failed to create."),
+    onError: (err: any) => {
+      setError(
+        err.response?.data?.message || "Failed to create. Please try again.",
+      );
+    },
   });
 
   const toggle = (id: string) => setExpanded((p) => ({ ...p, [id]: !p[id] }));
@@ -215,9 +218,14 @@ export default function Geography() {
               <option value="">Select TA...</option>
               {tas?.map((t: any) => (
                 <option key={t.id} value={t.id}>
-                  {t.name} — {t.district?.name}
+                  {t.name} — {t.district?.name ?? ""}
                 </option>
               ))}
+              {(!tas || tas.length === 0) && (
+                <option disabled value="">
+                  No TAs found — add a TA first
+                </option>
+              )}
             </select>
           </div>
         )}

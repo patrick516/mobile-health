@@ -4,6 +4,7 @@ import {
   createUser,
   updateUser,
   deactivateUser,
+  reactivateUser,
   createRegion,
   createDistrict,
   createTA,
@@ -27,7 +28,7 @@ router.get("/users", getUsers);
 router.post("/users", createUser);
 router.patch("/users/:id", updateUser);
 router.patch("/users/:id/deactivate", deactivateUser);
-
+router.patch("/users/:id/reactivate", reactivateUser);
 // Geography
 router.post("/geography/regions", createRegion);
 router.post("/geography/districts", createDistrict);

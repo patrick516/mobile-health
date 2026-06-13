@@ -32,12 +32,10 @@ export const createUser = async (req, res, next) => {
   try {
     const { fullName, phoneNumber, pin, role } = req.body;
     if (!fullName || !phoneNumber || !pin || !role) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "fullName, phoneNumber, pin and role are required.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "fullName, phoneNumber, pin and role are required.",
+      });
     }
     if (String(pin).length !== 4) {
       return res
@@ -99,7 +97,19 @@ export const deactivateUser = async (req, res, next) => {
   }
 };
 
-// ─── GEOGRAPHY ────────────────────────────────────────────────────────────────
+export const reactivateUser = async (req, res, next) => {
+  try {
+    const user = await prisma.user.update({
+      where: { id: req.params.id },
+      data: { isActive: true },
+      select: { id: true, fullName: true, isActive: true },
+    });
+    res.json({ success: true, data: user });
+  } catch (err) {
+    next(err);
+  }
+};
+// ─── GEOGRAPHY
 export const createRegion = async (req, res, next) => {
   try {
     const { name } = req.body;
@@ -110,6 +120,11 @@ export const createRegion = async (req, res, next) => {
     const region = await prisma.region.create({ data: { name } });
     res.status(201).json({ success: true, data: region });
   } catch (err) {
+    if (err.code === "P2002")
+      return res.status(409).json({
+        success: false,
+        message: `Region "${req.body.name}" already exists.`,
+      });
     next(err);
   }
 };
@@ -124,6 +139,13 @@ export const createDistrict = async (req, res, next) => {
     const district = await prisma.district.create({ data: { name, regionId } });
     res.status(201).json({ success: true, data: district });
   } catch (err) {
+    if (err.code === "P2002")
+      return res
+        .status(409)
+        .json({
+          success: false,
+          message: `District "${req.body.name}" already exists in this region.`,
+        });
     next(err);
   }
 };
@@ -140,6 +162,13 @@ export const createTA = async (req, res, next) => {
     });
     res.status(201).json({ success: true, data: ta });
   } catch (err) {
+    if (err.code === "P2002")
+      return res
+        .status(409)
+        .json({
+          success: false,
+          message: `TA "${req.body.name}" already exists in this district.`,
+        });
     next(err);
   }
 };
@@ -154,11 +183,19 @@ export const createZone = async (req, res, next) => {
     const zone = await prisma.zone.create({ data: { name, taId } });
     res.status(201).json({ success: true, data: zone });
   } catch (err) {
+    if (err.code === "P2002")
+      return res
+        .status(409)
+        .json({
+          success: false,
+          message: `Zone "${req.body.name}" already exists in this TA.`,
+        });
     next(err);
   }
 };
 
-// ─── ALLOCATIONS ──────────────────────────────────────────────────────────────
+// ─── ALLOCATIONS
+
 export const allocateUserToZone = async (req, res, next) => {
   try {
     const { userId, zoneId } = req.body;
@@ -166,10 +203,20 @@ export const allocateUserToZone = async (req, res, next) => {
       return res
         .status(400)
         .json({ success: false, message: "userId and zoneId are required." });
-    const allocation = await prisma.userZoneAllocation.upsert({
+
+    // Check if already allocated to this zone
+    const existing = await prisma.userZoneAllocation.findUnique({
       where: { userId_zoneId: { userId, zoneId } },
-      update: { allocatedById: req.user.id, allocatedAt: new Date() },
-      create: { userId, zoneId, allocatedById: req.user.id },
+      include: { zone: true, user: true },
+    });
+    if (existing)
+      return res.status(409).json({
+        success: false,
+        message: `${existing.user.fullName} is already allocated to ${existing.zone.name}.`,
+      });
+
+    const allocation = await prisma.userZoneAllocation.create({
+      data: { userId, zoneId, allocatedById: req.user.id },
     });
     res.status(201).json({ success: true, data: allocation });
   } catch (err) {
@@ -184,10 +231,20 @@ export const allocateUserToTA = async (req, res, next) => {
       return res
         .status(400)
         .json({ success: false, message: "userId and taId are required." });
-    const allocation = await prisma.userTaAllocation.upsert({
+
+    // Check if already allocated to this TA
+    const existing = await prisma.userTaAllocation.findUnique({
       where: { userId_taId: { userId, taId } },
-      update: { allocatedById: req.user.id, allocatedAt: new Date() },
-      create: { userId, taId, allocatedById: req.user.id },
+      include: { ta: true, user: true },
+    });
+    if (existing)
+      return res.status(409).json({
+        success: false,
+        message: `${existing.user.fullName} is already allocated to ${existing.ta.name}.`,
+      });
+
+    const allocation = await prisma.userTaAllocation.create({
+      data: { userId, taId, allocatedById: req.user.id },
     });
     res.status(201).json({ success: true, data: allocation });
   } catch (err) {
@@ -195,7 +252,7 @@ export const allocateUserToTA = async (req, res, next) => {
   }
 };
 
-// ─── FACILITIES ───────────────────────────────────────────────────────────────
+// ─── FACILITIES
 export const getFacilities = async (req, res, next) => {
   try {
     const facilities = await prisma.facility.findMany({
