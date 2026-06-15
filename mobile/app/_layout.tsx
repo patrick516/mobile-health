@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { Stack, router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import Toast from "react-native-toast-message";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { COLORS, SIZES } from "../constants/theme";
 import { useAppStore } from "../src/store";
@@ -98,6 +99,7 @@ export default function RootLayout() {
         <Stack.Screen name="(auth)/login" />
         <Stack.Screen name="(app)" />
       </Stack>
+      <Toast />
     </>
   );
 }

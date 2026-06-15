@@ -24,6 +24,14 @@ import {
   DANGER_SIGNS,
   VISIT_TYPES,
 } from "../../../constants/diseases";
+import {
+  saveDraft,
+  loadDraft,
+  clearDraft,
+} from "../../../src/utils/draftStorage";
+import { showSuccess, showError, showInfo } from "../../../src/utils/toast";
+
+const DRAFT_KEY = "visit_add";
 
 interface Member {
   id: string;
@@ -91,7 +99,58 @@ export default function AddVisitScreen() {
     loadMembers();
     loadDrugs();
     captureGps();
+    restoreDraft();
   }, []);
+
+  const restoreDraft = async () => {
+    const draft = await loadDraft<any>(DRAFT_KEY);
+    if (!draft) return;
+    if (draft.householdId !== selectedHouseholdId) return;
+    if (draft.selectedMemberId) setSelectedMemberId(draft.selectedMemberId);
+    if (draft.visitType) setVisitType(draft.visitType);
+    if (draft.symptoms) setSymptoms(draft.symptoms);
+    if (draft.dangerSigns) setDangerSigns(draft.dangerSigns);
+    if (draft.temperature) setTemperature(draft.temperature);
+    if (draft.muacMm) setMuacMm(draft.muacMm);
+    if (typeof draft.referralNeeded === "boolean")
+      setReferralNeeded(draft.referralNeeded);
+    if (draft.notes) setNotes(draft.notes);
+    if (draft.dispensed) setDispensed(draft.dispensed);
+    if (typeof draft.step === "number") setStep(draft.step);
+    showInfo("Draft Restored", "Continuing your previous visit entry.");
+  };
+
+  // Auto-save draft (debounced 800ms)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      saveDraft(DRAFT_KEY, {
+        householdId: selectedHouseholdId,
+        selectedMemberId,
+        visitType,
+        symptoms,
+        dangerSigns,
+        temperature,
+        muacMm,
+        referralNeeded,
+        notes,
+        dispensed,
+        step,
+      });
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [
+    selectedHouseholdId,
+    selectedMemberId,
+    visitType,
+    symptoms,
+    dangerSigns,
+    temperature,
+    muacMm,
+    referralNeeded,
+    notes,
+    dispensed,
+    step,
+  ]);
 
   useEffect(() => {
     if (autoReferral) setReferralNeeded(true);
@@ -146,7 +205,7 @@ export default function AddVisitScreen() {
 
   const handleSave = async () => {
     if (!selectedMemberId)
-      return Alert.alert("Required", "Please select a patient.");
+      return showError("Required", "Please select a patient.");
 
     setSaving(true);
     try {
@@ -229,6 +288,9 @@ export default function AddVisitScreen() {
       }
 
       await enqueue("VISIT", visitPayload);
+      await clearDraft(DRAFT_KEY);
+      showSuccess("Visit Saved", "Visit recorded successfully.");
+
       // If referral needed, go straight to referral screen
       if (referralNeeded) {
         // Set both the member AND the visit ID so referral screen has everything
@@ -258,7 +320,7 @@ export default function AddVisitScreen() {
       }
     } catch (err) {
       console.error("Save visit error:", err);
-      Alert.alert("Error", "Failed to save visit. Please try again.");
+      showError("Save Failed", "Failed to save visit. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -659,8 +721,8 @@ export default function AddVisitScreen() {
                         const max = drug.quantity_current;
                         const current = dispensed[drug.id] || 0;
                         if (current >= max) {
-                          Alert.alert(
-                            "Stock limit",
+                          showError(
+                            "Stock Limit",
                             `Only ${max} ${drug.unit} available.`,
                           );
                           return;

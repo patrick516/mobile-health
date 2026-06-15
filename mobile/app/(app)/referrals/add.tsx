@@ -19,6 +19,14 @@ import api from "../../../src/services/api";
 import { getDb } from "../../../src/db/schema";
 import { enqueue } from "../../../src/db/sync-queue";
 import { REFERRAL_REASONS } from "../../../constants/diseases";
+import {
+  saveDraft,
+  loadDraft,
+  clearDraft,
+} from "../../../src/utils/draftStorage";
+import { showSuccess, showError, showInfo } from "../../../src/utils/toast";
+
+const DRAFT_KEY = "referral_add";
 
 interface Facility {
   id: string;
@@ -52,8 +60,38 @@ export default function AddReferralScreen() {
 
   useEffect(() => {
     loadContext();
+    restoreDraft();
   }, [selectedMemberId]); // ─── FIX: re-run if selectedMemberId changes
 
+  const restoreDraft = async () => {
+    const draft = await loadDraft<any>(DRAFT_KEY);
+    if (!draft) return;
+    const memberId =
+      selectedMemberId ?? useAppStore.getState().selectedMemberId;
+    if (draft.memberId !== memberId) return;
+    if (draft.reason) setReason(draft.reason);
+    if (draft.urgency) setUrgency(draft.urgency);
+    if (draft.selectedFacilityId)
+      setSelectedFacilityId(draft.selectedFacilityId);
+    if (draft.notes) setNotes(draft.notes);
+    showInfo("Draft Restored", "Continuing your previous referral entry.");
+  };
+
+  // Auto-save draft (debounced 800ms)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const memberId =
+        selectedMemberId ?? useAppStore.getState().selectedMemberId;
+      saveDraft(DRAFT_KEY, {
+        memberId,
+        reason,
+        urgency,
+        selectedFacilityId,
+        notes,
+      });
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [selectedMemberId, reason, urgency, selectedFacilityId, notes]);
   const loadContext = async () => {
     try {
       const db = await getDb();
@@ -104,13 +142,13 @@ export default function AddReferralScreen() {
       selectedMemberId ?? useAppStore.getState().selectedMemberId;
 
     if (!memberId) {
-      return Alert.alert(
+      return showError(
         "No Patient Selected",
         "Go back and tap a patient, then tap Refer.",
       );
     }
     if (!reason) {
-      return Alert.alert("Required", "Please select a reason for referral.");
+      return showError("Required", "Please select a reason for referral.");
     }
     // ─── FIX: visit_id is now optional — removed the hard block
 
@@ -159,6 +197,14 @@ export default function AddReferralScreen() {
         notes: notes.trim() || null,
       });
 
+      await clearDraft(DRAFT_KEY);
+      showSuccess(
+        urgency === "EMERGENCY"
+          ? "🚨 Emergency Referral Created"
+          : "Referral Created",
+        `Saved for ${memberName}.`,
+      );
+
       Alert.alert(
         urgency === "EMERGENCY"
           ? "🚨 Emergency Referral Created"
@@ -168,7 +214,7 @@ export default function AddReferralScreen() {
       );
     } catch (err) {
       console.error("Save referral error:", err);
-      Alert.alert("Error", "Failed to save referral. Please try again.");
+      showError("Save Failed", "Failed to save referral. Please try again.");
     } finally {
       setSaving(false);
     }

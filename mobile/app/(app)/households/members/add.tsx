@@ -23,6 +23,14 @@ import {
   RELATIONSHIP_OPTIONS,
   CHRONIC_ILLNESSES,
 } from "../../../../constants/diseases";
+import {
+  saveDraft,
+  loadDraft,
+  clearDraft,
+} from "../../../../src/utils/draftStorage";
+import { showSuccess, showError, showInfo } from "../../../../src/utils/toast";
+
+const DRAFT_KEY = "member_add";
 
 export default function AddMemberScreen() {
   const language = useAppStore((s) => s.language);
@@ -43,6 +51,65 @@ export default function AddMemberScreen() {
   const [disabilityType, setDisabilityType] = useState("");
   const [phone, setPhone] = useState("");
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    restoreDraft();
+  }, []);
+
+  const restoreDraft = async () => {
+    const draft = await loadDraft<any>(DRAFT_KEY);
+    if (!draft) return;
+    if (draft.householdId !== selectedHouseholdId) return;
+    if (draft.fullName) setFullName(draft.fullName);
+    if (draft.sex) setSex(draft.sex);
+    if (draft.relationship) setRelationship(draft.relationship);
+    if (typeof draft.useDob === "boolean") setUseDob(draft.useDob);
+    if (draft.dob) setDob(new Date(draft.dob));
+    if (draft.estimatedAge) setEstimatedAge(draft.estimatedAge);
+    if (typeof draft.isPregnant === "boolean") setIsPregnant(draft.isPregnant);
+    if (draft.lmpDate) setLmpDate(new Date(draft.lmpDate));
+    if (draft.chronicIllnesses) setChronicIllnesses(draft.chronicIllnesses);
+    if (typeof draft.hasDisability === "boolean")
+      setHasDisability(draft.hasDisability);
+    if (draft.disabilityType) setDisabilityType(draft.disabilityType);
+    if (draft.phone) setPhone(draft.phone);
+    showInfo("Draft Restored", "Continuing your previous member entry.");
+  };
+
+  // Auto-save draft (debounced 800ms)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      saveDraft(DRAFT_KEY, {
+        householdId: selectedHouseholdId,
+        fullName,
+        sex,
+        relationship,
+        useDob,
+        dob: dob.toISOString(),
+        estimatedAge,
+        isPregnant,
+        lmpDate: lmpDate.toISOString(),
+        chronicIllnesses,
+        hasDisability,
+        disabilityType,
+        phone,
+      });
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [
+    fullName,
+    sex,
+    relationship,
+    useDob,
+    dob,
+    estimatedAge,
+    isPregnant,
+    lmpDate,
+    chronicIllnesses,
+    hasDisability,
+    disabilityType,
+    phone,
+  ]);
 
   const showPregnancy =
     sex === "FEMALE" &&
@@ -91,17 +158,17 @@ export default function AddMemberScreen() {
 
   const handleSave = async () => {
     if (!fullName.trim())
-      return Alert.alert("Required", "Full name is required.");
-    if (!sex) return Alert.alert("Required", "Please select sex.");
+      return showError("Required", "Full name is required.");
+    if (!sex) return showError("Required", "Please select sex.");
     if (!relationship)
-      return Alert.alert("Required", "Please select relationship to head.");
+      return showError("Required", "Please select relationship to head.");
     if (!selectedHouseholdId)
-      return Alert.alert(
+      return showError(
         "Error",
         "No household selected. Go back and try again.",
       );
     if (!useDob && !estimatedAge)
-      return Alert.alert("Required", "Please enter estimated age.");
+      return showError("Required", "Please enter estimated age.");
 
     setSaving(true);
     try {
@@ -167,6 +234,9 @@ export default function AddMemberScreen() {
       // If under 5 — note: vaccine schedule created server-side on sync
       // If pregnant — ANC schedule created server-side on sync
 
+      await clearDraft(DRAFT_KEY);
+      showSuccess("Member Added", `${fullName} has been added.`);
+
       Alert.alert(
         "Member Added ✓",
         `${fullName} has been added.${isUnder5() ? "\n\nVaccination schedule will be set up on sync." : ""}${isPregnant ? "\n\nANC schedule will be set up on sync." : ""}`,
@@ -188,7 +258,7 @@ export default function AddMemberScreen() {
       );
     } catch (err) {
       console.error("Add member error:", err);
-      Alert.alert("Error", "Failed to save member. Please try again.");
+      showError("Save Failed", "Failed to save member. Please try again.");
     } finally {
       setSaving(false);
     }

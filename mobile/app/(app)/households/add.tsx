@@ -24,6 +24,12 @@ import { getDb, initDb } from "../../../src/db/schema";
 import { enqueue } from "../../../src/db/sync-queue";
 import api from "../../../src/services/api";
 import {
+  saveDraft,
+  loadDraft,
+  clearDraft,
+} from "../../../src/utils/draftStorage";
+import { showSuccess, showError, showInfo } from "../../../src/utils/toast";
+import {
   WATER_SOURCES,
   STRUCTURE_TYPES,
   DISTANCE_OPTIONS,
@@ -49,6 +55,7 @@ interface ExistingHousehold {
 }
 
 const STEPS = ["ID", "Location", "Details", "Review"];
+const DRAFT_KEY = "household_add";
 
 export default function AddHouseholdScreen() {
   const language = useAppStore((s) => s.language);
@@ -112,7 +119,74 @@ export default function AddHouseholdScreen() {
   useEffect(() => {
     loadZones();
     captureGps();
+    restoreDraft();
   }, []);
+
+  const restoreDraft = async () => {
+    const draft = await loadDraft<any>(DRAFT_KEY);
+    if (!draft) return;
+    if (draft.idPrefix) setIdPrefix(draft.idPrefix);
+    if (draft.idPreview) setIdPreview(draft.idPreview);
+    if (draft.idConfirmed) setIdConfirmed(draft.idConfirmed);
+    if (draft.selectedZoneId) setSelectedZoneId(draft.selectedZoneId);
+    if (draft.selectedVillageId) setSelectedVillageId(draft.selectedVillageId);
+    if (draft.landmark) setLandmark(draft.landmark);
+    if (draft.headName) setHeadName(draft.headName);
+    if (draft.headPhone) setHeadPhone(draft.headPhone);
+    if (draft.structureType) setStructureType(draft.structureType);
+    if (draft.waterSource) setWaterSource(draft.waterSource);
+    if (draft.latrinePresent) setLatrinePresent(draft.latrinePresent);
+    if (draft.handwashing) setHandwashing(draft.handwashing);
+    if (draft.distanceToFacility)
+      setDistanceToFacility(draft.distanceToFacility);
+    if (draft.mosquitoNets) setMosquitoNets(draft.mosquitoNets);
+    if (draft.numberOfRooms) setNumberOfRooms(draft.numberOfRooms);
+    if (typeof draft.step === "number") setStep(draft.step);
+    showInfo("Draft Restored", "Continuing your previous registration.");
+  };
+
+  // Auto-save draft whenever form data changes (debounced 800ms)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      saveDraft(DRAFT_KEY, {
+        step,
+        idPrefix,
+        idPreview,
+        idConfirmed,
+        selectedZoneId,
+        selectedVillageId,
+        landmark,
+        headName,
+        headPhone,
+        structureType,
+        waterSource,
+        latrinePresent,
+        handwashing,
+        distanceToFacility,
+        mosquitoNets,
+        numberOfRooms,
+      });
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [
+    step,
+    idPrefix,
+    idPreview,
+    idConfirmed,
+    selectedZoneId,
+    selectedVillageId,
+    landmark,
+    headName,
+    headPhone,
+    structureType,
+    waterSource,
+    latrinePresent,
+    handwashing,
+    distanceToFacility,
+    mosquitoNets,
+    numberOfRooms,
+  ]);
+
   useEffect(() => {
     if (selectedZoneId) loadVillages(selectedZoneId);
   }, [selectedZoneId]);
@@ -157,7 +231,7 @@ export default function AddHouseholdScreen() {
 
   const checkHouseholdId = async () => {
     if (!idPrefix.trim() || idPrefix.length < 2) {
-      Alert.alert(
+      showError(
         "Required",
         "Please enter at least 2 characters for the household prefix.",
       );
@@ -198,8 +272,8 @@ export default function AddHouseholdScreen() {
   const takeHouseholdPhoto = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert(
-        "Permission needed",
+      showError(
+        "Permission Needed",
         "Camera permission is required to take a photo.",
       );
       return;
@@ -293,21 +367,21 @@ export default function AddHouseholdScreen() {
       setShowNewVillage(false);
       setNewVillageName("");
     } catch {
-      Alert.alert("Error", "Could not add village. Check your connection.");
+      showError("Error", "Could not add village. Check your connection.");
     }
   };
 
   const handleSave = async () => {
     if (!headName.trim())
-      return Alert.alert("Required", "Head of household name is required.");
+      return showError("Required", "Head of household name is required.");
     if (!selectedVillageId)
-      return Alert.alert("Required", "Please select or add a village.");
+      return showError("Required", "Please select or add a village.");
     if (!structureType)
-      return Alert.alert("Required", "Please select structure type.");
+      return showError("Required", "Please select structure type.");
     if (!waterSource)
-      return Alert.alert("Required", "Please select water source.");
+      return showError("Required", "Please select water source.");
     if (!distanceToFacility)
-      return Alert.alert("Required", "Please select distance to facility.");
+      return showError("Required", "Please select distance to facility.");
 
     setSaving(true);
     try {
@@ -423,17 +497,8 @@ export default function AddHouseholdScreen() {
         });
       }
 
-      Alert.alert(
-        "Saved ✓",
-        `Household ${idPreview} registered successfully.`,
-        [
-          {
-            text: "Add Members",
-            onPress: () => router.replace(`/(app)/households/${localId}`),
-          },
-          { text: "Done", onPress: () => router.back() },
-        ],
-      );
+      await clearDraft(DRAFT_KEY);
+      showSuccess("Household Saved", `${idPreview} registered successfully.`);
 
       Alert.alert(
         "Saved ✓",
@@ -448,11 +513,9 @@ export default function AddHouseholdScreen() {
       );
     } catch (err: any) {
       console.error("SAVE ERROR:", err);
-      Alert.alert(
-        "Error",
-        err?.message ||
-          JSON.stringify(err) ||
-          "Failed to save. Please try again.",
+      showError(
+        "Save Failed",
+        err?.message || "Failed to save. Please try again.",
       );
     } finally {
       setSaving(false);
