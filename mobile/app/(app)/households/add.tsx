@@ -194,9 +194,35 @@ export default function AddHouseholdScreen() {
   const loadZones = async () => {
     try {
       const res = await api.get("/geography/zones");
-      setZones(res.data.data);
-      if (res.data.data.length === 1) setSelectedZoneId(res.data.data[0].id);
-    } catch {}
+      const fetchedZones = res.data.data;
+      setZones(fetchedZones);
+      if (fetchedZones.length === 1) setSelectedZoneId(fetchedZones[0].id);
+
+      // Cache zones to SQLite for offline use
+      const db = await getDb();
+      for (const z of fetchedZones) {
+        await db.runAsync(
+          `INSERT OR REPLACE INTO zones (id, name, ta_id, ta_name) VALUES (?,?,?,?)`,
+          [z.id, z.name, z.taId || null, z.ta?.name || ""],
+        );
+      }
+    } catch {
+      // Offline fallback — load from SQLite
+      try {
+        const db = await getDb();
+        const rows = await db.getAllAsync<Zone>(
+          "SELECT id, name FROM zones ORDER BY name ASC",
+          [],
+        );
+        setZones(rows);
+        if (rows.length === 1) setSelectedZoneId(rows[0].id);
+        if (rows.length > 0) {
+          console.log("[OFFLINE] Loaded zones from SQLite:", rows.length);
+        }
+      } catch (e) {
+        console.warn("[ZONES] Could not load zones offline:", e);
+      }
+    }
   };
 
   const loadVillages = async (zoneId: string) => {

@@ -573,6 +573,33 @@ model SyncConflict {
   @@map("sync_conflicts")
 }
 
+// ─── LOGIN SECURITY 
+
+model LoginAttempt {
+  id          String   @id @default(uuid())
+  phoneNumber String   @map("phone_number")
+  ipAddress   String?  @map("ip_address")
+  deviceId    String?  @map("device_id")
+  success     Boolean  @default(false)
+  attemptedAt DateTime @default(now()) @map("attempted_at")
+
+  @@map("login_attempts")
+}
+
+model LoginLockout {
+  id            String   @id @default(uuid())
+  phoneNumber   String   @unique @map("phone_number")
+  lockedUntil   DateTime? @map("locked_until")
+  lockoutCount  Int      @default(0) @map("lockout_count")
+  lastLockoutAt DateTime? @map("last_lockout_at")
+  isPermanent   Boolean  @default(false) @map("is_permanent")
+  unlockedAt    DateTime? @map("unlocked_at")
+  unlockedById  String?  @map("unlocked_by_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("login_lockouts")
+}
 // ─── AUDIT LOG 
 
 model AuditLog {

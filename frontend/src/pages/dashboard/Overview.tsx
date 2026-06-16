@@ -8,6 +8,7 @@ import {
   Heart,
   TrendingUp,
   Clock,
+  ShieldAlert,
 } from "lucide-react";
 import api from "../../services/api";
 import type { OverviewStats, ChwActivity, MapEvent } from "../../types";
@@ -66,9 +67,38 @@ export default function Overview() {
 
   const unsynced = chwData?.filter((c) => c.status !== "ACTIVE") || [];
 
+  const { data: securityData } = useQuery({
+    queryKey: ["security-alerts"],
+    queryFn: () => api.get("/admin/security/alerts").then((r) => r.data.data),
+    refetchInterval: 60000,
+  });
+
+  const lockedUsers = securityData?.lockedUsers || [];
+
   return (
     <div className="space-y-6">
       {/* Alert banner */}
+      {/* Security alert banner */}
+      {lockedUsers.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <ShieldAlert size={18} className="text-red-600 shrink-0" />
+            <p className="text-sm text-red-800 font-medium">
+              🔴 {lockedUsers.length} account{lockedUsers.length > 1 ? "s" : ""}{" "}
+              suspended due to failed login attempts —{" "}
+              {lockedUsers.map((u: any) => u.fullName).join(", ")}
+            </p>
+          </div>
+          <a
+            href="/admin/security"
+            className="text-xs text-red-700 font-semibold underline shrink-0"
+          >
+            View &amp; Unlock →
+          </a>
+        </div>
+      )}
+
+      {/* Sync alert banner */}
       {unsynced.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center gap-3">
           <AlertTriangle size={18} className="text-amber-600 shrink-0" />

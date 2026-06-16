@@ -140,12 +140,10 @@ export const createDistrict = async (req, res, next) => {
     res.status(201).json({ success: true, data: district });
   } catch (err) {
     if (err.code === "P2002")
-      return res
-        .status(409)
-        .json({
-          success: false,
-          message: `District "${req.body.name}" already exists in this region.`,
-        });
+      return res.status(409).json({
+        success: false,
+        message: `District "${req.body.name}" already exists in this region.`,
+      });
     next(err);
   }
 };
@@ -163,12 +161,10 @@ export const createTA = async (req, res, next) => {
     res.status(201).json({ success: true, data: ta });
   } catch (err) {
     if (err.code === "P2002")
-      return res
-        .status(409)
-        .json({
-          success: false,
-          message: `TA "${req.body.name}" already exists in this district.`,
-        });
+      return res.status(409).json({
+        success: false,
+        message: `TA "${req.body.name}" already exists in this district.`,
+      });
     next(err);
   }
 };
@@ -184,12 +180,10 @@ export const createZone = async (req, res, next) => {
     res.status(201).json({ success: true, data: zone });
   } catch (err) {
     if (err.code === "P2002")
-      return res
-        .status(409)
-        .json({
-          success: false,
-          message: `Zone "${req.body.name}" already exists in this TA.`,
-        });
+      return res.status(409).json({
+        success: false,
+        message: `Zone "${req.body.name}" already exists in this TA.`,
+      });
     next(err);
   }
 };
@@ -306,6 +300,75 @@ export const createDrug = async (req, res, next) => {
       },
     });
     res.status(201).json({ success: true, data: drug });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── SECURITY ────────────────────────────────────────────────────────────────
+export const getSecurityAlerts = async (req, res, next) => {
+  try {
+    const alerts = await prisma.auditLog.findMany({
+      where: {
+        action: { in: ["ACCOUNT_LOCKED", "ACCOUNT_UNLOCKED"] },
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            phoneNumber: true,
+            role: true,
+            isActive: true,
+            zoneAllocations: {
+              select: { zone: { select: { name: true } } },
+            },
+          },
+        },
+      },
+      orderBy: { loggedAt: "desc" },
+      take: 50,
+    });
+
+    const lockedUsers = await prisma.user.findMany({
+      where: { isActive: false },
+      select: {
+        id: true,
+        fullName: true,
+        phoneNumber: true,
+        role: true,
+        isActive: true,
+        zoneAllocations: {
+          select: { zone: { select: { name: true } } },
+        },
+      },
+    });
+
+    res.json({ success: true, data: { alerts, lockedUsers } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const unlockUser = async (req, res, next) => {
+  try {
+    const user = await prisma.user.update({
+      where: { id: req.params.id },
+      data: { isActive: true },
+      select: { id: true, fullName: true, phoneNumber: true, isActive: true },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: "ACCOUNT_UNLOCKED",
+        recordType: "USER",
+        recordId: user.id,
+        newValue: { unlockedBy: req.user.id, unlockedAt: new Date() },
+      },
+    });
+
+    res.json({ success: true, data: user });
   } catch (err) {
     next(err);
   }

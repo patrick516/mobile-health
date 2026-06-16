@@ -172,6 +172,40 @@ export const initDb = async (): Promise<void> => {
         gps_lng REAL,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
+
+      CREATE TABLE IF NOT EXISTS cached_users (
+        id TEXT PRIMARY KEY,
+        phone_number TEXT NOT NULL UNIQUE,
+        pin_hash TEXT NOT NULL,
+        full_name TEXT NOT NULL,
+        role TEXT NOT NULL,
+        zone_allocations TEXT DEFAULT '[]',
+        ta_allocations TEXT DEFAULT '[]',
+        token TEXT,
+        cached_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS zones (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        ta_id TEXT,
+        ta_name TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS login_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        phone_number TEXT NOT NULL,
+        attempted_at TEXT NOT NULL DEFAULT (datetime('now')),
+        success INTEGER DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS login_lockouts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        phone_number TEXT NOT NULL UNIQUE,
+        locked_until TEXT,
+        lockout_count INTEGER DEFAULT 0,
+        last_lockout_at TEXT,
+        is_permanent INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
       CREATE TABLE IF NOT EXISTS notifications (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
@@ -179,6 +213,53 @@ export const initDb = async (): Promise<void> => {
         type TEXT NOT NULL,
         related_id TEXT,
         is_read INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+
+    // Migration — add new tables if they don't exist yet
+    await database.execAsync(`
+      CREATE TABLE IF NOT EXISTS cached_users (
+        id TEXT PRIMARY KEY,
+        phone_number TEXT NOT NULL UNIQUE,
+        pin_hash TEXT NOT NULL,
+        full_name TEXT NOT NULL,
+        role TEXT NOT NULL,
+        zone_allocations TEXT DEFAULT '[]',
+        ta_allocations TEXT DEFAULT '[]',
+        token TEXT,
+        cached_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+     CREATE TABLE IF NOT EXISTS zones (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        ta_id TEXT,
+        ta_name TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS login_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        phone_number TEXT NOT NULL,
+        attempted_at TEXT NOT NULL DEFAULT (datetime('now')),
+        success INTEGER DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS login_lockouts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        phone_number TEXT NOT NULL UNIQUE,
+        locked_until TEXT,
+        lockout_count INTEGER DEFAULT 0,
+        last_lockout_at TEXT,
+        is_permanent INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS stock_requests (
+        id TEXT PRIMARY KEY,
+        local_id TEXT NOT NULL UNIQUE,
+        drug_id TEXT NOT NULL,
+        quantity_requested INTEGER NOT NULL,
+        status TEXT DEFAULT 'PENDING',
+        notes TEXT,
+        synced INTEGER DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
     `);

@@ -15,6 +15,8 @@ import {
   getFacilities,
   createDrug,
   updateDrug,
+  getSecurityAlerts,
+  unlockUser,
 } from "./admin.controller.js";
 import { authenticate } from "../../middleware/auth.js";
 import { role } from "../../middleware/role.js";
@@ -46,5 +48,9 @@ router.post("/facilities", createFacility);
 // Drugs
 router.post("/drugs", createDrug);
 router.patch("/drugs/:id", updateDrug);
+
+// Security
+router.get("/security/alerts", getSecurityAlerts);
+router.patch("/security/unlock/:id", unlockUser);
 
 export default router;

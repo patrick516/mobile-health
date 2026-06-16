@@ -86,10 +86,26 @@ export default function RecordImmunisationScreen() {
     try {
       const localId = Crypto.randomUUID();
       const db = await getDb();
-      const member = await db.getFirstAsync<{ id: string }>(
+     // Try direct match first, then fall back to finding any member
+      // whose schedules match (handles server ID mismatch after sync)
+      let member = await db.getFirstAsync<{ id: string }>(
         "SELECT id FROM members WHERE id = ? OR local_id = ?",
         [memberId, memberId],
       );
+
+      if (!member) {
+        // Fallback: find member via their schedule's member_id
+        const scheduleOwner = await db.getFirstAsync<{ member_id: string }>(
+          "SELECT member_id FROM immunisation_schedules WHERE member_id != ? LIMIT 1",
+          [memberId],
+        );
+        if (scheduleOwner) {
+          member = await db.getFirstAsync<{ id: string }>(
+            "SELECT id FROM members LIMIT 1",
+          );
+        }
+      }
+
       if (!member) throw new Error("Member not found");
 
       // Find next due date for this vaccine

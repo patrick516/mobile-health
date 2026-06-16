@@ -22,25 +22,20 @@ api.interceptors.request.use(async (config) => {
   return config;
 });
 
-// Handle 401 globally — clear token and redirect to login
+// Handle 401 globally — but NOT on the login endpoint itself
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    if (error.response?.status === 401 && !isRedirecting) {
+    const isLoginEndpoint = error.config?.url?.includes("/auth/login");
+
+    if (error.response?.status === 401 && !isRedirecting && !isLoginEndpoint) {
       isRedirecting = true;
-
       console.log("[API] 401 Unauthorized - Redirecting to login");
-
-      // Clear stored auth data
       await AsyncStorage.removeItem("auth_token");
       await AsyncStorage.removeItem("auth_user");
-
-      // Use setTimeout to ensure navigation happens after current execution
       setTimeout(() => {
         router.replace("/(auth)/login");
       }, 100);
-
-      // Reset redirecting flag after delay
       setTimeout(() => {
         isRedirecting = false;
       }, 2000);

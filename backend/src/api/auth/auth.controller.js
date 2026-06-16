@@ -2,10 +2,16 @@ import bcrypt from "bcryptjs";
 import prisma from "../../config/db.js";
 import { signToken } from "../../utils/jwt.js";
 
-// POST /api/auth/login
+const MAX_ATTEMPTS = 3;
+const LOCKOUT_MINUTES = 5;
+const LOCKOUT_HOURS = 48;
+const LOCKOUT_WINDOW_MINUTES = 60;
+const MAX_LOCKOUTS_BEFORE_PERMANENT = 3;
+
 export const login = async (req, res, next) => {
   try {
-    const { phoneNumber, pin } = req.body;
+    const { phoneNumber, pin, deviceId } = req.body;
+    const ipAddress = req.ip || req.headers["x-forwarded-for"] || null;
 
     if (!phoneNumber || !pin) {
       return res.status(400).json({
@@ -14,6 +20,35 @@ export const login = async (req, res, next) => {
       });
     }
 
+    // ── Step 1: Check server-side lockout ──
+    const lockout = await prisma.loginLockout.findUnique({
+      where: { phoneNumber },
+    });
+
+    if (lockout) {
+      if (lockout.isPermanent) {
+        return res.status(423).json({
+          success: false,
+          message:
+            "Account suspended for 48 hours due to repeated failed attempts. Contact your supervisor.",
+          lockedUntil: lockout.lockedUntil,
+          isPermanent: true,
+        });
+      }
+      if (lockout.lockedUntil && new Date() < lockout.lockedUntil) {
+        const remaining = Math.ceil(
+          (lockout.lockedUntil.getTime() - Date.now()) / 60000,
+        );
+        return res.status(423).json({
+          success: false,
+          message: `Account locked. Try again in ${remaining} minute${remaining > 1 ? "s" : ""}.`,
+          lockedUntil: lockout.lockedUntil,
+          isPermanent: false,
+        });
+      }
+    }
+
+    // ── Step 2: Find user ──
     const user = await prisma.user.findUnique({
       where: { phoneNumber },
       include: {
@@ -35,6 +70,10 @@ export const login = async (req, res, next) => {
     });
 
     if (!user) {
+      // Record attempt for unknown number too
+      await prisma.loginAttempt.create({
+        data: { phoneNumber, ipAddress, deviceId, success: false },
+      });
       return res.status(401).json({
         success: false,
         message: "Invalid phone number or PIN.",
@@ -48,25 +87,126 @@ export const login = async (req, res, next) => {
       });
     }
 
+    // ── Step 3: Check PIN ──
     const pinMatch = await bcrypt.compare(String(pin), user.pinHash);
+
     if (!pinMatch) {
+      // Record failed attempt
+      await prisma.loginAttempt.create({
+        data: { phoneNumber, ipAddress, deviceId, success: false },
+      });
+
+      // Count recent failed attempts (last 10 minutes)
+      const recentFails = await prisma.loginAttempt.count({
+        where: {
+          phoneNumber,
+          success: false,
+          attemptedAt: {
+            gte: new Date(Date.now() - 10 * 60 * 1000),
+          },
+        },
+      });
+
+      if (recentFails >= MAX_ATTEMPTS) {
+        // Check existing lockout
+        const existingLockout = await prisma.loginLockout.findUnique({
+          where: { phoneNumber },
+        });
+
+        const lockoutCount = (existingLockout?.lockoutCount || 0) + 1;
+
+        // Count lockouts in last hour
+        const recentLockouts = lockoutCount;
+        const isPermanent = recentLockouts >= MAX_LOCKOUTS_BEFORE_PERMANENT;
+        const lockedUntil = isPermanent
+          ? new Date(Date.now() + LOCKOUT_HOURS * 60 * 60 * 1000)
+          : new Date(Date.now() + LOCKOUT_MINUTES * 60 * 1000);
+
+        await prisma.loginLockout.upsert({
+          where: { phoneNumber },
+          update: {
+            lockedUntil,
+            lockoutCount,
+            lastLockoutAt: new Date(),
+            isPermanent,
+            unlockedAt: null,
+          },
+          create: {
+            phoneNumber,
+            lockedUntil,
+            lockoutCount,
+            lastLockoutAt: new Date(),
+            isPermanent,
+          },
+        });
+
+        // Write audit log
+        await prisma.auditLog.create({
+          data: {
+            userId: user.id,
+            action: isPermanent ? "ACCOUNT_LOCKED_48H" : "ACCOUNT_LOCKED_5M",
+            recordType: "USER",
+            recordId: user.id,
+            newValue: {
+              reason: `${lockoutCount} lockout(s) — ${recentFails} failed attempts`,
+              lockedUntil,
+              isPermanent,
+              deviceId,
+              ipAddress,
+            },
+          },
+        });
+
+        // If permanent — deactivate account
+        if (isPermanent) {
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { isActive: false },
+          });
+        }
+
+        return res.status(423).json({
+          success: false,
+          message: isPermanent
+            ? "Account suspended for 48 hours. Your supervisor has been notified."
+            : `Too many failed attempts. Account locked for ${LOCKOUT_MINUTES} minutes.`,
+          lockedUntil,
+          isPermanent,
+          lockoutCount,
+        });
+      }
+
+      const remaining = MAX_ATTEMPTS - recentFails;
       return res.status(401).json({
         success: false,
-        message: "Invalid phone number or PIN.",
+        message: `Invalid PIN. ${remaining} attempt${remaining > 1 ? "s" : ""} remaining before lockout.`,
+        attemptsRemaining: remaining,
+      });
+    }
+
+    // ── Step 4: Success — clear lockout, record success ──
+    await prisma.loginAttempt.create({
+      data: { phoneNumber, ipAddress, deviceId, success: true },
+    });
+
+    // Clear any existing lockout on successful login
+    await prisma.loginLockout.deleteMany({ where: { phoneNumber } });
+
+    // Reactivate if was deactivated by lockout
+    if (!user.isActive) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { isActive: true },
       });
     }
 
     const token = signToken(user.id, user.role);
-
     const { pinHash, ...userSafe } = user;
 
     res.json({
       success: true,
       message: "Login successful.",
-      data: {
-        token,
-        user: userSafe,
-      },
+      data: { token, user: userSafe },
     });
   } catch (err) {
     next(err);
@@ -149,6 +289,66 @@ export const changePin = async (req, res, next) => {
     await prisma.user.update({ where: { id: req.user.id }, data: { pinHash } });
 
     res.json({ success: true, message: "PIN changed successfully." });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// POST /api/auth/flag-lockout
+export const flagLockout = async (req, res, next) => {
+  try {
+    const { phoneNumber, reason, lockedUntil } = req.body;
+
+    const user = await prisma.user.findUnique({
+      where: { phoneNumber },
+      select: { id: true, fullName: true, phoneNumber: true },
+    });
+
+    if (!user) return res.json({ success: true }); // silently ignore unknown phones
+
+    // Deactivate user on 48hr lockout
+    await prisma.user.update({
+      where: { phoneNumber },
+      data: { isActive: false },
+    });
+
+    // Write to audit log
+    await prisma.auditLog.create({
+      data: {
+        userId: user.id,
+        action: "ACCOUNT_LOCKED",
+        recordType: "USER",
+        recordId: user.id,
+        newValue: { reason, lockedUntil },
+      },
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// PATCH /api/auth/unlock/:id — Admin unlocks a suspended account
+export const unlockAccount = async (req, res, next) => {
+  try {
+    const user = await prisma.user.update({
+      where: { id: req.params.id },
+      data: { isActive: true },
+      select: { id: true, fullName: true, phoneNumber: true, isActive: true },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: "ACCOUNT_UNLOCKED",
+        recordType: "USER",
+        recordId: user.id,
+        newValue: { unlockedBy: req.user.id },
+      },
+    });
+
+    res.json({ success: true, data: user });
   } catch (err) {
     next(err);
   }
