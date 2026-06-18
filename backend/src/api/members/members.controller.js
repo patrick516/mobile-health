@@ -1,4 +1,5 @@
 import prisma from "../../config/db.js";
+import { buildVillageScope } from "../../middleware/auth.js";
 
 const VACCINE_SCHEDULE = [
   { code: "BCG", dose: 1, weeksAfterBirth: 0 },
@@ -26,14 +27,20 @@ function addWeeks(date, weeks) {
   return d;
 }
 
-// GET /api/members?householdId=
+// GET /api/members?householdId=&taId=
 export const getMembers = async (req, res, next) => {
   try {
-    const { householdId } = req.query;
+    const { householdId, taId } = req.query;
+    const villageScope = buildVillageScope(req.user, taId);
+    const hasScope = Object.keys(villageScope).length > 0;
+
     const members = await prisma.householdMember.findMany({
       where: {
         ...(householdId ? { householdId } : {}),
         status: "ACTIVE",
+        ...(!householdId && hasScope
+          ? { household: { village: villageScope } }
+          : {}),
       },
       include: {
         household: { include: { village: true } },

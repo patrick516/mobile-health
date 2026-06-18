@@ -1,4 +1,5 @@
 import prisma from "../../config/db.js";
+import { buildVillageScope } from "../../middleware/auth.js";
 
 const MUAC_STATUS = (mm) => {
   if (!mm) return null;
@@ -7,11 +8,14 @@ const MUAC_STATUS = (mm) => {
   return "SEVERE_MALNUTRITION";
 };
 
-// GET /api/visits?memberId=&chwId=&from=&to=&page=&limit=
+// GET /api/visits?memberId=&chwId=&from=&to=&page=&limit=&taId=
 export const getVisits = async (req, res, next) => {
   try {
-    const { memberId, chwId, from, to, page = 1, limit = 50 } = req.query;
+    const { memberId, chwId, from, to, taId, page = 1, limit = 50 } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const villageScope = buildVillageScope(req.user, taId);
+    const hasScope = Object.keys(villageScope).length > 0;
 
     const where = {
       ...(memberId ? { memberId } : {}),
@@ -24,6 +28,7 @@ export const getVisits = async (req, res, next) => {
             },
           }
         : {}),
+      ...(hasScope ? { member: { household: { village: villageScope } } } : {}),
     };
 
     const [visits, total] = await Promise.all([

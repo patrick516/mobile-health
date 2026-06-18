@@ -21,6 +21,7 @@ export default function Users() {
     phoneNumber: "",
     pin: "",
     role: "CCW",
+    facilityId: "",
   });
   const [error, setError] = useState("");
 
@@ -29,12 +30,24 @@ export default function Users() {
     queryFn: () => api.get("/admin/users").then((r) => r.data.data),
   });
 
+  const { data: facilities } = useQuery({
+    queryKey: ["facilities"],
+    queryFn: () => api.get("/admin/facilities").then((r) => r.data.data),
+  });
+
+  const needsFacility = ["NURSE", "DISTRICT_OFFICER"].includes(form.role);
   const createMutation = useMutation({
     mutationFn: (data: object) => api.post("/admin/users", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
       setShowForm(false);
-      setForm({ fullName: "", phoneNumber: "", pin: "", role: "CCW" });
+      setForm({
+        fullName: "",
+        phoneNumber: "",
+        pin: "",
+        role: "CCW",
+        facilityId: "",
+      });
     },
     onError: (err: any) =>
       setError(err.response?.data?.message || "Failed to create user."),
@@ -127,7 +140,11 @@ export default function Users() {
                 className="input"
                 value={form.role}
                 onChange={(e) =>
-                  setForm((p) => ({ ...p, role: e.target.value }))
+                  setForm((p) => ({
+                    ...p,
+                    role: e.target.value,
+                    facilityId: "",
+                  }))
                 }
               >
                 {ROLES.map((r) => (
@@ -137,6 +154,32 @@ export default function Users() {
                 ))}
               </select>
             </div>
+            {needsFacility && (
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  Assigned Facility
+                </label>
+                <select
+                  className="input"
+                  value={form.facilityId}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, facilityId: e.target.value }))
+                  }
+                >
+                  <option value="">Select facility...</option>
+                  {facilities?.map((f: any) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name} — {f.facilityType?.replace("_", " ")}
+                      {f.district
+                        ? ` (${f.district.name})`
+                        : f.ta
+                          ? ` (${f.ta.name})`
+                          : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
           <div className="flex gap-3">
             <button
@@ -161,14 +204,16 @@ export default function Users() {
         <table className="w-full">
           <thead>
             <tr className="border-b border-gray-100">
-              {["Name", "Phone", "Role", "Status", "Actions"].map((h) => (
-                <th
-                  key={h}
-                  className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide"
-                >
-                  {h}
-                </th>
-              ))}
+              {["Name", "Phone", "Role", "Facility", "Status", "Actions"].map(
+                (h) => (
+                  <th
+                    key={h}
+                    className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide"
+                  >
+                    {h}
+                  </th>
+                ),
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
@@ -194,6 +239,9 @@ export default function Users() {
                   <span className={roleColor[u.role] ?? "badge-gray"}>
                     {u.role.replace("_", " ")}
                   </span>
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-600">
+                  {(u as any).facility?.name || "—"}
                 </td>
                 <td className="px-4 py-3">
                   <span className={u.isActive ? "badge-green" : "badge-gray"}>

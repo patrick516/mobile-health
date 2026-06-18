@@ -1,6 +1,7 @@
 import prisma from "../../config/db.js";
 import ExcelJS from "exceljs";
 import PDFDocument from "pdfkit";
+import { buildVillageScope } from "../../middleware/auth.js";
 
 // ─── HELPER: parse date range from query ───────────────────────────────────
 const getDateRange = (from, to) => {
@@ -19,14 +20,17 @@ const fmt = (date) => (date ? new Date(date).toLocaleDateString("en-GB") : "—"
 
 export const getHouseholdReport = async (req, res, next) => {
   try {
-    const { from, to, zoneId, villageId } = req.query;
+    const { from, to, zoneId, villageId, taId } = req.query;
     const { fromDate, toDate } = getDateRange(from, to);
+    const villageScope = buildVillageScope(req.user, taId);
+    const hasScope = Object.keys(villageScope).length > 0;
 
     const households = await prisma.household.findMany({
       where: {
         createdAt: { gte: fromDate, lte: toDate },
         ...(villageId ? { villageId } : {}),
         ...(zoneId ? { village: { zoneId } } : {}),
+        ...(!villageId && !zoneId && hasScope ? { village: villageScope } : {}),
       },
       include: {
         village: {
@@ -63,13 +67,20 @@ export const getHouseholdReport = async (req, res, next) => {
 
 export const getReferralReport = async (req, res, next) => {
   try {
-    const { from, to, zoneId, status } = req.query;
+    const { from, to, zoneId, status, taId } = req.query;
     const { fromDate, toDate } = getDateRange(from, to);
+    const villageScope = buildVillageScope(req.user, taId);
+    const hasScope = Object.keys(villageScope).length > 0;
 
     const referrals = await prisma.referral.findMany({
       where: {
         createdAt: { gte: fromDate, lte: toDate },
         ...(status ? { status } : {}),
+        ...(zoneId
+          ? { member: { household: { village: { zoneId } } } }
+          : hasScope
+            ? { member: { household: { village: villageScope } } }
+            : {}),
       },
       include: {
         member: {
@@ -141,14 +152,19 @@ export const getReferralReport = async (req, res, next) => {
 
 export const getVisitReport = async (req, res, next) => {
   try {
-    const { from, to, chwId, visitType } = req.query;
+    const { from, to, chwId, visitType, taId } = req.query;
     const { fromDate, toDate } = getDateRange(from, to);
+    const villageScope = buildVillageScope(req.user, taId);
+    const hasScope = Object.keys(villageScope).length > 0;
 
     const visits = await prisma.visit.findMany({
       where: {
         visitedAt: { gte: fromDate, lte: toDate },
         ...(chwId ? { chwId } : {}),
         ...(visitType ? { visitType } : {}),
+        ...(hasScope
+          ? { member: { household: { village: villageScope } } }
+          : {}),
       },
       include: {
         member: {
@@ -197,12 +213,19 @@ export const getVisitReport = async (req, res, next) => {
 
 export const getImmunisationReport = async (req, res, next) => {
   try {
-    const { from, to, zoneId } = req.query;
+    const { from, to, zoneId, taId } = req.query;
     const { fromDate, toDate } = getDateRange(from, to);
+    const villageScope = buildVillageScope(req.user, taId);
+    const hasScope = Object.keys(villageScope).length > 0;
 
     const schedules = await prisma.immunisationSchedule.findMany({
       where: {
         dueDate: { gte: fromDate, lte: toDate },
+        ...(zoneId
+          ? { member: { household: { village: { zoneId } } } }
+          : hasScope
+            ? { member: { household: { village: villageScope } } }
+            : {}),
       },
       include: {
         member: {
@@ -714,32 +737,39 @@ export const exportReportPDF = async (req, res, next) => {
 // 5. PREGNANT WOMEN & ANC REPORT
 export const getAncReport = async (req, res, next) => {
   try {
-    const { from, to, zoneId, districtId, regionId } = req.query;
+    const { from, to, zoneId, districtId, regionId, taId } = req.query;
     const { fromDate, toDate } = getDateRange(from, to);
+    const villageScope = buildVillageScope(req.user, taId);
+    const hasScope = Object.keys(villageScope).length > 0;
+
+    const manualFilter =
+      zoneId || districtId || regionId
+        ? {
+            village: {
+              ...(zoneId ? { zoneId } : {}),
+              ...(districtId || regionId
+                ? {
+                    zone: {
+                      ta: {
+                        ...(districtId ? { districtId } : {}),
+                        ...(regionId ? { district: { regionId } } : {}),
+                      },
+                    },
+                  }
+                : {}),
+            },
+          }
+        : hasScope
+          ? { village: villageScope }
+          : {};
 
     const members = await prisma.householdMember.findMany({
       where: {
         isPregnant: true,
         status: "ACTIVE",
         createdAt: { gte: fromDate, lte: toDate },
-        ...(zoneId || districtId || regionId
-          ? {
-              household: {
-                village: {
-                  ...(zoneId ? { zoneId } : {}),
-                  ...(districtId || regionId
-                    ? {
-                        zone: {
-                          ta: {
-                            ...(districtId ? { districtId } : {}),
-                            ...(regionId ? { district: { regionId } } : {}),
-                          },
-                        },
-                      }
-                    : {}),
-                },
-              },
-            }
+        ...(Object.keys(manualFilter).length > 0
+          ? { household: manualFilter }
           : {}),
       },
       include: {
@@ -791,11 +821,34 @@ export const getAncReport = async (req, res, next) => {
 // 6. CHILDREN UNDER 5 REPORT
 export const getChildrenUnder5Report = async (req, res, next) => {
   try {
-    const { from, to, zoneId, districtId, regionId } = req.query;
+    const { from, to, zoneId, districtId, regionId, taId } = req.query;
     const { fromDate, toDate } = getDateRange(from, to);
+    const villageScope = buildVillageScope(req.user, taId);
+    const hasScope = Object.keys(villageScope).length > 0;
 
     const fiveYearsAgo = new Date();
     fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 5);
+
+    const manualFilter =
+      zoneId || districtId || regionId
+        ? {
+            village: {
+              ...(zoneId ? { zoneId } : {}),
+              ...(districtId || regionId
+                ? {
+                    zone: {
+                      ta: {
+                        ...(districtId ? { districtId } : {}),
+                        ...(regionId ? { district: { regionId } } : {}),
+                      },
+                    },
+                  }
+                : {}),
+            },
+          }
+        : hasScope
+          ? { village: villageScope }
+          : {};
 
     const members = await prisma.householdMember.findMany({
       where: {
@@ -805,24 +858,8 @@ export const getChildrenUnder5Report = async (req, res, next) => {
           { estimatedAge: { lte: 5 } },
         ],
         createdAt: { gte: fromDate, lte: toDate },
-        ...(zoneId || districtId || regionId
-          ? {
-              household: {
-                village: {
-                  ...(zoneId ? { zoneId } : {}),
-                  ...(districtId || regionId
-                    ? {
-                        zone: {
-                          ta: {
-                            ...(districtId ? { districtId } : {}),
-                            ...(regionId ? { district: { regionId } } : {}),
-                          },
-                        },
-                      }
-                    : {}),
-                },
-              },
-            }
+        ...(Object.keys(manualFilter).length > 0
+          ? { household: manualFilter }
           : {}),
       },
       include: {

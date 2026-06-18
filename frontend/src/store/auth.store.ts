@@ -10,6 +10,7 @@ interface AuthState {
   isAdmin: () => boolean;
   isNurse: () => boolean;
   isDHO: () => boolean;
+  scopeLevel: () => "ALL" | "DISTRICT" | "TA" | "ZONE";
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -30,6 +31,7 @@ export const useAuthStore = create<AuthState>()(
       isAdmin: () => get().user?.role === "ADMIN",
       isNurse: () => get().user?.role === "NURSE",
       isDHO: () => get().user?.role === "DISTRICT_OFFICER",
+      scopeLevel: () => (get().user as any)?.scopeLevel || "ALL",
     }),
     { name: "auth-store" },
   ),

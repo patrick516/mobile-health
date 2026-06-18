@@ -1,19 +1,19 @@
 import prisma from "../../config/db.js";
-
+import { buildVillageScope } from "../../middleware/auth.js";
 // GET /api/households?zoneId=&villageId=&search=&page=&limit=
 export const getHouseholds = async (req, res, next) => {
   try {
-    const { zoneId, villageId, search, page = 1, limit = 50 } = req.query;
+    const { zoneId, villageId, taId, search, page = 1, limit = 50 } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    // Build village scope from user allocations
+    // Explicit filters take priority; otherwise fall back to the user's scope
     let villageFilter = {};
     if (villageId) {
       villageFilter = { villageId };
     } else if (zoneId) {
       villageFilter = { village: { zoneId } };
-    } else if (["CCW"].includes(req.user.role) && req.user.zoneIds.length > 0) {
-      villageFilter = { village: { zoneId: { in: req.user.zoneIds } } };
+    } else {
+      villageFilter = { village: buildVillageScope(req.user, taId) };
     }
 
     const where = {

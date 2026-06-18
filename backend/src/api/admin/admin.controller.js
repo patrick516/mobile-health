@@ -17,6 +17,15 @@ export const getUsers = async (req, res, next) => {
         role: true,
         isActive: true,
         createdAt: true,
+        facility: {
+          select: {
+            id: true,
+            name: true,
+            facilityType: true,
+            district: { select: { name: true } },
+            ta: { select: { name: true } },
+          },
+        },
         zoneAllocations: { select: { zone: { include: { ta: true } } } },
         taAllocations: { select: { ta: true } },
       },
@@ -27,10 +36,9 @@ export const getUsers = async (req, res, next) => {
     next(err);
   }
 };
-
 export const createUser = async (req, res, next) => {
   try {
-    const { fullName, phoneNumber, pin, role } = req.body;
+    const { fullName, phoneNumber, pin, role, facilityId } = req.body;
     if (!fullName || !phoneNumber || !pin || !role) {
       return res.status(400).json({
         success: false,
@@ -44,7 +52,15 @@ export const createUser = async (req, res, next) => {
     }
     const pinHash = await bcrypt.hash(String(pin), 12);
     const user = await prisma.user.create({
-      data: { fullName, phoneNumber, pinHash, role },
+      data: {
+        fullName,
+        phoneNumber,
+        pinHash,
+        role,
+        facilityId: ["NURSE", "DISTRICT_OFFICER"].includes(role)
+          ? facilityId || null
+          : null,
+      },
       select: {
         id: true,
         fullName: true,
@@ -52,23 +68,29 @@ export const createUser = async (req, res, next) => {
         role: true,
         isActive: true,
         createdAt: true,
+        facility: { select: { id: true, name: true, facilityType: true } },
       },
     });
     res.status(201).json({ success: true, data: user });
   } catch (err) {
+    if (err.code === "P2002")
+      return res.status(409).json({
+        success: false,
+        message: `Phone number ${req.body.phoneNumber} is already registered.`,
+      });
     next(err);
   }
 };
-
 export const updateUser = async (req, res, next) => {
   try {
-    const { fullName, phoneNumber, role } = req.body;
+    const { fullName, phoneNumber, role, facilityId } = req.body;
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: {
         ...(fullName ? { fullName } : {}),
         ...(phoneNumber ? { phoneNumber } : {}),
         ...(role ? { role } : {}),
+        ...(facilityId !== undefined ? { facilityId: facilityId || null } : {}),
       },
       select: {
         id: true,
@@ -76,6 +98,7 @@ export const updateUser = async (req, res, next) => {
         phoneNumber: true,
         role: true,
         isActive: true,
+        facility: { select: { id: true, name: true, facilityType: true } },
       },
     });
     res.json({ success: true, data: user });
@@ -247,9 +270,20 @@ export const allocateUserToTA = async (req, res, next) => {
 };
 
 // ─── FACILITIES
+// ─── FACILITIES
 export const getFacilities = async (req, res, next) => {
   try {
+    const { facilityType, districtId, taId } = req.query;
     const facilities = await prisma.facility.findMany({
+      where: {
+        ...(facilityType ? { facilityType } : {}),
+        ...(districtId ? { districtId } : {}),
+        ...(taId ? { taId } : {}),
+      },
+      include: {
+        district: { select: { id: true, name: true } },
+        ta: { select: { id: true, name: true, districtId: true } },
+      },
       orderBy: { name: "asc" },
     });
     res.json({ success: true, data: facilities });
@@ -260,21 +294,42 @@ export const getFacilities = async (req, res, next) => {
 
 export const createFacility = async (req, res, next) => {
   try {
-    const { name, gpsLat, gpsLng } = req.body;
-    if (!name)
-      return res
-        .status(400)
-        .json({ success: false, message: "Facility name is required." });
+    const { name, facilityType, districtId, taId, gpsLat, gpsLng } = req.body;
+    if (!name || !facilityType)
+      return res.status(400).json({
+        success: false,
+        message: "Facility name and type are required.",
+      });
+
+    if (facilityType === "DISTRICT_HOSPITAL" && !districtId)
+      return res.status(400).json({
+        success: false,
+        message: "District is required for a District Hospital.",
+      });
+
+    if (["TA_HOSPITAL", "CLINIC"].includes(facilityType) && !taId)
+      return res.status(400).json({
+        success: false,
+        message:
+          "Traditional Authority is required for a TA Hospital or Clinic.",
+      });
+
     const facility = await prisma.facility.create({
-      data: { name, gpsLat: gpsLat || null, gpsLng: gpsLng || null },
+      data: {
+        name,
+        facilityType,
+        districtId: facilityType === "DISTRICT_HOSPITAL" ? districtId : null,
+        taId: ["TA_HOSPITAL", "CLINIC"].includes(facilityType) ? taId : null,
+        gpsLat: gpsLat || null,
+        gpsLng: gpsLng || null,
+      },
     });
     res.status(201).json({ success: true, data: facility });
   } catch (err) {
     next(err);
   }
 };
-
-// ─── DRUGS ────────────────────────────────────────────────────────────────────
+// ─── DRUGS
 export const createDrug = async (req, res, next) => {
   try {
     const { drugCode, nameEnglish, nameChichewa, unit, minimumThreshold } =

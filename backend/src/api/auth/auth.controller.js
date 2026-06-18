@@ -203,16 +203,53 @@ export const login = async (req, res, next) => {
     const token = signToken(user.id, user.role);
     const { pinHash, ...userSafe } = user;
 
+    // Compute scope so the frontend knows what dashboard view to render
+    const userFacility = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: {
+        facility: {
+          select: {
+            id: true,
+            name: true,
+            facilityType: true,
+            districtId: true,
+            taId: true,
+          },
+        },
+      },
+    });
+
+    let scopeLevel = "ALL";
+    if (user.role === "ADMIN") {
+      scopeLevel = "ALL";
+    } else if (user.role === "CCW") {
+      scopeLevel = "ZONE";
+    } else if (userFacility.facility) {
+      if (userFacility.facility.facilityType === "DISTRICT_HOSPITAL") {
+        scopeLevel = "DISTRICT";
+      } else if (
+        ["TA_HOSPITAL", "CLINIC"].includes(userFacility.facility.facilityType)
+      ) {
+        scopeLevel = "TA";
+      }
+    } else if (user.taAllocations.length > 0) {
+      scopeLevel = "TA";
+    }
+
     res.json({
       success: true,
       message: "Login successful.",
-      data: { token, user: userSafe },
+      data: {
+        token,
+        user: { ...userSafe, facility: userFacility.facility, scopeLevel },
+      },
     });
   } catch (err) {
     next(err);
   }
 };
 
+// GET /api/auth/me
 // GET /api/auth/me
 export const getMe = async (req, res, next) => {
   try {
@@ -225,6 +262,15 @@ export const getMe = async (req, res, next) => {
         role: true,
         isActive: true,
         createdAt: true,
+        facility: {
+          select: {
+            id: true,
+            name: true,
+            facilityType: true,
+            districtId: true,
+            taId: true,
+          },
+        },
         zoneAllocations: {
           select: {
             zone: {
@@ -250,7 +296,10 @@ export const getMe = async (req, res, next) => {
       },
     });
 
-    res.json({ success: true, data: user });
+    res.json({
+      success: true,
+      data: { ...user, scopeLevel: req.user.scopeLevel },
+    });
   } catch (err) {
     next(err);
   }

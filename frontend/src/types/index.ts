@@ -6,8 +6,15 @@ export interface User {
   isActive: boolean;
   zoneAllocations: Array<{ zone: { id: string; name: string; taId: string } }>;
   taAllocations: Array<{ ta: { id: string; name: string } }>;
+  facility?: {
+    id: string;
+    name: string;
+    facilityType: "DISTRICT_HOSPITAL" | "TA_HOSPITAL" | "CLINIC" | null;
+    districtId?: string | null;
+    taId?: string | null;
+  } | null;
+  scopeLevel?: "ALL" | "DISTRICT" | "TA" | "ZONE";
 }
-
 export interface Household {
   id: string;
   localId: string;

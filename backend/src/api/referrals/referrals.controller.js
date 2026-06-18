@@ -1,7 +1,8 @@
 import prisma from "../../config/db.js";
 import { sendSms } from "../../utils/sms.js";
+import { buildVillageScope } from "../../middleware/auth.js";
 
-// GET /api/referrals?status=&urgency=&chwId=&from=&to=
+// GET /api/referrals?status=&urgency=&chwId=&from=&to=&taId=
 export const getReferrals = async (req, res, next) => {
   try {
     const {
@@ -10,10 +11,14 @@ export const getReferrals = async (req, res, next) => {
       chwId,
       from,
       to,
+      taId,
       page = 1,
       limit = 50,
     } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const villageScope = buildVillageScope(req.user, taId);
+    const hasScope = Object.keys(villageScope).length > 0;
 
     const where = {
       ...(status ? { status } : {}),
@@ -27,6 +32,7 @@ export const getReferrals = async (req, res, next) => {
             },
           }
         : {}),
+      ...(hasScope ? { member: { household: { village: villageScope } } } : {}),
     };
 
     const [referrals, total] = await Promise.all([

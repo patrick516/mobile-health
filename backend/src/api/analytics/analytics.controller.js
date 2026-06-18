@@ -1,17 +1,20 @@
 import prisma from "../../config/db.js";
+import { buildVillageScope } from "../../middleware/auth.js";
 
 export const getOverview = async (req, res, next) => {
   try {
+    const { taId } = req.query;
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
 
-    const twoDaysAgo = new Date();
-    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-
-    const zoneFilter =
-      req.user.zoneIds.length > 0
-        ? { village: { zoneId: { in: req.user.zoneIds } } }
-        : {};
+    const villageScope = buildVillageScope(req.user, taId);
+    const hasScope = Object.keys(villageScope).length > 0;
+    const householdMemberFilter = hasScope
+      ? { member: { household: { village: villageScope } } }
+      : {};
+    const memberFilter = hasScope
+      ? { household: { village: villageScope } }
+      : {};
 
     const [
       totalVisitsWeek,
@@ -24,26 +27,33 @@ export const getOverview = async (req, res, next) => {
       prisma.visit.count({
         where: {
           visitedAt: { gte: weekAgo },
-          ...(req.user.zoneIds.length > 0
-            ? {
-                member: { household: zoneFilter },
-              }
-            : {}),
+          ...householdMemberFilter,
         },
       }),
       prisma.referral.count({
-        where: { status: { in: ["PENDING", "OVERDUE"] } },
+        where: {
+          status: { in: ["PENDING", "OVERDUE"] },
+          ...householdMemberFilter,
+        },
       }),
-      prisma.referral.count({ where: { status: "MISSED" } }),
+      prisma.referral.count({
+        where: { status: "MISSED", ...householdMemberFilter },
+      }),
       prisma.$queryRaw`
   SELECT COUNT(*) as count FROM drug_stock 
   WHERE quantity_current <= quantity_minimum
 `.then((r) => Number(r[0]?.count ?? 0)),
       prisma.immunisationSchedule.count({
-        where: { status: { in: ["DUE", "OVERDUE"] } },
+        where: {
+          status: { in: ["DUE", "OVERDUE"] },
+          ...(hasScope ? { member: memberFilter } : {}),
+        },
       }),
       prisma.ancVisit.count({
-        where: { status: { in: ["OVERDUE", "MISSED"] } },
+        where: {
+          status: { in: ["OVERDUE", "MISSED"] },
+          ...(hasScope ? { member: memberFilter } : {}),
+        },
       }),
     ]);
 
@@ -94,21 +104,45 @@ export const getTrends = async (req, res, next) => {
 
 export const getChwActivity = async (req, res, next) => {
   try {
+    const { taId } = req.query;
     const twoDaysAgo = new Date();
     twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
 
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
 
+    // CHW scoping is by zone allocation, not village, so we build a
+    // zone-id filter directly based on the requester's scope level.
+    let chwZoneFilter = {};
+    if (req.user.scopeLevel === "ZONE" && req.user.zoneIds.length > 0) {
+      chwZoneFilter = {
+        zoneAllocations: { some: { zoneId: { in: req.user.zoneIds } } },
+      };
+    } else if (req.user.scopeLevel === "TA" && req.user.taIds.length > 0) {
+      chwZoneFilter = {
+        zoneAllocations: { some: { zone: { taId: { in: req.user.taIds } } } },
+      };
+    } else if (req.user.scopeLevel === "DISTRICT" && req.user.districtId) {
+      const targetTaId = taId; // optional drill-down, validated below
+      chwZoneFilter = {
+        zoneAllocations: {
+          some: {
+            zone: {
+              ta: {
+                districtId: req.user.districtId,
+                ...(targetTaId ? { id: targetTaId } : {}),
+              },
+            },
+          },
+        },
+      };
+    }
+
     const chws = await prisma.user.findMany({
       where: {
         role: "CCW",
         isActive: true,
-        ...(req.user.zoneIds.length > 0
-          ? {
-              zoneAllocations: { some: { zoneId: { in: req.user.zoneIds } } },
-            }
-          : {}),
+        ...chwZoneFilter,
       },
       select: {
         id: true,

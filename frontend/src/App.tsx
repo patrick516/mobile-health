@@ -12,6 +12,7 @@ import DHIS2Export from "./pages/export/DHIS2Export";
 import Users from "./pages/admin/Users";
 import Geography from "./pages/admin/Geography";
 import Allocations from "./pages/admin/Allocations";
+import Facilities from "./pages/admin/Facilities";
 import Reports from "./pages/reports/Reports";
 import Security from "./pages/admin/Security";
 
@@ -78,6 +79,14 @@ export default function App() {
             element={
               <AdminRoute>
                 <Allocations />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="admin/facilities"
+            element={
+              <AdminRoute>
+                <Facilities />
               </AdminRoute>
             }
           />

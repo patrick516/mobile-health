@@ -43,6 +43,33 @@ export const getTAs = async (req, res, next) => {
   }
 };
 
+// GET /api/geography/my-tas — TAs the logged-in user is allowed to filter by
+export const getMyTAs = async (req, res, next) => {
+  try {
+    let where = {};
+
+    if (req.user.role === "ADMIN") {
+      where = {}; // sees all
+    } else if (req.user.scopeLevel === "DISTRICT" && req.user.districtId) {
+      where = { districtId: req.user.districtId };
+    } else if (req.user.scopeLevel === "TA" && req.user.taIds.length > 0) {
+      where = { id: { in: req.user.taIds } };
+    } else {
+      // CCW or unscoped user — no TA-level filtering applies to them
+      return res.json({ success: true, data: [] });
+    }
+
+    const tas = await prisma.traditionalAuthority.findMany({
+      where,
+      include: { district: { include: { region: true } } },
+      orderBy: { name: "asc" },
+    });
+    res.json({ success: true, data: tas });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // GET /api/geography/zones?taId=
 export const getZones = async (req, res, next) => {
   try {

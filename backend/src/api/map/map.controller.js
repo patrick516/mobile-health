@@ -1,9 +1,10 @@
 import prisma from "../../config/db.js";
+import { buildVillageScope } from "../../middleware/auth.js";
 
-// GET /api/map/events?from=&to=&type=
+// GET /api/map/events?from=&to=&type=&taId=
 export const getMapEvents = async (req, res, next) => {
   try {
-    const { from, to, type } = req.query;
+    const { from, to, type, taId } = req.query;
 
     const dateFilter =
       from || to
@@ -13,8 +14,8 @@ export const getMapEvents = async (req, res, next) => {
           }
         : undefined;
 
-    const zoneFilter =
-      req.user.zoneIds.length > 0 ? { in: req.user.zoneIds } : undefined;
+    const villageScope = buildVillageScope(req.user, taId);
+    const hasScope = Object.keys(villageScope).length > 0;
 
     const events = [];
 
@@ -24,9 +25,9 @@ export const getMapEvents = async (req, res, next) => {
           gpsLat: { not: null },
           gpsLng: { not: null },
           ...(dateFilter ? { visitedAt: dateFilter } : {}),
-          ...(zoneFilter
+          ...(hasScope
             ? {
-                member: { household: { village: { zoneId: zoneFilter } } },
+                member: { household: { village: villageScope } },
               }
             : {}),
         },
@@ -71,7 +72,7 @@ export const getMapEvents = async (req, res, next) => {
           gpsLat: { not: null },
           gpsLng: { not: null },
           status: "ACTIVE",
-          ...(zoneFilter ? { village: { zoneId: zoneFilter } } : {}),
+          ...(hasScope ? { village: villageScope } : {}),
         },
         select: {
           id: true,
@@ -106,6 +107,9 @@ export const getMapEvents = async (req, res, next) => {
           status: { in: ["PENDING", "OVERDUE"] },
           visit: { gpsLat: { not: null } },
           ...(dateFilter ? { createdAt: dateFilter } : {}),
+          ...(hasScope
+            ? { member: { household: { village: villageScope } } }
+            : {}),
         },
         include: {
           visit: { select: { gpsLat: true, gpsLng: true } },

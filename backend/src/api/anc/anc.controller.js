@@ -1,11 +1,18 @@
 import prisma from "../../config/db.js";
+import { buildVillageScope } from "../../middleware/auth.js";
 
+// GET /api/anc/schedules?taId=
 export const getAncSchedules = async (req, res, next) => {
   try {
+    const { taId } = req.query;
+    const villageScope = buildVillageScope(req.user, taId);
+    const hasScope = Object.keys(villageScope).length > 0;
+
     const where = {
       member: {
         isPregnant: true,
         status: "ACTIVE",
+        ...(hasScope ? { household: { village: villageScope } } : {}),
       },
     };
 
@@ -23,8 +30,6 @@ export const getAncSchedules = async (req, res, next) => {
       },
       orderBy: { expectedDate: "asc" },
     });
-
-    console.log(`ANC visits found: ${ancVisits.length}`);
 
     const data = ancVisits.map((a) => ({
       id: a.id,

@@ -136,6 +136,12 @@ enum SyncRecordType {
   ANC_VISIT
 }
 
+enum FacilityType {
+  DISTRICT_HOSPITAL
+  TA_HOSPITAL
+  CLINIC
+}
+
 // ─── GEOGRAPHY 
 
 model Region {
@@ -158,6 +164,7 @@ model District {
 
   region               Region                @relation(fields: [regionId], references: [id])
   traditionalAuthorities TraditionalAuthority[]
+  facilities            Facility[]
 
   @@unique([name, regionId])
   @@map("districts")
@@ -173,6 +180,7 @@ model TraditionalAuthority {
   district          District           @relation(fields: [districtId], references: [id])
   zones             Zone[]
   userTaAllocations UserTaAllocation[]
+  facilities        Facility[]
 
   @@unique([name, districtId])
   @@map("traditional_authorities")
@@ -222,10 +230,12 @@ model User {
   phoneNumber String   @unique @map("phone_number")
   pinHash     String   @map("pin_hash")
   role        Role
+  facilityId  String?  @map("facility_id")
   isActive    Boolean  @default(true) @map("is_active")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
+  facility            Facility?            @relation("FacilityStaff", fields: [facilityId], references: [id])
   zoneAllocations     UserZoneAllocation[] @relation("AllocatedUser")
   taAllocations       UserTaAllocation[]   @relation("AllocatedTaUser")
   allocatedByZone     UserZoneAllocation[] @relation("ZoneAllocator")
@@ -379,13 +389,19 @@ model Visit {
 // ─── REFERRALS 
 
 model Facility {
-  id        String   @id @default(uuid())
-  name      String
-  gpsLat    Float?   @map("gps_lat")
-  gpsLng    Float?   @map("gps_lng")
-  createdAt DateTime @default(now()) @map("created_at")
+  id           String        @id @default(uuid())
+  name         String
+  facilityType FacilityType? @map("facility_type")  
+  districtId   String?       @map("district_id")
+  taId         String?       @map("ta_id")
+  gpsLat       Float?        @map("gps_lat")
+  gpsLng       Float?        @map("gps_lng")
+  createdAt    DateTime      @default(now()) @map("created_at")
 
+  district  District?  @relation(fields: [districtId], references: [id])
+  ta        TraditionalAuthority? @relation(fields: [taId], references: [id])
   referrals Referral[]
+  staff     User[]     @relation("FacilityStaff")
 
   @@map("facilities")
 }

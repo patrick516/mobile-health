@@ -11,8 +11,9 @@ import {
   Users,
   Map,
   Network,
-  LogOut,
   ShieldAlert,
+  Building2,
+  LogOut,
 } from "lucide-react";
 import { useAuthStore } from "../../store/auth.store";
 import clsx from "clsx";
@@ -47,6 +48,12 @@ const NAV = [
     to: "/admin/allocations",
     icon: Network,
     label: "Allocations",
+    roles: ["ADMIN"],
+  },
+  {
+    to: "/admin/facilities",
+    icon: Building2,
+    label: "Facilities",
     roles: ["ADMIN"],
   },
   {

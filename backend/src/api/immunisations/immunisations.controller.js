@@ -1,23 +1,17 @@
 import prisma from "../../config/db.js";
+import { buildVillageScope } from "../../middleware/auth.js";
 
-// GET /api/immunisations/schedules?memberId=
+// GET /api/immunisations/schedules?memberId=&taId=
 export const getSchedules = async (req, res, next) => {
   try {
-    const { memberId } = req.query;
+    const { memberId, taId } = req.query;
+    const villageScope = buildVillageScope(req.user, taId);
+    const hasScope = Object.keys(villageScope).length > 0;
 
     const where = {
       ...(memberId ? { memberId } : {}),
-      // Scope to CHW's zones
-      ...(req.user.zoneIds && req.user.zoneIds.length > 0
-        ? {
-            member: {
-              household: {
-                village: {
-                  zoneId: { in: req.user.zoneIds },
-                },
-              },
-            },
-          }
+      ...(!memberId && hasScope
+        ? { member: { household: { village: villageScope } } }
         : {}),
     };
 
@@ -56,9 +50,13 @@ export const getSchedules = async (req, res, next) => {
   }
 };
 
-// GET /api/immunisations/due?zoneId= — children with vaccines due in next 14 days
+// GET /api/immunisations/due?taId= — children with vaccines due in next 14 days
 export const getDue = async (req, res, next) => {
   try {
+    const { taId } = req.query;
+    const villageScope = buildVillageScope(req.user, taId);
+    const hasScope = Object.keys(villageScope).length > 0;
+
     const in14Days = new Date();
     in14Days.setDate(in14Days.getDate() + 14);
 
@@ -68,11 +66,7 @@ export const getDue = async (req, res, next) => {
         dueDate: { lte: in14Days },
         member: {
           status: "ACTIVE",
-          ...(req.user.zoneIds && req.user.zoneIds.length > 0
-            ? {
-                household: { village: { zoneId: { in: req.user.zoneIds } } },
-              }
-            : {}),
+          ...(hasScope ? { household: { village: villageScope } } : {}),
         },
       },
       include: {

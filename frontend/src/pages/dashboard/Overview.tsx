@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Users,
@@ -9,8 +10,10 @@ import {
   TrendingUp,
   Clock,
   ShieldAlert,
+  MapPin,
 } from "lucide-react";
 import api from "../../services/api";
+import { useAuthStore } from "../../store/auth.store";
 import type { OverviewStats, ChwActivity, MapEvent } from "../../types";
 import { MapContainer, TileLayer, CircleMarker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
@@ -49,22 +52,39 @@ function StatCard({
 }
 
 export default function Overview() {
+  const scopeLevel = useAuthStore((s) => s.scopeLevel());
+  const [taId, setTaId] = useState("");
+
+  const { data: myTAs } = useQuery({
+    queryKey: ["my-tas"],
+    queryFn: () => api.get("/geography/my-tas").then((r) => r.data.data),
+    enabled: scopeLevel === "DISTRICT",
+  });
+
   const { data: stats } = useQuery<OverviewStats>({
-    queryKey: ["overview"],
-    queryFn: () => api.get("/analytics/overview").then((r) => r.data.data),
+    queryKey: ["overview", taId],
+    queryFn: () =>
+      api
+        .get("/analytics/overview", { params: taId ? { taId } : {} })
+        .then((r) => r.data.data),
     refetchInterval: 30000,
   });
 
   const { data: chwData } = useQuery<ChwActivity[]>({
-    queryKey: ["chw-activity"],
-    queryFn: () => api.get("/analytics/chw-activity").then((r) => r.data.data),
+    queryKey: ["chw-activity", taId],
+    queryFn: () =>
+      api
+        .get("/analytics/chw-activity", { params: taId ? { taId } : {} })
+        .then((r) => r.data.data),
   });
 
   const { data: mapData } = useQuery<MapEvent[]>({
-    queryKey: ["map-events"],
-    queryFn: () => api.get("/map/events").then((r) => r.data.data),
+    queryKey: ["map-events", taId],
+    queryFn: () =>
+      api
+        .get("/map/events", { params: taId ? { taId } : {} })
+        .then((r) => r.data.data),
   });
-
   const unsynced = chwData?.filter((c) => c.status !== "ACTIVE") || [];
 
   const { data: securityData } = useQuery({
@@ -77,6 +97,26 @@ export default function Overview() {
 
   return (
     <div className="space-y-6">
+      {/* District-wide TA filter — only for District Hospital users */}
+      {scopeLevel === "DISTRICT" && (
+        <div className="card p-4 flex items-center gap-3">
+          <MapPin size={18} className="text-teal-700" />
+          <span className="text-sm font-medium text-gray-700">Viewing:</span>
+          <select
+            className="input max-w-xs"
+            value={taId}
+            onChange={(e) => setTaId(e.target.value)}
+          >
+            <option value="">All TAs in District (combined)</option>
+            {myTAs?.map((t: any) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* Alert banner */}
       {/* Security alert banner */}
       {lockedUsers.length > 0 && (
