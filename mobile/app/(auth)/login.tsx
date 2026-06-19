@@ -642,13 +642,13 @@ export default function LoginScreen() {
           <Text style={styles.cardTitle}>Sign In</Text>
           <Text style={styles.cardSub}>Enter your phone number and PIN</Text>
 
-          {/* ── Debug Button ── */}
+          {/* ── Debug Button ──
           <TouchableOpacity
             onPress={() => setDebugVisible(true)}
             style={styles.debugButton}
           >
             <Text style={styles.debugButtonText}>🐛 Debug Logs</Text>
-          </TouchableOpacity>
+          </TouchableOpacity> */}
 
           {/* ── Lockout Banner ── */}
           {isLocked && (
