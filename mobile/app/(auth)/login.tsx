@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -11,6 +11,8 @@ import {
   Platform,
   ScrollView,
   Image,
+  Modal,
+  Pressable,
 } from "react-native";
 import { router } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -22,6 +24,37 @@ import { COLORS, SIZES, SHADOWS } from "../../constants/theme";
 import { useAppStore } from "../../src/store";
 import api from "../../src/services/api";
 
+// ─── Types ───
+interface LockoutRecord {
+  id: number;
+  phone_number: string;
+  locked_until: string | null;
+  lockout_count: number;
+  last_lockout_at: string | null;
+  is_permanent: number;
+  created_at: string;
+}
+
+interface TableInfo {
+  name: string;
+}
+
+interface AttemptCount {
+  count: number;
+}
+
+interface LockoutResult {
+  justLocked: boolean;
+  isPermanent: boolean;
+  lockedUntil: string | null;
+}
+
+interface LockoutCheckResult {
+  locked: boolean;
+  message: string;
+}
+
+// ─── Component ───
 export default function LoginScreen() {
   const setAuth = useAppStore((s) => s.setAuth);
   const [phone, setPhone] = useState("");
@@ -30,25 +63,110 @@ export default function LoginScreen() {
   const [lockoutMessage, setLockoutMessage] = useState("");
   const [isLocked, setIsLocked] = useState(false);
 
+  // ── Debug State ──
+  const [debugVisible, setDebugVisible] = useState(false);
+  const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  const [attemptCount, setAttemptCount] = useState(0);
+
+  // ── Constants ──
   const LOCKOUT_MINUTES_SHORT = 5;
   const LOCKOUT_HOURS_LONG = 48;
   const MAX_ATTEMPTS_BEFORE_SHORT = 3;
   const MAX_LOCKOUTS_BEFORE_LONG = 3;
   const LOCKOUT_WINDOW_MINUTES = 60;
 
+  // ── Debug Logger ──
+  const addDebugLog = (message: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    const log = `[${timestamp}] ${message}`;
+    console.log(log);
+    setDebugLogs((prev) => [log, ...prev].slice(0, 50));
+  };
+
+  // ── Check Database Tables on Mount ──
+  useEffect(() => {
+    const checkDb = async () => {
+      try {
+        addDebugLog("🔍 Checking database tables...");
+        await initDb();
+        const db = await getDb();
+
+        const tables = await db.getAllAsync<TableInfo>(
+          "SELECT name FROM sqlite_master WHERE type='table'",
+        );
+        const tableNames = tables.map((t: TableInfo) => t.name).join(", ");
+        addDebugLog(`📊 Tables found: ${tableNames}`);
+
+        // Check lockout tables specifically
+        const lockoutTables = await db.getAllAsync<TableInfo>(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('login_attempts', 'login_lockouts')",
+        );
+
+        if (lockoutTables.length === 2) {
+          addDebugLog("✅ Lockout tables exist!");
+        } else {
+          addDebugLog("⚠️ Lockout tables MISSING!");
+          addDebugLog("🔧 Creating missing tables...");
+          await db.execAsync(`
+            CREATE TABLE IF NOT EXISTS login_attempts (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              phone_number TEXT NOT NULL,
+              attempted_at TEXT NOT NULL DEFAULT (datetime('now')),
+              success INTEGER DEFAULT 0
+            );
+            CREATE TABLE IF NOT EXISTS login_lockouts (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              phone_number TEXT NOT NULL UNIQUE,
+              locked_until TEXT,
+              lockout_count INTEGER DEFAULT 0,
+              last_lockout_at TEXT,
+              is_permanent INTEGER DEFAULT 0,
+              created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+          `);
+          addDebugLog("✅ Lockout tables created!");
+        }
+
+        // Check current attempts for the entered phone
+        if (phone.trim()) {
+          const attempts = await db.getAllAsync<AttemptCount>(
+            `SELECT COUNT(*) as count FROM login_attempts WHERE phone_number = ?`,
+            [phone.trim()],
+          );
+          addDebugLog(`📝 Current attempts: ${attempts[0]?.count || 0}`);
+          setAttemptCount(attempts[0]?.count || 0);
+        }
+      } catch (error: any) {
+        addDebugLog(`❌ DB Check Error: ${error.message}`);
+      }
+    };
+
+    checkDb();
+  }, [phone]);
+
+  // ── Check Lockout ──
   const checkLockout = async (
     phoneNum: string,
-  ): Promise<{ locked: boolean; message: string }> => {
+  ): Promise<LockoutCheckResult> => {
     try {
+      addDebugLog(`🔒 Checking lockout for: ${phoneNum}`);
       await initDb();
       const db = await getDb();
-      const lockout = await db.getFirstAsync<any>(
+
+      const lockout = await db.getFirstAsync<LockoutRecord>(
         `SELECT * FROM login_lockouts WHERE phone_number = ?`,
         [phoneNum],
       );
-      if (!lockout) return { locked: false, message: "" };
 
-      if (lockout.is_permanent) {
+      if (!lockout) {
+        addDebugLog("🔓 No lockout record found");
+        return { locked: false, message: "" };
+      }
+
+      addDebugLog(`📋 Lockout record found`);
+
+      if (lockout.is_permanent === 1) {
+        addDebugLog("🚫 PERMANENT LOCKOUT (48 hours)");
         return {
           locked: true,
           message:
@@ -58,24 +176,33 @@ export default function LoginScreen() {
 
       if (lockout.locked_until) {
         const lockedUntil = new Date(lockout.locked_until);
-        if (new Date() < lockedUntil) {
+        const now = new Date();
+        if (now < lockedUntil) {
           const remaining = Math.ceil(
-            (lockedUntil.getTime() - Date.now()) / 60000,
+            (lockedUntil.getTime() - now.getTime()) / 60000,
           );
+          addDebugLog(`⏳ Locked for ${remaining} more minutes`);
           return {
             locked: true,
             message: `Too many failed attempts. Try again in ${remaining} minute${remaining > 1 ? "s" : ""}.`,
           };
         }
       }
+
+      addDebugLog("🔓 Lockout expired or not locked");
       return { locked: false, message: "" };
-    } catch {
+    } catch (error: any) {
+      addDebugLog(`❌ checkLockout error: ${error.message}`);
       return { locked: false, message: "" };
     }
   };
 
-  const recordFailedAttempt = async (phoneNum: string) => {
+  // ── Record Failed Attempt ──
+  const recordFailedAttempt = async (
+    phoneNum: string,
+  ): Promise<LockoutResult> => {
     try {
+      addDebugLog(`📝 Recording failed attempt for: ${phoneNum}`);
       await initDb();
       const db = await getDb();
 
@@ -86,7 +213,7 @@ export default function LoginScreen() {
       );
 
       // Count failed attempts in last 10 minutes
-      const recentAttempts = await db.getFirstAsync<{ count: number }>(
+      const recentAttempts = await db.getFirstAsync<AttemptCount>(
         `SELECT COUNT(*) as count FROM login_attempts 
          WHERE phone_number = ? AND success = 0 
          AND attempted_at >= datetime('now', '-10 minutes')`,
@@ -94,18 +221,23 @@ export default function LoginScreen() {
       );
 
       const failCount = recentAttempts?.count || 0;
+      addDebugLog(`📊 Failed attempts in last 10min: ${failCount}`);
+      setAttemptCount(failCount);
 
       if (failCount >= MAX_ATTEMPTS_BEFORE_SHORT) {
+        addDebugLog(`🚨 ${failCount} attempts - triggering lockout!`);
+
         // Check existing lockout record
-        const existing = await db.getFirstAsync<any>(
+        const existing = await db.getFirstAsync<LockoutRecord>(
           `SELECT * FROM login_lockouts WHERE phone_number = ?`,
           [phoneNum],
         );
 
         const lockoutCount = (existing?.lockout_count || 0) + 1;
+        addDebugLog(`📋 Lockout count: ${lockoutCount}`);
 
         // Check if 3+ lockouts happened within 1 hour → 48 hour ban
-        const recentLockouts = await db.getFirstAsync<{ count: number }>(
+        const recentLockouts = await db.getFirstAsync<AttemptCount>(
           `SELECT COUNT(*) as count FROM login_attempts
            WHERE phone_number = ? AND success = 0
            AND attempted_at >= datetime('now', '-${LOCKOUT_WINDOW_MINUTES} minutes')`,
@@ -113,6 +245,8 @@ export default function LoginScreen() {
         );
 
         const isPermanent = lockoutCount >= MAX_LOCKOUTS_BEFORE_LONG;
+        addDebugLog(`🔒 Is permanent: ${isPermanent}`);
+
         const lockedUntil = isPermanent
           ? new Date(
               Date.now() + LOCKOUT_HOURS_LONG * 60 * 60 * 1000,
@@ -120,6 +254,8 @@ export default function LoginScreen() {
           : new Date(
               Date.now() + LOCKOUT_MINUTES_SHORT * 60 * 1000,
             ).toISOString();
+
+        addDebugLog(`⏰ Locked until: ${lockedUntil}`);
 
         await db.runAsync(
           `INSERT OR REPLACE INTO login_lockouts 
@@ -136,23 +272,27 @@ export default function LoginScreen() {
               reason: "Too many failed PIN attempts — 48 hour lockout",
               lockedUntil,
             });
-          } catch {
-            // Offline — will sync later, local lockout still applies
+            addDebugLog("📤 Sent lockout notification to server");
+          } catch (error: any) {
+            addDebugLog(`❌ Failed to notify server: ${error.message}`);
           }
         }
 
         return { justLocked: true, isPermanent, lockedUntil };
       }
 
+      addDebugLog("✅ Attempt recorded, not locked yet");
       return { justLocked: false, isPermanent: false, lockedUntil: null };
-    } catch (e) {
-      console.warn("[LOCKOUT] Error recording attempt:", e);
+    } catch (error: any) {
+      addDebugLog(`❌ recordFailedAttempt error: ${error.message}`);
       return { justLocked: false, isPermanent: false, lockedUntil: null };
     }
   };
 
+  // ── Clear Failed Attempts ──
   const clearFailedAttempts = async (phoneNum: string) => {
     try {
+      addDebugLog(`🧹 Clearing attempts for: ${phoneNum}`);
       const db = await getDb();
       await db.runAsync(`DELETE FROM login_attempts WHERE phone_number = ?`, [
         phoneNum,
@@ -160,10 +300,17 @@ export default function LoginScreen() {
       await db.runAsync(`DELETE FROM login_lockouts WHERE phone_number = ?`, [
         phoneNum,
       ]);
-    } catch {}
+      setAttemptCount(0);
+      addDebugLog("✅ Cleared all attempts and lockouts");
+    } catch (error: any) {
+      addDebugLog(`❌ clearFailedAttempts error: ${error.message}`);
+    }
   };
+
+  // ── Cache User Locally ──
   const cacheUserLocally = async (user: any, token: string, pin: string) => {
     try {
+      addDebugLog(`💾 Caching user: ${user.fullName}`);
       await initDb();
       const db = await getDb();
       const pinHash = await Crypto.digestStringAsync(
@@ -196,13 +343,16 @@ export default function LoginScreen() {
           );
         }
       }
-    } catch (e) {
-      console.warn("[CACHE] Failed to cache user:", e);
+      addDebugLog("✅ User cached successfully");
+    } catch (error: any) {
+      addDebugLog(`❌ cacheUserLocally error: ${error.message}`);
     }
   };
 
+  // ── Try Offline Login ──
   const tryOfflineLogin = async (phoneNum: string, pin: string) => {
     try {
+      addDebugLog(`📱 Attempting offline login for: ${phoneNum}`);
       await initDb();
       const db = await getDb();
       const pinHash = await Crypto.digestStringAsync(
@@ -213,8 +363,12 @@ export default function LoginScreen() {
         `SELECT * FROM cached_users WHERE phone_number = ? AND pin_hash = ?`,
         [phoneNum.trim(), pinHash],
       );
-      if (!cached) return false;
+      if (!cached) {
+        addDebugLog("❌ No cached user found");
+        return false;
+      }
 
+      addDebugLog(`✅ Found cached user: ${cached.full_name}`);
       const user = {
         id: cached.id,
         fullName: cached.full_name,
@@ -228,26 +382,33 @@ export default function LoginScreen() {
       await AsyncStorage.setItem("auth_user", JSON.stringify(user));
       setAuth(user, token);
       return true;
-    } catch (e) {
-      console.warn("[OFFLINE LOGIN] Error:", e);
+    } catch (error: any) {
+      addDebugLog(`❌ tryOfflineLogin error: ${error.message}`);
       return false;
     }
   };
 
+  // ── Handle Login ──
   const handleLogin = async () => {
+    addDebugLog(`🚀 Login attempt for: ${phone.trim()}`);
+
     if (!phone.trim() || !pin.trim()) {
+      addDebugLog("❌ Empty phone or PIN");
       Alert.alert("Error", "Please enter your phone number and PIN.");
       return;
     }
     if (pin.length !== 4) {
+      addDebugLog("❌ PIN not 4 digits");
       Alert.alert("Error", "PIN must be 4 digits.");
       return;
     }
+
     setLoading(true);
     try {
       // ── Check lockout before anything ──
       const lockoutCheck = await checkLockout(phone.trim());
       if (lockoutCheck.locked) {
+        addDebugLog("🚫 User is LOCKED!");
         setIsLocked(true);
         setLockoutMessage(lockoutCheck.message);
         setLoading(false);
@@ -255,41 +416,35 @@ export default function LoginScreen() {
       }
 
       const net = await NetInfo.fetch();
-
-      console.log("[LOGIN] Network state:", JSON.stringify(net));
-      console.log("[LOGIN] isConnected:", net.isConnected);
+      addDebugLog(`📶 Network connected: ${net.isConnected}`);
 
       if (net.isConnected) {
         // Online — try server first
         try {
-          console.log("[LOGIN] Attempting server login for:", phone.trim());
+          addDebugLog(`🌐 Attempting server login for: ${phone.trim()}`);
           const res = await api.post("/auth/login", {
             phoneNumber: phone.trim(),
             pin: pin.trim(),
           });
           const { token, user } = res.data.data;
+          addDebugLog(`✅ Server login SUCCESS for: ${user.fullName}`);
           await AsyncStorage.setItem("auth_token", token);
           await AsyncStorage.setItem("auth_user", JSON.stringify(user));
-          // Cache credentials for offline use
           await cacheUserLocally(user, token, pin);
           await clearFailedAttempts(phone.trim());
           setAuth(user, token);
           router.replace("/(app)/home");
         } catch (err: any) {
           const status = err?.response?.status;
-          console.log("[LOGIN] Error status:", status);
-          console.log("[LOGIN] Error message:", err?.message);
-          console.log(
-            "[LOGIN] Error response:",
-            JSON.stringify(err?.response?.data),
-          );
+          addDebugLog(`❌ Server login error: Status ${status}`);
+
           if (status === 423) {
-            // Server-side lockout — affects ALL devices
+            // Server-side lockout
+            addDebugLog("🚫 Server returned 423 - Account locked");
             const serverMsg = err?.response?.data?.message || "Account locked.";
             const isPermanent = err?.response?.data?.isPermanent;
             const lockedUntil = err?.response?.data?.lockedUntil;
 
-            // Cache lockout locally too so it works offline
             const db = await getDb();
             await db.runAsync(
               `INSERT OR REPLACE INTO login_lockouts 
@@ -307,21 +462,41 @@ export default function LoginScreen() {
             setIsLocked(true);
             setLockoutMessage(serverMsg);
           } else if (status === 401) {
-            // Wrong credentials — server tracks attempts now
-            const attemptsRemaining = err?.response?.data?.attemptsRemaining;
+            // Wrong credentials — RECORD LOCAL ATTEMPT!
+            addDebugLog(
+              "❌ 401 - Wrong credentials. Recording local attempt...",
+            );
+            const result = await recordFailedAttempt(phone.trim());
+
+            if (result.justLocked) {
+              addDebugLog(
+                `🚫 LOCKED! ${result.isPermanent ? "PERMANENT" : "Temporary"}`,
+              );
+              setIsLocked(true);
+              setLockoutMessage(
+                result.isPermanent
+                  ? "Your account has been suspended for 48 hours. Contact your supervisor."
+                  : `Too many failed attempts. Locked for ${LOCKOUT_MINUTES_SHORT} minutes.`,
+              );
+              setLoading(false);
+              return;
+            }
+
             const serverMsg =
               err?.response?.data?.message || "Incorrect phone number or PIN.";
             Alert.alert("Login Failed", serverMsg);
           } else if (status === 403) {
-            // Account deactivated by admin
+            addDebugLog("🚫 Account deactivated by admin");
             Alert.alert(
               "Account Suspended",
               "Your account has been deactivated. Contact your supervisor.",
             );
           } else {
-            // Network error — server truly unreachable → try offline
+            // Network error → try offline
+            addDebugLog("⚠️ Network error, trying offline login...");
             const ok = await tryOfflineLogin(phone.trim(), pin);
             if (ok) {
+              addDebugLog("✅ Offline login successful");
               await clearFailedAttempts(phone.trim());
               Alert.alert(
                 "Offline Mode",
@@ -329,6 +504,7 @@ export default function LoginScreen() {
                 [{ text: "OK", onPress: () => router.replace("/(app)/home") }],
               );
             } else {
+              addDebugLog("❌ Offline login failed");
               Alert.alert(
                 "No Connection",
                 "Cannot reach server and no cached credentials found. Please check your internet connection.",
@@ -338,8 +514,10 @@ export default function LoginScreen() {
         }
       } else {
         // Offline — try cached credentials
+        addDebugLog("📱 Offline mode - trying cached credentials");
         const ok = await tryOfflineLogin(phone.trim(), pin);
         if (ok) {
+          addDebugLog("✅ Offline login successful");
           await clearFailedAttempts(phone.trim());
           Alert.alert(
             "Offline Mode",
@@ -347,8 +525,12 @@ export default function LoginScreen() {
             [{ text: "OK", onPress: () => router.replace("/(app)/home") }],
           );
         } else {
+          addDebugLog("❌ No cached credentials - recording failed attempt");
           const result = await recordFailedAttempt(phone.trim());
           if (result.justLocked) {
+            addDebugLog(
+              `🚫 LOCKED! ${result.isPermanent ? "PERMANENT" : "Temporary"}`,
+            );
             Alert.alert(
               result.isPermanent ? "Account Suspended" : "Account Locked",
               result.isPermanent
@@ -364,12 +546,14 @@ export default function LoginScreen() {
         }
       }
     } catch (err: any) {
+      addDebugLog(`❌ Unexpected error: ${err.message}`);
       Alert.alert("Error", err?.message || "An unexpected error occurred.");
     } finally {
       setLoading(false);
     }
   };
 
+  // ─── Render ───
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -396,42 +580,51 @@ export default function LoginScreen() {
           <Text style={styles.cardTitle}>Sign In</Text>
           <Text style={styles.cardSub}>Enter your phone number and PIN</Text>
 
-          {/* Lockout Banner */}
+          {/* ── Debug Button ──
+          <TouchableOpacity
+            onPress={() => setDebugVisible(true)}
+            style={styles.debugButton}
+          >
+            <Text style={styles.debugButtonText}>🐛 Debug Logs</Text>
+          </TouchableOpacity> */}
+
+          {/* ── Lockout Banner ── */}
           {isLocked && (
             <View style={styles.lockoutBanner}>
               <Text style={styles.lockoutIcon}>🔒</Text>
               <Text style={styles.lockoutText}>{lockoutMessage}</Text>
               <TouchableOpacity
                 onPress={async () => {
-                  // Check server first, then local
+                  addDebugLog("🔄 Checking lockout status...");
                   try {
                     const net = await NetInfo.fetch();
                     if (net.isConnected) {
-                      const res = await api.post("/auth/login", {
+                      await api.post("/auth/login", {
                         phoneNumber: phone.trim(),
-                        pin: "0000", // dummy — just to trigger server lockout check
+                        pin: "0000",
                       });
-                      // If we get here (success unlikely) — not locked
                       setIsLocked(false);
                       setLockoutMessage("");
+                      addDebugLog("✅ Lockout cleared!");
                     } else {
                       const check = await checkLockout(phone.trim());
                       if (!check.locked) {
                         setIsLocked(false);
                         setLockoutMessage("");
+                        addDebugLog("✅ Lockout cleared locally!");
                       } else {
                         setLockoutMessage(check.message);
+                        addDebugLog(`⏳ Still locked: ${check.message}`);
                       }
                     }
                   } catch (err: any) {
                     const status = err?.response?.status;
                     if (status === 423) {
-                      // Still locked on server
                       setLockoutMessage(
                         err?.response?.data?.message || lockoutMessage,
                       );
+                      addDebugLog("⏳ Server says still locked");
                     } else if (status === 401) {
-                      // Server returned 401 = not locked anymore, admin unlocked
                       const db = await getDb();
                       await db.runAsync(
                         `DELETE FROM login_lockouts WHERE phone_number = ?`,
@@ -439,14 +632,16 @@ export default function LoginScreen() {
                       );
                       setIsLocked(false);
                       setLockoutMessage("");
+                      addDebugLog("✅ Lockout cleared!");
                     } else {
-                      // Offline — check local
                       const check = await checkLockout(phone.trim());
                       if (!check.locked) {
                         setIsLocked(false);
                         setLockoutMessage("");
+                        addDebugLog("✅ Lockout cleared locally!");
                       } else {
                         setLockoutMessage(check.message);
+                        addDebugLog(`⏳ Still locked: ${check.message}`);
                       }
                     }
                   }
@@ -483,6 +678,13 @@ export default function LoginScreen() {
             editable={!isLocked}
           />
 
+          {/* ── Attempt Counter ── */}
+          {attemptCount > 0 && !isLocked && (
+            <Text style={styles.attemptCounter}>
+              Failed attempts: {attemptCount} / {MAX_ATTEMPTS_BEFORE_SHORT}
+            </Text>
+          )}
+
           <TouchableOpacity
             style={[
               styles.button,
@@ -503,10 +705,70 @@ export default function LoginScreen() {
 
         <Text style={styles.footer}>MobileHealth Malawi v1.0</Text>
       </ScrollView>
+
+      {/* ── Debug Modal ── */}
+      <Modal visible={debugVisible} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>🐛 Debug Logs</Text>
+              <TouchableOpacity
+                onPress={() => setDebugVisible(false)}
+                style={styles.modalClose}
+              >
+                <Text style={styles.modalCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.logContainer}>
+              {debugLogs.length === 0 ? (
+                <Text style={styles.logEmpty}>
+                  No logs yet. Try logging in!
+                </Text>
+              ) : (
+                debugLogs.map((log, index) => (
+                  <Text key={index} style={styles.logLine}>
+                    {log}
+                  </Text>
+                ))
+              )}
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                onPress={() => {
+                  setDebugLogs([]);
+                  addDebugLog("🧹 Logs cleared");
+                }}
+                style={styles.clearLogsButton}
+              >
+                <Text style={styles.clearLogsText}>Clear Logs</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={async () => {
+                  addDebugLog("🔄 Refreshing database check...");
+                  const db = await getDb();
+                  const tables = await db.getAllAsync<TableInfo>(
+                    "SELECT name FROM sqlite_master WHERE type='table'",
+                  );
+                  const tableNames = tables
+                    .map((t: TableInfo) => t.name)
+                    .join(", ");
+                  addDebugLog(`📊 Tables: ${tableNames}`);
+                }}
+                style={styles.refreshButton}
+              >
+                <Text style={styles.refreshButtonText}>🔄 Check DB</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
 
+// ─── Styles ───
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -565,6 +827,17 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     marginBottom: SIZES.xl,
   },
+  debugButton: {
+    backgroundColor: "#F3F4F6",
+    padding: 8,
+    borderRadius: 8,
+    marginBottom: 12,
+    alignSelf: "flex-end",
+  },
+  debugButtonText: {
+    fontSize: 12,
+    color: "#6B7280",
+  },
   label: {
     fontSize: SIZES.fontSm,
     fontWeight: "600",
@@ -581,6 +854,17 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     marginBottom: SIZES.lg,
     backgroundColor: COLORS.background,
+  },
+  inputDisabled: {
+    backgroundColor: "#F3F4F6",
+    color: "#9CA3AF",
+  },
+  attemptCounter: {
+    fontSize: 12,
+    color: "#6B7280",
+    textAlign: "right",
+    marginBottom: 8,
+    marginTop: -8,
   },
   button: {
     backgroundColor: COLORS.primary,
@@ -636,8 +920,80 @@ const styles = StyleSheet.create({
     color: "#DC2626",
     fontWeight: "600",
   },
-  inputDisabled: {
-    backgroundColor: "#F3F4F6",
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: "white",
+    borderRadius: 16,
+    maxHeight: "80%",
+    ...SHADOWS.lg,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#1F2937",
+  },
+  modalClose: {
+    padding: 8,
+  },
+  modalCloseText: {
+    fontSize: 20,
+    color: "#6B7280",
+  },
+  logContainer: {
+    padding: 16,
+    maxHeight: 400,
+  },
+  logEmpty: {
     color: "#9CA3AF",
+    textAlign: "center",
+    marginTop: 20,
+  },
+  logLine: {
+    fontSize: 11,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    color: "#1F2937",
+    paddingVertical: 2,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+  },
+  modalFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
+  },
+  clearLogsButton: {
+    padding: 10,
+    backgroundColor: "#FEF2F2",
+    borderRadius: 8,
+  },
+  clearLogsText: {
+    color: "#DC2626",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  refreshButton: {
+    padding: 10,
+    backgroundColor: "#EFF6FF",
+    borderRadius: 8,
+  },
+  refreshButtonText: {
+    color: "#2563EB",
+    fontSize: 14,
+    fontWeight: "600",
   },
 });
