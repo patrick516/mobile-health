@@ -12,11 +12,9 @@ import {
   ScrollView,
   Image,
   Modal,
-  Pressable,
 } from "react-native";
 import { router } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-
 import * as Crypto from "expo-crypto";
 import NetInfo from "@react-native-community/netinfo";
 import { getDb, initDb } from "../../src/db/schema";
@@ -52,6 +50,7 @@ interface LockoutResult {
 interface LockoutCheckResult {
   locked: boolean;
   message: string;
+  remainingMinutes?: number;
 }
 
 // ─── Component ───
@@ -73,7 +72,6 @@ export default function LoginScreen() {
   const LOCKOUT_HOURS_LONG = 48;
   const MAX_ATTEMPTS_BEFORE_SHORT = 3;
   const MAX_LOCKOUTS_BEFORE_LONG = 3;
-  const LOCKOUT_WINDOW_MINUTES = 60;
 
   // ── Debug Logger ──
   const addDebugLog = (message: string) => {
@@ -97,7 +95,6 @@ export default function LoginScreen() {
         const tableNames = tables.map((t: TableInfo) => t.name).join(", ");
         addDebugLog(`📊 Tables found: ${tableNames}`);
 
-        // Check lockout tables specifically
         const lockoutTables = await db.getAllAsync<TableInfo>(
           "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('login_attempts', 'login_lockouts')",
         );
@@ -127,13 +124,12 @@ export default function LoginScreen() {
           addDebugLog("✅ Lockout tables created!");
         }
 
-        // Check current attempts for the entered phone
         if (phone.trim()) {
           const attempts = await db.getAllAsync<AttemptCount>(
-            `SELECT COUNT(*) as count FROM login_attempts WHERE phone_number = ?`,
+            `SELECT COUNT(*) as count FROM login_attempts WHERE phone_number = ? AND success = 0`,
             [phone.trim()],
           );
-          addDebugLog(`📝 Current attempts: ${attempts[0]?.count || 0}`);
+          addDebugLog(`📝 Current failed attempts: ${attempts[0]?.count || 0}`);
           setAttemptCount(attempts[0]?.count || 0);
         }
       } catch (error: any) {
@@ -160,40 +156,61 @@ export default function LoginScreen() {
 
       if (!lockout) {
         addDebugLog("🔓 No lockout record found");
-        return { locked: false, message: "" };
+        return { locked: false, message: "", remainingMinutes: 0 };
       }
 
       addDebugLog(`📋 Lockout record found`);
 
+      // Check permanent lockout
       if (lockout.is_permanent === 1) {
         addDebugLog("🚫 PERMANENT LOCKOUT (48 hours)");
         return {
           locked: true,
           message:
             "Your account has been suspended for 48 hours due to too many failed attempts. Contact your supervisor.",
+          remainingMinutes: 2880,
         };
       }
 
+      // Check temporary lockout
       if (lockout.locked_until) {
         const lockedUntil = new Date(lockout.locked_until);
         const now = new Date();
-        if (now < lockedUntil) {
-          const remaining = Math.ceil(
-            (lockedUntil.getTime() - now.getTime()) / 60000,
-          );
+        const timeDiff = lockedUntil.getTime() - now.getTime();
+
+        addDebugLog(
+          `⏰ Time remaining: ${Math.ceil(timeDiff / 60000)} minutes`,
+        );
+
+        if (timeDiff > 0) {
+          const remaining = Math.ceil(timeDiff / 60000);
           addDebugLog(`⏳ Locked for ${remaining} more minutes`);
           return {
             locked: true,
             message: `Too many failed attempts. Try again in ${remaining} minute${remaining > 1 ? "s" : ""}.`,
+            remainingMinutes: remaining,
           };
+        } else {
+          // Lockout has expired - clear it
+          addDebugLog("🔓 Lockout expired - clearing records");
+          await db.runAsync(
+            `DELETE FROM login_lockouts WHERE phone_number = ?`,
+            [phoneNum],
+          );
+          await db.runAsync(
+            `DELETE FROM login_attempts WHERE phone_number = ? AND success = 0`,
+            [phoneNum],
+          );
+          setAttemptCount(0);
+          addDebugLog("✅ Lockout records cleared");
+          return { locked: false, message: "", remainingMinutes: 0 };
         }
       }
 
-      addDebugLog("🔓 Lockout expired or not locked");
-      return { locked: false, message: "" };
+      return { locked: false, message: "", remainingMinutes: 0 };
     } catch (error: any) {
       addDebugLog(`❌ checkLockout error: ${error.message}`);
-      return { locked: false, message: "" };
+      return { locked: false, message: "", remainingMinutes: 0 };
     }
   };
 
@@ -206,43 +223,61 @@ export default function LoginScreen() {
       await initDb();
       const db = await getDb();
 
+      // Check if user is already locked
+      const existingLockout = await db.getFirstAsync<LockoutRecord>(
+        `SELECT * FROM login_lockouts WHERE phone_number = ?`,
+        [phoneNum],
+      );
+
+      // If already locked, don't reset the timer!
+      if (existingLockout && existingLockout.locked_until) {
+        const lockedUntil = new Date(existingLockout.locked_until);
+        const now = new Date();
+        if (now < lockedUntil) {
+          addDebugLog("⏳ Already locked - NOT resetting timer");
+          return {
+            justLocked: false,
+            isPermanent: existingLockout.is_permanent === 1,
+            lockedUntil: existingLockout.locked_until,
+          };
+        }
+      }
+
       // Record this attempt
       await db.runAsync(
         `INSERT INTO login_attempts (phone_number, success) VALUES (?, 0)`,
         [phoneNum],
       );
 
-      // Count failed attempts in last 10 minutes
-      const recentAttempts = await db.getFirstAsync<AttemptCount>(
-        `SELECT COUNT(*) as count FROM login_attempts 
-         WHERE phone_number = ? AND success = 0 
-         AND attempted_at >= datetime('now', '-10 minutes')`,
+      // Count failed attempts since last lockout
+      const lastLockout = await db.getFirstAsync<{ last_lockout_at: string }>(
+        `SELECT last_lockout_at FROM login_lockouts WHERE phone_number = ?`,
         [phoneNum],
       );
 
+      let attemptsQuery = `SELECT COUNT(*) as count FROM login_attempts 
+                         WHERE phone_number = ? AND success = 0`;
+      const params: any[] = [phoneNum];
+
+      if (lastLockout?.last_lockout_at) {
+        attemptsQuery += ` AND attempted_at > ?`;
+        params.push(lastLockout.last_lockout_at);
+      }
+
+      const recentAttempts = await db.getFirstAsync<AttemptCount>(
+        attemptsQuery,
+        params,
+      );
+
       const failCount = recentAttempts?.count || 0;
-      addDebugLog(`📊 Failed attempts in last 10min: ${failCount}`);
+      addDebugLog(`📊 Failed attempts since last lockout: ${failCount}`);
       setAttemptCount(failCount);
 
       if (failCount >= MAX_ATTEMPTS_BEFORE_SHORT) {
         addDebugLog(`🚨 ${failCount} attempts - triggering lockout!`);
 
-        // Check existing lockout record
-        const existing = await db.getFirstAsync<LockoutRecord>(
-          `SELECT * FROM login_lockouts WHERE phone_number = ?`,
-          [phoneNum],
-        );
-
-        const lockoutCount = (existing?.lockout_count || 0) + 1;
+        const lockoutCount = (existingLockout?.lockout_count || 0) + 1;
         addDebugLog(`📋 Lockout count: ${lockoutCount}`);
-
-        // Check if 3+ lockouts happened within 1 hour → 48 hour ban
-        const recentLockouts = await db.getFirstAsync<AttemptCount>(
-          `SELECT COUNT(*) as count FROM login_attempts
-           WHERE phone_number = ? AND success = 0
-           AND attempted_at >= datetime('now', '-${LOCKOUT_WINDOW_MINUTES} minutes')`,
-          [phoneNum],
-        );
 
         const isPermanent = lockoutCount >= MAX_LOCKOUTS_BEFORE_LONG;
         addDebugLog(`🔒 Is permanent: ${isPermanent}`);
@@ -264,7 +299,6 @@ export default function LoginScreen() {
           [phoneNum, lockedUntil, lockoutCount, isPermanent ? 1 : 0],
         );
 
-        // If 48hr ban — notify backend to flag on portal
         if (isPermanent) {
           try {
             await api.post("/auth/flag-lockout", {
@@ -333,7 +367,6 @@ export default function LoginScreen() {
         ],
       );
 
-      // Cache zones from user allocations
       if (user.zoneAllocations?.length > 0) {
         for (const za of user.zoneAllocations) {
           const z = za.zone;
@@ -405,7 +438,7 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
-      // ── Check lockout before anything ──
+      // Check lockout before anything
       const lockoutCheck = await checkLockout(phone.trim());
       if (lockoutCheck.locked) {
         addDebugLog("🚫 User is LOCKED!");
@@ -419,7 +452,6 @@ export default function LoginScreen() {
       addDebugLog(`📶 Network connected: ${net.isConnected}`);
 
       if (net.isConnected) {
-        // Online — try server first
         try {
           addDebugLog(`🌐 Attempting server login for: ${phone.trim()}`);
           const res = await api.post("/auth/login", {
@@ -439,7 +471,6 @@ export default function LoginScreen() {
           addDebugLog(`❌ Server login error: Status ${status}`);
 
           if (status === 423) {
-            // Server-side lockout
             addDebugLog("🚫 Server returned 423 - Account locked");
             const serverMsg = err?.response?.data?.message || "Account locked.";
             const isPermanent = err?.response?.data?.isPermanent;
@@ -462,7 +493,6 @@ export default function LoginScreen() {
             setIsLocked(true);
             setLockoutMessage(serverMsg);
           } else if (status === 401) {
-            // Wrong credentials — RECORD LOCAL ATTEMPT!
             addDebugLog(
               "❌ 401 - Wrong credentials. Recording local attempt...",
             );
@@ -492,7 +522,6 @@ export default function LoginScreen() {
               "Your account has been deactivated. Contact your supervisor.",
             );
           } else {
-            // Network error → try offline
             addDebugLog("⚠️ Network error, trying offline login...");
             const ok = await tryOfflineLogin(phone.trim(), pin);
             if (ok) {
@@ -513,7 +542,6 @@ export default function LoginScreen() {
           }
         }
       } else {
-        // Offline — try cached credentials
         addDebugLog("📱 Offline mode - trying cached credentials");
         const ok = await tryOfflineLogin(phone.trim(), pin);
         if (ok) {
@@ -553,6 +581,40 @@ export default function LoginScreen() {
     }
   };
 
+  // ── Check Lockout Status (for "Check again" button) ──
+  const handleCheckLockoutStatus = async () => {
+    addDebugLog("🔄 Checking lockout status...");
+    try {
+      const check = await checkLockout(phone.trim());
+
+      if (!check.locked) {
+        addDebugLog("🔓 Lockout has expired!");
+        setIsLocked(false);
+        setLockoutMessage("");
+        setAttemptCount(0);
+        Alert.alert(
+          "Unlocked",
+          "Your account is now unlocked. Please try logging in again.",
+        );
+      } else {
+        addDebugLog(`⏳ Still locked: ${check.message}`);
+        setLockoutMessage(check.message);
+        setIsLocked(true);
+
+        // Show remaining time in alert
+        if (check.remainingMinutes && check.remainingMinutes > 0) {
+          Alert.alert(
+            "Still Locked",
+            `Please wait ${check.remainingMinutes} more minute${check.remainingMinutes > 1 ? "s" : ""}.`,
+          );
+        }
+      }
+    } catch (err: any) {
+      addDebugLog(`❌ Check error: ${err.message}`);
+      Alert.alert("Error", "Failed to check lockout status.");
+    }
+  };
+
   // ─── Render ───
   return (
     <KeyboardAvoidingView
@@ -580,13 +642,13 @@ export default function LoginScreen() {
           <Text style={styles.cardTitle}>Sign In</Text>
           <Text style={styles.cardSub}>Enter your phone number and PIN</Text>
 
-          {/* ── Debug Button ──
+          {/* ── Debug Button ── */}
           <TouchableOpacity
             onPress={() => setDebugVisible(true)}
             style={styles.debugButton}
           >
             <Text style={styles.debugButtonText}>🐛 Debug Logs</Text>
-          </TouchableOpacity> */}
+          </TouchableOpacity>
 
           {/* ── Lockout Banner ── */}
           {isLocked && (
@@ -594,58 +656,7 @@ export default function LoginScreen() {
               <Text style={styles.lockoutIcon}>🔒</Text>
               <Text style={styles.lockoutText}>{lockoutMessage}</Text>
               <TouchableOpacity
-                onPress={async () => {
-                  addDebugLog("🔄 Checking lockout status...");
-                  try {
-                    const net = await NetInfo.fetch();
-                    if (net.isConnected) {
-                      await api.post("/auth/login", {
-                        phoneNumber: phone.trim(),
-                        pin: "0000",
-                      });
-                      setIsLocked(false);
-                      setLockoutMessage("");
-                      addDebugLog("✅ Lockout cleared!");
-                    } else {
-                      const check = await checkLockout(phone.trim());
-                      if (!check.locked) {
-                        setIsLocked(false);
-                        setLockoutMessage("");
-                        addDebugLog("✅ Lockout cleared locally!");
-                      } else {
-                        setLockoutMessage(check.message);
-                        addDebugLog(`⏳ Still locked: ${check.message}`);
-                      }
-                    }
-                  } catch (err: any) {
-                    const status = err?.response?.status;
-                    if (status === 423) {
-                      setLockoutMessage(
-                        err?.response?.data?.message || lockoutMessage,
-                      );
-                      addDebugLog("⏳ Server says still locked");
-                    } else if (status === 401) {
-                      const db = await getDb();
-                      await db.runAsync(
-                        `DELETE FROM login_lockouts WHERE phone_number = ?`,
-                        [phone.trim()],
-                      );
-                      setIsLocked(false);
-                      setLockoutMessage("");
-                      addDebugLog("✅ Lockout cleared!");
-                    } else {
-                      const check = await checkLockout(phone.trim());
-                      if (!check.locked) {
-                        setIsLocked(false);
-                        setLockoutMessage("");
-                        addDebugLog("✅ Lockout cleared locally!");
-                      } else {
-                        setLockoutMessage(check.message);
-                        addDebugLog(`⏳ Still locked: ${check.message}`);
-                      }
-                    }
-                  }
-                }}
+                onPress={handleCheckLockoutStatus}
                 style={styles.lockoutRetry}
               >
                 <Text style={styles.lockoutRetryText}>Check again</Text>
