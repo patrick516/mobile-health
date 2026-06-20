@@ -361,11 +361,87 @@ export const createDrug = async (req, res, next) => {
 };
 
 // ─── SECURITY ────────────────────────────────────────────────────────────────
+
 export const getSecurityAlerts = async (req, res, next) => {
   try {
+    console.log("📊 Fetching security alerts...");
+
+    // ── Step 1: Get locked users (including shadow users) ──
+    const lockedUsers = await prisma.loginLockout.findMany({
+      where: {
+        isPermanent: true,
+        lockedUntil: {
+          gt: new Date(),
+        },
+      },
+      orderBy: {
+        lockedUntil: "desc",
+      },
+    });
+
+    // ── Step 2: Get user details for locked users ──
+    const phoneNumbers = lockedUsers.map((l) => l.phoneNumber);
+
+    let userData = [];
+    if (phoneNumbers.length > 0) {
+      userData = await prisma.user.findMany({
+        where: {
+          phoneNumber: {
+            in: phoneNumbers,
+          },
+        },
+        select: {
+          id: true,
+          fullName: true,
+          phoneNumber: true,
+          role: true,
+          isActive: true,
+          zoneAllocations: {
+            select: {
+              zone: { select: { name: true } },
+            },
+          },
+        },
+      });
+    }
+
+    // ── Step 3: Format for dashboard ──
+    const formattedLockedUsers = lockedUsers.map((lockout) => {
+      const user = userData.find((u) => u.phoneNumber === lockout.phoneNumber);
+      const isShadowUser = user?.id?.startsWith("shadow_") || false;
+
+      return {
+        id: user?.id || lockout.phoneNumber,
+        fullName: user?.fullName || `Unknown (${lockout.phoneNumber})`,
+        phoneNumber: lockout.phoneNumber,
+        role: user?.role || "UNKNOWN",
+        isActive: user?.isActive || false,
+        isShadowUser: isShadowUser, // 🔴 Flag for admin
+        lockoutReason: "48 hour lockout",
+        lockoutUntil: lockout.lockedUntil,
+        zoneAllocations: user?.zoneAllocations || [],
+      };
+    });
+
+    // ── Step 4: Get unknown login attempts ──
+    const unknownAttempts = await prisma.unknownLoginAttempt.findMany({
+      where: {
+        attemptCount: {
+          gte: 3, // Show attempts with 3+ tries
+        },
+      },
+      orderBy: {
+        lastAttemptAt: "desc",
+      },
+      take: 20,
+    });
+
+    // ── Step 5: Get security alerts from audit_log ──
     const alerts = await prisma.auditLog.findMany({
       where: {
-        action: { in: ["ACCOUNT_LOCKED", "ACCOUNT_UNLOCKED"] },
+        action: {
+          in: ["ACCOUNT_LOCKED", "ACCOUNT_LOCKED_48H", "ACCOUNT_UNLOCKED"],
+        },
       },
       include: {
         user: {
@@ -375,9 +451,6 @@ export const getSecurityAlerts = async (req, res, next) => {
             phoneNumber: true,
             role: true,
             isActive: true,
-            zoneAllocations: {
-              select: { zone: { select: { name: true } } },
-            },
           },
         },
       },
@@ -385,45 +458,88 @@ export const getSecurityAlerts = async (req, res, next) => {
       take: 50,
     });
 
-    const lockedUsers = await prisma.user.findMany({
-      where: { isActive: false },
-      select: {
-        id: true,
-        fullName: true,
-        phoneNumber: true,
-        role: true,
-        isActive: true,
-        zoneAllocations: {
-          select: { zone: { select: { name: true } } },
-        },
+    // ── Step 6: Combine everything ──
+    const formattedAlerts = alerts.map((alert) => ({
+      ...alert,
+      isShadowUser: alert.user?.id?.startsWith("shadow_") || false,
+    }));
+
+    console.log(
+      `📊 Found ${lockedUsers.length} locked users, ${unknownAttempts.length} unknown attempts`,
+    );
+
+    res.json({
+      success: true,
+      data: {
+        alerts: formattedAlerts,
+        lockedUsers: formattedLockedUsers,
+        unknownAttempts: unknownAttempts,
       },
     });
-
-    res.json({ success: true, data: { alerts, lockedUsers } });
   } catch (err) {
+    console.error(" Error in getSecurityAlerts:", err);
     next(err);
   }
 };
 
 export const unlockUser = async (req, res, next) => {
   try {
-    const user = await prisma.user.update({
-      where: { id: req.params.id },
-      data: { isActive: true },
-      select: { id: true, fullName: true, phoneNumber: true, isActive: true },
+    const { id } = req.params;
+
+    // 🔴 UPDATE: First, find the user
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: { id: true, phoneNumber: true, fullName: true },
     });
 
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // 🔴 UPDATE: Clear the lockout record
+    await prisma.loginLockout.update({
+      where: { phoneNumber: user.phoneNumber },
+      data: {
+        lockedUntil: null,
+        unlockedAt: new Date(),
+        unlockedById: req.user.id,
+        isPermanent: false,
+      },
+    });
+
+    // Update user - reactivate
+    const updatedUser = await prisma.user.update({
+      where: { id },
+      data: { isActive: true },
+      select: {
+        id: true,
+        fullName: true,
+        phoneNumber: true,
+        isActive: true,
+      },
+    });
+
+    // Write to audit log
     await prisma.auditLog.create({
       data: {
         userId: req.user.id,
         action: "ACCOUNT_UNLOCKED",
         recordType: "USER",
         recordId: user.id,
-        newValue: { unlockedBy: req.user.id, unlockedAt: new Date() },
+        newValue: {
+          unlockedBy: req.user.id,
+          unlockedAt: new Date().toISOString(),
+          phoneNumber: user.phoneNumber,
+        },
       },
     });
 
-    res.json({ success: true, data: user });
+    console.log(" User unlocked:", user.phoneNumber);
+
+    res.json({ success: true, data: updatedUser });
   } catch (err) {
     next(err);
   }

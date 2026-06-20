@@ -4,7 +4,6 @@ import {
   ShieldAlert,
   ShieldCheck,
   Unlock,
-  User,
   Clock,
   AlertTriangle,
 } from "lucide-react";

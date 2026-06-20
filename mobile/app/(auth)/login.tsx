@@ -140,7 +140,6 @@ export default function LoginScreen() {
     checkDb();
   }, [phone]);
 
-  // ── Check Lockout ──
   const checkLockout = async (
     phoneNum: string,
   ): Promise<LockoutCheckResult> => {
@@ -191,30 +190,20 @@ export default function LoginScreen() {
             remainingMinutes: remaining,
           };
         } else {
-          // Lockout has expired - clear it
-          addDebugLog("🔓 Lockout expired - clearing records");
-          await db.runAsync(
-            `DELETE FROM login_lockouts WHERE phone_number = ?`,
-            [phoneNum],
-          );
-          await db.runAsync(
-            `DELETE FROM login_attempts WHERE phone_number = ? AND success = 0`,
-            [phoneNum],
-          );
-          setAttemptCount(0);
-          addDebugLog("✅ Lockout records cleared");
+          // ✅ FIX: Don't delete! Just return unlocked
+          addDebugLog("🔓 Lockout expired but keeping record for history");
+          // Return unlocked but KEEP the record for lockout_count tracking!
           return { locked: false, message: "", remainingMinutes: 0 };
         }
       }
 
       return { locked: false, message: "", remainingMinutes: 0 };
     } catch (error: any) {
-      addDebugLog(`❌ checkLockout error: ${error.message}`);
+      addDebugLog(` checkLockout error: ${error.message}`);
       return { locked: false, message: "", remainingMinutes: 0 };
     }
   };
 
-  // ── Record Failed Attempt ──
   const recordFailedAttempt = async (
     phoneNum: string,
   ): Promise<LockoutResult> => {
@@ -223,24 +212,33 @@ export default function LoginScreen() {
       await initDb();
       const db = await getDb();
 
-      // Check if user is already locked
+      // 🔴 FIX: Get the existing lockout record (even if expired!)
       const existingLockout = await db.getFirstAsync<LockoutRecord>(
         `SELECT * FROM login_lockouts WHERE phone_number = ?`,
         [phoneNum],
       );
 
-      // If already locked, don't reset the timer!
+      // Check if currently locked (active lockout)
+      let isCurrentlyLocked = false;
+      let lockedUntilTime = null;
+
       if (existingLockout && existingLockout.locked_until) {
         const lockedUntil = new Date(existingLockout.locked_until);
         const now = new Date();
         if (now < lockedUntil) {
+          isCurrentlyLocked = true;
+          lockedUntilTime = existingLockout.locked_until;
           addDebugLog("⏳ Already locked - NOT resetting timer");
-          return {
-            justLocked: false,
-            isPermanent: existingLockout.is_permanent === 1,
-            lockedUntil: existingLockout.locked_until,
-          };
         }
+      }
+
+      // If currently locked, don't reset the timer!
+      if (isCurrentlyLocked) {
+        return {
+          justLocked: false,
+          isPermanent: existingLockout?.is_permanent === 1,
+          lockedUntil: lockedUntilTime,
+        };
       }
 
       // Record this attempt
@@ -256,7 +254,7 @@ export default function LoginScreen() {
       );
 
       let attemptsQuery = `SELECT COUNT(*) as count FROM login_attempts 
-                         WHERE phone_number = ? AND success = 0`;
+                       WHERE phone_number = ? AND success = 0`;
       const params: any[] = [phoneNum];
 
       if (lastLockout?.last_lockout_at) {
@@ -276,11 +274,26 @@ export default function LoginScreen() {
       if (failCount >= MAX_ATTEMPTS_BEFORE_SHORT) {
         addDebugLog(`🚨 ${failCount} attempts - triggering lockout!`);
 
-        const lockoutCount = (existingLockout?.lockout_count || 0) + 1;
-        addDebugLog(`📋 Lockout count: ${lockoutCount}`);
+        // 🔴 FIX: Get the actual lockout_count from the record!
+        let lockoutCount = existingLockout?.lockout_count || 0;
+
+        // If the lockout is expired but we have a record, use its count
+        // Otherwise start fresh
+        if (existingLockout) {
+          // Check if this is a new lockout (not just checking status)
+          addDebugLog(`📋 Existing lockout count: ${lockoutCount}`);
+          lockoutCount = lockoutCount + 1;
+        } else {
+          lockoutCount = 1;
+        }
+
+        addDebugLog(`📋 New lockout count: ${lockoutCount}`);
 
         const isPermanent = lockoutCount >= MAX_LOCKOUTS_BEFORE_LONG;
         addDebugLog(`🔒 Is permanent: ${isPermanent}`);
+
+        // Track if this lockout is within 60 minutes of the last one
+        // For simplicity, we'll use the lockout count logic
 
         const lockedUntil = isPermanent
           ? new Date(
@@ -292,13 +305,15 @@ export default function LoginScreen() {
 
         addDebugLog(`⏰ Locked until: ${lockedUntil}`);
 
+        // 🔴 FIX: Use INSERT OR REPLACE to update the record
         await db.runAsync(
           `INSERT OR REPLACE INTO login_lockouts 
-           (phone_number, locked_until, lockout_count, last_lockout_at, is_permanent)
-           VALUES (?, ?, ?, datetime('now'), ?)`,
+         (phone_number, locked_until, lockout_count, last_lockout_at, is_permanent)
+         VALUES (?, ?, ?, datetime('now'), ?)`,
           [phoneNum, lockedUntil, lockoutCount, isPermanent ? 1 : 0],
         );
 
+        // If permanent, notify backend
         if (isPermanent) {
           try {
             await api.post("/auth/flag-lockout", {
@@ -312,13 +327,19 @@ export default function LoginScreen() {
           }
         }
 
+        // Clear attempts after lockout triggered
+        await db.runAsync(
+          `DELETE FROM login_attempts WHERE phone_number = ? AND success = 0`,
+          [phoneNum],
+        );
+
         return { justLocked: true, isPermanent, lockedUntil };
       }
 
-      addDebugLog("✅ Attempt recorded, not locked yet");
+      addDebugLog(" Attempt recorded, not locked yet");
       return { justLocked: false, isPermanent: false, lockedUntil: null };
     } catch (error: any) {
-      addDebugLog(`❌ recordFailedAttempt error: ${error.message}`);
+      addDebugLog(` recordFailedAttempt error: ${error.message}`);
       return { justLocked: false, isPermanent: false, lockedUntil: null };
     }
   };
@@ -642,8 +663,8 @@ export default function LoginScreen() {
           <Text style={styles.cardTitle}>Sign In</Text>
           <Text style={styles.cardSub}>Enter your phone number and PIN</Text>
 
-          {/* ── Debug Button ──
-          <TouchableOpacity
+          {/* ── Debug Button ── */}
+          {/* <TouchableOpacity
             onPress={() => setDebugVisible(true)}
             style={styles.debugButton}
           >
@@ -757,15 +778,53 @@ export default function LoginScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={async () => {
-                  addDebugLog("🔄 Refreshing database check...");
-                  const db = await getDb();
-                  const tables = await db.getAllAsync<TableInfo>(
-                    "SELECT name FROM sqlite_master WHERE type='table'",
-                  );
-                  const tableNames = tables
-                    .map((t: TableInfo) => t.name)
-                    .join(", ");
-                  addDebugLog(`📊 Tables: ${tableNames}`);
+                  // Check server first, then local
+                  try {
+                    const net = await NetInfo.fetch();
+                    if (net.isConnected) {
+                      const res = await api.post("/auth/login", {
+                        phoneNumber: phone.trim(),
+                        pin: "0000", // dummy — just to trigger server lockout check
+                      });
+                      // If we get here (success unlikely) — not locked
+                      setIsLocked(false);
+                      setLockoutMessage("");
+                    } else {
+                      const check = await checkLockout(phone.trim());
+                      if (!check.locked) {
+                        setIsLocked(false);
+                        setLockoutMessage("");
+                      } else {
+                        setLockoutMessage(check.message);
+                      }
+                    }
+                  } catch (err: any) {
+                    const status = err?.response?.status;
+                    if (status === 423) {
+                      // Still locked on server
+                      setLockoutMessage(
+                        err?.response?.data?.message || lockoutMessage,
+                      );
+                    } else if (status === 401) {
+                      // Server returned 401 = not locked anymore, admin unlocked
+                      const db = await getDb();
+                      await db.runAsync(
+                        `DELETE FROM login_lockouts WHERE phone_number = ?`,
+                        [phone.trim()],
+                      );
+                      setIsLocked(false);
+                      setLockoutMessage("");
+                    } else {
+                      // Offline — check local
+                      const check = await checkLockout(phone.trim());
+                      if (!check.locked) {
+                        setIsLocked(false);
+                        setLockoutMessage("");
+                      } else {
+                        setLockoutMessage(check.message);
+                      }
+                    }
+                  }
                 }}
                 style={styles.refreshButton}
               >

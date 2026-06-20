@@ -70,10 +70,50 @@ export const login = async (req, res, next) => {
     });
 
     if (!user) {
-      // Record attempt for unknown number too
+      // ── Step 1: Record attempt for unknown number ──
       await prisma.loginAttempt.create({
         data: { phoneNumber, ipAddress, deviceId, success: false },
       });
+
+      // ── Step 2: Track unknown numbers for admin visibility ──
+      try {
+        await prisma.unknownLoginAttempt.upsert({
+          where: { phoneNumber },
+          update: {
+            attemptCount: { increment: 1 },
+            lastAttemptAt: new Date(),
+            ipAddress: ipAddress || undefined,
+          },
+          create: {
+            phoneNumber,
+            attemptCount: 1,
+            firstAttemptAt: new Date(),
+            lastAttemptAt: new Date(),
+            ipAddress: ipAddress || undefined,
+          },
+        });
+      } catch (error) {
+        // If table doesn't exist, just log it
+        console.log("UnknownLoginAttempt table not ready:", error.message);
+      }
+
+      // ── Step 3: Check if this number is locked out ──
+      const lockout = await prisma.loginLockout.findUnique({
+        where: { phoneNumber },
+      });
+
+      if (lockout && lockout.lockedUntil && new Date() < lockout.lockedUntil) {
+        const remaining = Math.ceil(
+          (lockout.lockedUntil.getTime() - Date.now()) / 60000,
+        );
+        return res.status(423).json({
+          success: false,
+          message: `Account locked. Try again in ${remaining} minute${remaining > 1 ? "s" : ""}.`,
+          lockedUntil: lockout.lockedUntil,
+          isPermanent: lockout.isPermanent || false,
+        });
+      }
+
       return res.status(401).json({
         success: false,
         message: "Invalid phone number or PIN.",
@@ -348,32 +388,120 @@ export const flagLockout = async (req, res, next) => {
   try {
     const { phoneNumber, reason, lockedUntil } = req.body;
 
-    const user = await prisma.user.findUnique({
+    console.log("📤 Flagging lockout for:", phoneNumber);
+
+    // ── Step 1: Find OR CREATE the user ──
+    let user = await prisma.user.findUnique({
       where: { phoneNumber },
-      select: { id: true, fullName: true, phoneNumber: true },
+      select: { id: true, fullName: true, phoneNumber: true, isActive: true },
     });
 
-    if (!user) return res.json({ success: true }); // silently ignore unknown phones
+    if (!user) {
+      console.log("📝 Unknown phone number - creating shadow record...");
 
-    // Deactivate user on 48hr lockout
+      try {
+        // Create a shadow user for tracking
+        user = await prisma.user.create({
+          data: {
+            id: `shadow_${phoneNumber}`,
+            fullName: `Unknown (${phoneNumber})`,
+            phoneNumber: phoneNumber,
+            pinHash: "shadow_account_no_login",
+            role: "CCW",
+            isActive: false,
+          },
+          select: {
+            id: true,
+            fullName: true,
+            phoneNumber: true,
+            isActive: true,
+          },
+        });
+        console.log("✅ Shadow user created:", user.id);
+      } catch (createError) {
+        // If user creation fails, try to find again (race condition)
+        user = await prisma.user.findUnique({
+          where: { phoneNumber },
+          select: {
+            id: true,
+            fullName: true,
+            phoneNumber: true,
+            isActive: true,
+          },
+        });
+
+        if (!user) {
+          // If still no user, create with a different approach
+          user = await prisma.user.create({
+            data: {
+              id: `shadow_${phoneNumber}_${Date.now()}`,
+              fullName: `Unknown (${phoneNumber})`,
+              phoneNumber: phoneNumber,
+              pinHash: "shadow_account_no_login",
+              role: "CCW",
+              isActive: false,
+            },
+            select: {
+              id: true,
+              fullName: true,
+              phoneNumber: true,
+              isActive: true,
+            },
+          });
+        }
+      }
+    }
+
+    // ── Step 2: Create/Update lockout record ──
+    await prisma.loginLockout.upsert({
+      where: { phoneNumber },
+      update: {
+        lockedUntil: new Date(lockedUntil),
+        lockoutCount: {
+          increment: 1,
+        },
+        lastLockoutAt: new Date(),
+        isPermanent: true,
+        unlockedAt: null,
+        unlockedById: null,
+      },
+      create: {
+        phoneNumber,
+        lockedUntil: new Date(lockedUntil),
+        lockoutCount: 1,
+        lastLockoutAt: new Date(),
+        isPermanent: true,
+      },
+    });
+
+    // ── Step 3: Deactivate user ──
     await prisma.user.update({
       where: { phoneNumber },
       data: { isActive: false },
     });
 
-    // Write to audit log
+    // ── Step 4: Log to audit ──
     await prisma.auditLog.create({
       data: {
         userId: user.id,
-        action: "ACCOUNT_LOCKED",
+        action: "ACCOUNT_LOCKED_48H",
         recordType: "USER",
         recordId: user.id,
-        newValue: { reason, lockedUntil },
+        newValue: {
+          reason,
+          lockedUntil,
+          isPermanent: true,
+          phoneNumber,
+          isShadowUser: user.id.startsWith("shadow_"),
+        },
       },
     });
 
+    console.log(" Lockout flag saved for:", phoneNumber);
+
     res.json({ success: true });
   } catch (err) {
+    console.error(" Error in flagLockout:", err);
     next(err);
   }
 };
