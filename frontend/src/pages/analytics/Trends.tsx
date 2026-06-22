@@ -11,6 +11,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import api from "../../services/api";
+import { INDICATOR_LABELS as L } from "../../constants/indicatorLabels";
 
 export default function Trends() {
   const [days, setDays] = useState(30);
@@ -86,7 +87,8 @@ export default function Trends() {
       {/* Visit trends chart */}
       {/* Visit trends chart */}
       <div className="card p-6">
-        <h2 className="font-bold text-gray-900 mb-4">Visit Trends</h2>
+        <h2 className="font-bold text-gray-900 mb-1">{L.visitTrends.title}</h2>
+        <p className="text-xs text-gray-500 mb-4">{L.visitTrends.subtitle}</p>
         {trends && trends.length > 0 ? (
           <div
             style={{
@@ -157,9 +159,12 @@ export default function Trends() {
 
       {/* Line Chart Trends */}
       <div className="card p-6">
-        <h2 className="font-bold text-gray-900 mb-4">
-          Comparative Trends (7-Day Moving Average)
+        <h2 className="font-bold text-gray-900 mb-1">
+          {L.comparativeTrends.title}
         </h2>
+        <p className="text-xs text-gray-500 mb-4">
+          {L.comparativeTrends.subtitle}
+        </p>
         {trends && trends.length > 0 ? (
           <div
             style={{
@@ -254,9 +259,10 @@ export default function Trends() {
 
       {/* Symptom Trends */}
       <div className="card p-6">
-        <h2 className="font-bold text-gray-900 mb-4">
-          Top Symptoms This Period
+        <h2 className="font-bold text-gray-900 mb-1">
+          {L.symptomTrends.title}
         </h2>
+        <p className="text-xs text-gray-500 mb-4">{L.symptomTrends.subtitle}</p>
         {symptomData && symptomData.length > 0 ? (
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={symptomData} layout="vertical">
@@ -286,9 +292,12 @@ export default function Trends() {
 
       {/* Referral Completion Rate */}
       <div className="card p-6">
-        <h2 className="font-bold text-gray-900 mb-4">
-          Referral Completion Rate
+        <h2 className="font-bold text-gray-900 mb-1">
+          {L.referralCompletion.title}
         </h2>
+        <p className="text-xs text-gray-500 mb-4">
+          {L.referralCompletion.subtitle}
+        </p>
         {referralStats?.data ? (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -342,9 +351,10 @@ export default function Trends() {
 
       {/* MUAC / Malnutrition */}
       <div className="card p-6">
-        <h2 className="font-bold text-gray-900 mb-4">
-          MUAC — Malnutrition Screening
+        <h2 className="font-bold text-gray-900 mb-1">
+          {L.muacScreening.title}
         </h2>
+        <p className="text-xs text-gray-500 mb-4">{L.muacScreening.subtitle}</p>
         {muacData && muacData.length > 0 ? (
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={muacData}>
@@ -382,7 +392,12 @@ export default function Trends() {
 
       {/* Immunisation Coverage */}
       <div className="card p-6">
-        <h2 className="font-bold text-gray-900 mb-4">Immunisation Coverage</h2>
+        <h2 className="font-bold text-gray-900 mb-1">
+          {L.immunisationCoverage.title}
+        </h2>
+        <p className="text-xs text-gray-500 mb-4">
+          {L.immunisationCoverage.subtitle}
+        </p>
         {immunisationData?.data ? (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -422,7 +437,10 @@ export default function Trends() {
 
       {/* ANC Attendance Rate */}
       <div className="card p-6">
-        <h2 className="font-bold text-gray-900 mb-4">ANC Attendance Rate</h2>
+        <h2 className="font-bold text-gray-900 mb-1">
+          {L.ancAttendance.title}
+        </h2>
+        <p className="text-xs text-gray-500 mb-4">{L.ancAttendance.subtitle}</p>
         {ancData ? (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -480,7 +498,10 @@ export default function Trends() {
       {/* CHW performance table */}
       <div className="card overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100">
-          <h2 className="font-bold text-gray-900">CHW Performance</h2>
+          <h2 className="font-bold text-gray-900 mb-1">
+            {L.chwPerformance.title}
+          </h2>
+          <p className="text-xs text-gray-500">{L.chwPerformance.subtitle}</p>
         </div>
         <table className="w-full">
           <thead>

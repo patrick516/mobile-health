@@ -23,6 +23,8 @@ import { useAppStore } from "../../../src/store";
 import { getDb, initDb } from "../../../src/db/schema";
 import { enqueue } from "../../../src/db/sync-queue";
 import api from "../../../src/services/api";
+import IdScanner from "../../../components/forms/IdScanner";
+import SignaturePad from "../../../components/forms/SignaturePad";
 import {
   saveDraft,
   loadDraft,
@@ -54,7 +56,7 @@ interface ExistingHousehold {
   village_name: string;
 }
 
-const STEPS = ["ID", "Location", "Details", "Review"];
+const STEPS = ["ID", "Location", "Consent", "Details", "Review"];
 const DRAFT_KEY = "household_add";
 
 export default function AddHouseholdScreen() {
@@ -78,6 +80,9 @@ export default function AddHouseholdScreen() {
   const [selectedVillageId, setSelectedVillageId] = useState("");
   const [newVillageName, setNewVillageName] = useState("");
   const [showNewVillage, setShowNewVillage] = useState(false);
+  const [locallyAddedVillageIds, setLocallyAddedVillageIds] = useState<
+    string[]
+  >([]);
   const [landmark, setLandmark] = useState("");
   const [gpsLat, setGpsLat] = useState<number | null>(null);
   const [gpsLng, setGpsLng] = useState<number | null>(null);
@@ -86,6 +91,10 @@ export default function AddHouseholdScreen() {
   // Step 2 — Details
   const [headName, setHeadName] = useState("");
   const [headPhone, setHeadPhone] = useState("");
+  const [headNationalId, setHeadNationalId] = useState("");
+  const [consentGiven, setConsentGiven] = useState(false);
+  const [signaturePath, setSignaturePath] = useState("");
+  const [signatureEmpty, setSignatureEmpty] = useState(true);
   const [structureType, setStructureType] = useState("");
   const [waterSource, setWaterSource] = useState("");
   const [latrinePresent, setLatrinePresent] = useState(false);
@@ -96,6 +105,9 @@ export default function AddHouseholdScreen() {
   const [householdPhoto, setHouseholdPhoto] = useState<string | null>(null);
 
   const [saving, setSaving] = useState(false);
+  const justSavedRef = useRef(false);
+
+  // Health score calculation
 
   // Health score calculation
   const healthScore = (() => {
@@ -123,6 +135,10 @@ export default function AddHouseholdScreen() {
   }, []);
 
   const restoreDraft = async () => {
+    if (justSavedRef.current) {
+      justSavedRef.current = false;
+      return;
+    }
     const draft = await loadDraft<any>(DRAFT_KEY);
     if (!draft) return;
     if (draft.idPrefix) setIdPrefix(draft.idPrefix);
@@ -146,7 +162,9 @@ export default function AddHouseholdScreen() {
   };
 
   // Auto-save draft whenever form data changes (debounced 800ms)
+  // Auto-save draft whenever form data changes (debounced 800ms)
   useEffect(() => {
+    if (justSavedRef.current) return;
     const timer = setTimeout(() => {
       saveDraft(DRAFT_KEY, {
         step,
@@ -311,9 +329,9 @@ export default function AddHouseholdScreen() {
     });
     if (!result.canceled) setHouseholdPhoto(result.assets[0].uri);
   };
-
   const handleAddVillage = async () => {
     if (!newVillageName.trim()) return;
+
     try {
       const res = await api.post("/geography/villages", {
         name: newVillageName.trim(),
@@ -321,55 +339,25 @@ export default function AddHouseholdScreen() {
         gpsLat,
         gpsLng,
       });
+
       if (res.data.isDuplicate) {
         Alert.alert(
-          "Similar Village Found",
-          `"${res.data.potentialDuplicates[0].name}" already exists. Use existing or add new?`,
+          "Village Already Exists",
+          `"${res.data.potentialDuplicates[0].name}" already exists in this area. Please use the existing village.`,
           [
             {
               text: "Use Existing",
               onPress: () => {
                 setSelectedVillageId(res.data.potentialDuplicates[0].id);
                 setShowNewVillage(false);
-              },
-            },
-            {
-              text: "Add New",
-              style: "destructive",
-              onPress: async () => {
-                const r2 = await api.post("/geography/villages", {
-                  name: newVillageName.trim(),
-                  zoneId: selectedZoneId,
-                  gpsLat,
-                  gpsLng,
-                });
-                const v = r2.data.data;
-
-                //  Save to local SQLite
-                const db = await getDb();
-                await db.runAsync(
-                  "INSERT OR REPLACE INTO villages (id, name, zone_id, zone_name) VALUES (?,?,?,?)",
-                  [v.id, v.name, selectedZoneId, ""],
-                );
-
-                // Enqueue village for sync
-                await enqueue("VILLAGE", {
-                  id: v.id,
-                  name: v.name,
-                  zoneId: selectedZoneId,
-                  gpsLat,
-                  gpsLng,
-                });
-
-                setVillages((p) => [...p, v]);
-                setSelectedVillageId(v.id);
-                setShowNewVillage(false);
+                setNewVillageName("");
               },
             },
           ],
         );
         return;
       }
+
       const v = res.data.data;
 
       const db = await getDb();
@@ -378,7 +366,6 @@ export default function AddHouseholdScreen() {
         [v.id, v.name, selectedZoneId, ""],
       );
 
-      // ADD THIS - Enqueue village for sync
       await enqueue("VILLAGE", {
         id: v.id,
         name: v.name,
@@ -387,8 +374,10 @@ export default function AddHouseholdScreen() {
         gpsLng,
       });
 
-      setVillages((p) => [...p, v]);
-      setVillages((p) => [...p, v]);
+      setVillages((p) =>
+        p.some((existing) => existing.id === v.id) ? p : [...p, v],
+      );
+      setLocallyAddedVillageIds((p) => [...p, v.id]);
       setSelectedVillageId(v.id);
       setShowNewVillage(false);
       setNewVillageName("");
@@ -422,11 +411,12 @@ export default function AddHouseholdScreen() {
       await db.runAsync(
         `INSERT INTO households (
           id, local_id, village_id, village_name, zone_name, ta_name,
-          head_of_household_name, head_phone, household_number,
+          head_of_household_name, head_phone, head_national_id,
+          consent_given, consent_signature_url, household_number,
           structure_type, water_source, latrine_present, handwashing_facility,
           distance_to_facility, mosquito_nets, number_of_rooms,
           landmark, gps_lat, gps_lng, status, synced
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`,
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`,
         [
           localId,
           localId,
@@ -436,6 +426,9 @@ export default function AddHouseholdScreen() {
           "",
           headName.trim(),
           headPhone.trim() || null,
+          headNationalId.trim() || null,
+          consentGiven ? 1 : 0,
+          signaturePath || null,
           idPreview,
           structureType,
           waterSource,
@@ -461,6 +454,9 @@ export default function AddHouseholdScreen() {
             villageId: selectedVillageId,
             headOfHouseholdName: headName.trim(),
             headPhone: headPhone.trim() || null,
+            headNationalId: headNationalId.trim() || null,
+            consentGiven,
+            consentSignatureUrl: signaturePath || null,
             householdNumber: idPreview,
             structureType,
             waterSource,
@@ -489,6 +485,9 @@ export default function AddHouseholdScreen() {
             villageId: selectedVillageId,
             headOfHouseholdName: headName.trim(),
             headPhone: headPhone.trim() || null,
+            headNationalId: headNationalId.trim() || null,
+            consentGiven,
+            consentSignatureUrl: signaturePath || null,
             householdNumber: idPreview,
             structureType,
             waterSource,
@@ -509,6 +508,9 @@ export default function AddHouseholdScreen() {
           villageId: selectedVillageId,
           headOfHouseholdName: headName.trim(),
           headPhone: headPhone.trim() || null,
+          headNationalId: headNationalId.trim() || null,
+          consentGiven,
+          consentSignatureUrl: signaturePath || null,
           householdNumber: idPreview,
           structureType,
           waterSource,
@@ -523,8 +525,33 @@ export default function AddHouseholdScreen() {
         });
       }
 
+      justSavedRef.current = true;
       await clearDraft(DRAFT_KEY);
       showSuccess("Household Saved", `${idPreview} registered successfully.`);
+
+      const resetForm = () => {
+        justSavedRef.current = true;
+        setStep(0);
+        setIdPrefix("");
+        setIdPreview("");
+        setIdConfirmed(false);
+        setExistingMatches([]);
+        setSelectedZoneId("");
+        setSelectedVillageId("");
+        setNewVillageName("");
+        setShowNewVillage(false);
+        setLandmark("");
+        setHeadName("");
+        setHeadPhone("");
+        setStructureType("");
+        setWaterSource("");
+        setLatrinePresent(false);
+        setHandwashing(false);
+        setDistanceToFacility("");
+        setMosquitoNets("");
+        setNumberOfRooms("");
+        setHouseholdPhoto(null);
+      };
 
       Alert.alert(
         "Saved ✓",
@@ -532,9 +559,18 @@ export default function AddHouseholdScreen() {
         [
           {
             text: "Add Members",
-            onPress: () => router.replace(`/(app)/households/${localId}`),
+            onPress: () => {
+              resetForm();
+              router.replace(`/(app)/households/${localId}`);
+            },
           },
-          { text: "Done", onPress: () => router.back() },
+          {
+            text: "Done",
+            onPress: () => {
+              resetForm();
+              router.back();
+            },
+          },
         ],
       );
     } catch (err: any) {
@@ -562,7 +598,8 @@ export default function AddHouseholdScreen() {
   const canGoNext = () => {
     if (step === 0) return idConfirmed;
     if (step === 1) return selectedVillageId !== "";
-    if (step === 2)
+    if (step === 2) return consentGiven && !signatureEmpty;
+    if (step === 3)
       return (
         headName.trim() !== "" &&
         structureType !== "" &&
@@ -787,15 +824,96 @@ export default function AddHouseholdScreen() {
                     }}
                   >
                     {villages.map((v) => (
-                      <Opt
-                        key={v.id}
-                        label={v.name}
-                        selected={selectedVillageId === v.id}
-                        onPress={() => {
-                          setSelectedVillageId(v.id);
-                          setShowNewVillage(false);
-                        }}
-                      />
+                      <View key={v.id} style={styles.villageChipWrap}>
+                        <Opt
+                          label={v.name}
+                          selected={selectedVillageId === v.id}
+                          onPress={() => {
+                            setSelectedVillageId(v.id);
+                            setShowNewVillage(false);
+                          }}
+                        />
+                        {locallyAddedVillageIds.includes(v.id) && (
+                          <TouchableOpacity
+                            style={styles.villageRemoveBtn}
+                            onPress={async () => {
+                              Alert.alert(
+                                "Remove Village",
+                                `Are you sure you want to remove "${v.name}"?`,
+                                [
+                                  { text: "Cancel", style: "cancel" },
+                                  {
+                                    text: "Remove",
+                                    style: "destructive",
+                                    onPress: async () => {
+                                      try {
+                                        // 1. Delete from backend
+                                        const netState = await NetInfo.fetch();
+                                        if (netState.isConnected) {
+                                          try {
+                                            await api.delete(
+                                              `/geography/villages/${v.id}`,
+                                            );
+                                            console.log(
+                                              `🗑️ Village "${v.name}" deleted from server`,
+                                            );
+                                          } catch (apiError) {
+                                            console.warn(
+                                              "Could not delete from server:",
+                                              apiError,
+                                            );
+                                          }
+                                        }
+
+                                        // 2. Delete from local SQLite
+                                        const db = await getDb();
+                                        await db.runAsync(
+                                          "DELETE FROM villages WHERE id = ?",
+                                          [v.id],
+                                        );
+
+                                        // 3. Remove from state
+                                        setVillages((p: Village[]) =>
+                                          p.filter(
+                                            (existing) => existing.id !== v.id,
+                                          ),
+                                        );
+                                        setLocallyAddedVillageIds(
+                                          (p: string[]) =>
+                                            p.filter((id) => id !== v.id),
+                                        );
+                                        if (selectedVillageId === v.id) {
+                                          setSelectedVillageId("");
+                                        }
+
+                                        showSuccess(
+                                          "Village Removed",
+                                          `"${v.name}" has been removed.`,
+                                        );
+                                      } catch (err) {
+                                        console.error(
+                                          "Error removing village:",
+                                          err,
+                                        );
+                                        showError(
+                                          "Error",
+                                          "Failed to remove village.",
+                                        );
+                                      }
+                                    },
+                                  },
+                                ],
+                              );
+                            }}
+                          >
+                            <Ionicons
+                              name="close-circle"
+                              size={16}
+                              color={COLORS.danger}
+                            />
+                          </TouchableOpacity>
+                        )}
+                      </View>
                     ))}
                     <TouchableOpacity
                       style={[styles.option, styles.optionAdd]}
@@ -876,8 +994,66 @@ export default function AddHouseholdScreen() {
           </View>
         )}
 
-        {/* ─── STEP 2: DETAILS ──────────────────────────────────── */}
+        {/* ─── STEP 2: CONSENT ──────────────────────────────────── */}
         {step === 2 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Consent & Identity</Text>
+            <Text style={styles.sectionDesc}>
+              Before registering this household, the head of household must
+              agree to data collection and confirm their identity.
+            </Text>
+
+            <View style={styles.consentBox}>
+              <Ionicons
+                name="document-text-outline"
+                size={20}
+                color={COLORS.primary}
+              />
+              <Text style={styles.consentText}>
+                I, the head of this household, agree that this Community Health
+                Worker may collect health information about my household and its
+                members for the purpose of receiving community health services.
+                I understand this data will be shared with health authorities to
+                improve care for my family.
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.consentCheckRow,
+                consentGiven && styles.consentCheckRowActive,
+              ]}
+              onPress={() => setConsentGiven(!consentGiven)}
+            >
+              <Ionicons
+                name={consentGiven ? "checkbox" : "square-outline"}
+                size={22}
+                color={consentGiven ? COLORS.primary : COLORS.textMuted}
+              />
+              <Text style={styles.consentCheckText}>
+                Head of household has verbally agreed to the above
+              </Text>
+            </TouchableOpacity>
+
+            <IdScanner
+              value={headNationalId}
+              onChange={setHeadNationalId}
+              label="Head of Household National ID"
+              required={false}
+            />
+
+            <Text style={styles.label}>Signature of Head of Household *</Text>
+            <SignaturePad
+              onSignatureChange={(path, isEmpty) => {
+                setSignaturePath(path);
+                setSignatureEmpty(isEmpty);
+              }}
+            />
+          </View>
+        )}
+
+        {/* ─── STEP 3: DETAILS ──────────────────────────────────── */}
+        {step === 3 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Household Details</Text>
 
@@ -1018,8 +1194,8 @@ export default function AddHouseholdScreen() {
           </View>
         )}
 
-        {/* ─── STEP 3: REVIEW ───────────────────────────────────── */}
-        {step === 3 && (
+        {/* ─── STEP 4: REVIEW ───────────────────────────────────── */}
+        {step === 4 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Review & Save</Text>
 
@@ -1073,6 +1249,19 @@ export default function AddHouseholdScreen() {
                     : "Not captured"}
                 </Text>
               </View>
+
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewKey}>National ID</Text>
+                <Text style={styles.reviewVal}>
+                  {headNationalId || "Not provided"}
+                </Text>
+              </View>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewKey}>Consent</Text>
+                <Text style={[styles.reviewVal, { color: COLORS.success }]}>
+                  ✓ Given & Signed
+                </Text>
+              </View>
               <View style={[styles.reviewRow, { borderBottomWidth: 0 }]}>
                 <Text style={styles.reviewKey}>Health Score</Text>
                 <Text
@@ -1112,7 +1301,7 @@ export default function AddHouseholdScreen() {
               )}
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.editBtn} onPress={() => setStep(2)}>
+            <TouchableOpacity style={styles.editBtn} onPress={() => setStep(3)}>
               <Text style={styles.editBtnText}>Edit Details</Text>
             </TouchableOpacity>
           </View>
@@ -1122,7 +1311,7 @@ export default function AddHouseholdScreen() {
       </ScrollView>
 
       {/* Bottom nav */}
-      {step < 3 && (
+      {step < 4 && (
         <View style={styles.bottomNav}>
           {step > 0 && (
             <TouchableOpacity
@@ -1143,7 +1332,7 @@ export default function AddHouseholdScreen() {
             disabled={!canGoNext()}
           >
             <Text style={styles.nextBtnText}>
-              {step === 2 ? "Review" : "Next"}
+              {step === 3 ? "Review" : "Next"}
             </Text>
             <Ionicons name="arrow-forward" size={18} color={COLORS.white} />
           </TouchableOpacity>
@@ -1354,6 +1543,16 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontWeight: "600",
   },
+  villageChipWrap: {
+    position: "relative",
+  },
+  villageRemoveBtn: {
+    position: "absolute",
+    top: -6,
+    right: -6,
+    backgroundColor: COLORS.white,
+    borderRadius: 8,
+  },
   newVillageBox: {
     backgroundColor: COLORS.white,
     borderRadius: SIZES.radiusMd,
@@ -1390,6 +1589,45 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     marginBottom: SIZES.sm,
   },
+
+  consentBox: {
+    flexDirection: "row",
+    gap: 10,
+    backgroundColor: COLORS.primaryLight,
+    borderRadius: SIZES.radiusMd,
+    padding: SIZES.lg,
+    marginTop: SIZES.md,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  consentText: {
+    flex: 1,
+    fontSize: SIZES.fontSm,
+    color: COLORS.text,
+    lineHeight: 20,
+  },
+  consentCheckRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: SIZES.radiusMd,
+    padding: SIZES.md,
+    marginTop: SIZES.lg,
+  },
+  consentCheckRowActive: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primaryLight,
+  },
+  consentCheckText: {
+    flex: 1,
+    fontSize: SIZES.fontSm,
+    color: COLORS.text,
+    fontWeight: "500",
+  },
+
   switchRow: {
     flexDirection: "row",
     alignItems: "center",

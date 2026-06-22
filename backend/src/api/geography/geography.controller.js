@@ -208,3 +208,69 @@ export const getGeographyTree = async (req, res, next) => {
     next(err);
   }
 };
+
+// DELETE /api/geography/villages/:id
+export const deleteVillage = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    // Check if village exists
+    const village = await prisma.village.findUnique({
+      where: { id },
+      include: {
+        households: {
+          select: { id: true },
+        },
+      },
+    });
+
+    if (!village) {
+      return res.status(404).json({
+        success: false,
+        message: "Village not found",
+      });
+    }
+
+    // Check if village has households
+    const householdCount = village.households?.length || 0;
+
+    if (householdCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete village with ${householdCount} household(s) attached. Please reassign or delete households first.`,
+      });
+    }
+
+    // Delete the village
+    await prisma.village.delete({
+      where: { id },
+    });
+
+    // Log the action
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: "VILLAGE_DELETED",
+        recordType: "VILLAGE",
+        recordId: id,
+        newValue: {
+          villageName: village.name,
+          deletedBy: req.user.id,
+          deletedAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    console.log(
+      `🗑️ Village "${village.name}" (${id}) deleted by user ${req.user.id}`,
+    );
+
+    res.json({
+      success: true,
+      message: "Village deleted successfully",
+    });
+  } catch (error) {
+    console.error("Error deleting village:", error);
+    next(error);
+  }
+};

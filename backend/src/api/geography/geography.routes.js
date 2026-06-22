@@ -8,6 +8,7 @@ import {
   getVillages,
   createVillage,
   getGeographyTree,
+  deleteVillage,
 } from "./geography.controller.js";
 import { authenticate } from "../../middleware/auth.js";
 // import { role } from "../../middleware/role.js";
@@ -24,5 +25,6 @@ router.get("/my-tas", getMyTAs);
 router.get("/zones", getZones);
 router.get("/villages", getVillages);
 router.post("/villages", createVillage);
+router.delete("/villages/:id", deleteVillage);
 
 export default router;

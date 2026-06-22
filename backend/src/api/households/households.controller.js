@@ -119,6 +119,9 @@ export const createHousehold = async (req, res, next) => {
       villageId,
       headOfHouseholdName,
       headPhone,
+      headNationalId,
+      consentGiven,
+      consentSignatureUrl,
       structureType,
       waterSource,
       latrinePresent,
@@ -165,6 +168,9 @@ export const createHousehold = async (req, res, next) => {
         villageId,
         headOfHouseholdName,
         headPhone: headPhone || null,
+        headNationalId: headNationalId || null,
+        consentGiven: consentGiven || false,
+        consentSignatureUrl: consentSignatureUrl || null,
         structureType,
         waterSource,
         latrinePresent,
@@ -195,6 +201,9 @@ export const updateHousehold = async (req, res, next) => {
     const allowed = [
       "headOfHouseholdName",
       "headPhone",
+      "headNationalId",
+      "consentGiven",
+      "consentSignatureUrl",
       "structureType",
       "waterSource",
       "latrinePresent",
@@ -221,6 +230,139 @@ export const updateHousehold = async (req, res, next) => {
     });
 
     res.json({ success: true, data: household });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// PATCH /api/households/:id/relocate-same-zone
+// Household moved within the same area — update GPS, keep everything else
+export const relocateSameZone = async (req, res, next) => {
+  try {
+    const { gpsLat, gpsLng, landmark, reason } = req.body;
+
+    const household = await prisma.household.update({
+      where: { id: req.params.id },
+      data: {
+        gpsLat: gpsLat ?? undefined,
+        gpsLng: gpsLng ?? undefined,
+        landmark: landmark || undefined,
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: "HOUSEHOLD_RELOCATED_SAME_ZONE",
+        recordType: "HOUSEHOLD",
+        recordId: household.id,
+        newValue: { gpsLat, gpsLng, landmark, reason: reason || null },
+      },
+    });
+
+    res.json({ success: true, data: household });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// PATCH /api/households/:id/relocate-new-zone
+// Household moved to a different zone/district — archive old, prep for new registration
+export const relocateNewZone = async (req, res, next) => {
+  try {
+    const { reason, destinationZoneName } = req.body;
+
+    const oldHousehold = await prisma.household.findUnique({
+      where: { id: req.params.id },
+    });
+
+    if (!oldHousehold) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Household not found." });
+    }
+
+    const updated = await prisma.household.update({
+      where: { id: req.params.id },
+      data: {
+        status: "RELOCATED",
+        relocatedAt: new Date(),
+        relocationReason:
+          reason || destinationZoneName || "Moved to a new area",
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: "HOUSEHOLD_RELOCATED_NEW_ZONE",
+        recordType: "HOUSEHOLD",
+        recordId: updated.id,
+        newValue: { reason, destinationZoneName },
+      },
+    });
+
+    res.json({
+      success: true,
+      data: updated,
+      message:
+        "Household marked as relocated. History preserved. Re-register in the destination zone when the household is found there.",
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// PATCH /api/households/:id/link-relocation
+// Admin links an old relocated household to its new record in another zone
+export const linkRelocation = async (req, res, next) => {
+  try {
+    const { newHouseholdId } = req.body;
+
+    if (!newHouseholdId) {
+      return res.status(400).json({
+        success: false,
+        message: "newHouseholdId is required.",
+      });
+    }
+
+    const oldHousehold = await prisma.household.update({
+      where: { id: req.params.id },
+      data: { relocatedToHouseholdId: newHouseholdId },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: "HOUSEHOLD_RELOCATION_LINKED",
+        recordType: "HOUSEHOLD",
+        recordId: oldHousehold.id,
+        newValue: { linkedTo: newHouseholdId },
+      },
+    });
+
+    res.json({ success: true, data: oldHousehold });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// GET /api/households/relocated
+// List all relocated households for admin review
+export const getRelocatedHouseholds = async (req, res, next) => {
+  try {
+    const households = await prisma.household.findMany({
+      where: { status: "RELOCATED" },
+      include: {
+        village: { include: { zone: { include: { ta: true } } } },
+        relocatedTo: {
+          include: { village: { include: { zone: true } } },
+        },
+      },
+      orderBy: { relocatedAt: "desc" },
+    });
+
+    res.json({ success: true, data: households });
   } catch (err) {
     next(err);
   }

@@ -58,6 +58,7 @@ enum HouseholdStatus {
   ACTIVE
   VACANT
   DEMOLISHED
+  RELOCATED
 }
 
 enum Sex {
@@ -291,33 +292,41 @@ model UserTaAllocation {
 // ─── HOUSEHOLDS 
 
 model Household {
-  id                  String             @id @default(uuid())
-  localId             String             @unique @map("local_id")
-  householdNumber     String             @unique @map("household_number")
-  villageId           String             @map("village_id")
-  headOfHouseholdName String             @map("head_of_household_name")
-  headPhone           String?            @map("head_phone")
-  structureType       StructureType      @map("structure_type")
-  waterSource         WaterSource        @map("water_source")
-  latrinePresent      Boolean            @map("latrine_present")
-  latrineType         LatrineType?       @map("latrine_type")
-  handwashingFacility Boolean            @map("handwashing_facility")
-  handwashingWithSoap Boolean?           @map("handwashing_with_soap")
-  distanceToFacility  DistanceToFacility @map("distance_to_facility")
-  mosquitoNets        String?            @map("mosquito_nets")
-  numberOfRooms       Int?               @map("number_of_rooms")
-  landmark            String?
-  gpsLat              Float?             @map("gps_lat")
-  gpsLng              Float?             @map("gps_lng")
-  registeredByUserId  String             @map("registered_by_user_id")
-  status              HouseholdStatus    @default(ACTIVE)
-  syncedAt            DateTime?          @map("synced_at")
-  createdAt           DateTime           @default(now()) @map("created_at")
-  updatedAt           DateTime           @updatedAt @map("updated_at")
+  id                     String             @id @default(uuid())
+  localId                String             @unique @map("local_id")
+  householdNumber        String             @unique @map("household_number")
+  villageId              String             @map("village_id")
+  headOfHouseholdName    String             @map("head_of_household_name")
+  headPhone              String?            @map("head_phone")
+  structureType          StructureType      @map("structure_type")
+  waterSource            WaterSource        @map("water_source")
+  latrinePresent         Boolean            @map("latrine_present")
+  latrineType            LatrineType?       @map("latrine_type")
+  handwashingFacility    Boolean            @map("handwashing_facility")
+  handwashingWithSoap    Boolean?           @map("handwashing_with_soap")
+  distanceToFacility     DistanceToFacility @map("distance_to_facility")
+  mosquitoNets           String?            @map("mosquito_nets")
+  numberOfRooms          Int?               @map("number_of_rooms")
+  landmark               String?
+  gpsLat                 Float?             @map("gps_lat")
+  gpsLng                 Float?             @map("gps_lng")
+  headNationalId         String?            @map("head_national_id")
+  consentGiven           Boolean            @default(false) @map("consent_given")
+  consentSignatureUrl    String?            @map("consent_signature_url")
+  registeredByUserId     String             @map("registered_by_user_id")
+  status                 HouseholdStatus    @default(ACTIVE)
+  relocatedAt            DateTime?          @map("relocated_at")
+  relocationReason       String?            @map("relocation_reason")
+  relocatedToHouseholdId String?            @unique @map("relocated_to_household_id")
+  syncedAt               DateTime?          @map("synced_at")
+  createdAt              DateTime           @default(now()) @map("created_at")
+  updatedAt              DateTime           @updatedAt @map("updated_at")
 
-  village      Village           @relation(fields: [villageId], references: [id])
-  registeredBy User              @relation("HouseholdRegistrar", fields: [registeredByUserId], references: [id])
-  members      HouseholdMember[]
+  village       Village           @relation(fields: [villageId], references: [id])
+  registeredBy  User              @relation("HouseholdRegistrar", fields: [registeredByUserId], references: [id])
+  members       HouseholdMember[]
+  relocatedTo   Household?        @relation("HouseholdRelocation", fields: [relocatedToHouseholdId], references: [id])
+  relocatedFrom Household?        @relation("HouseholdRelocation")
 
   @@map("households")
 }
@@ -337,6 +346,7 @@ model HouseholdMember {
   chronicIllnesses     Json?        @map("chronic_illnesses")
   hasDisability        Boolean      @default(false) @map("has_disability")
   disabilityType       String?      @map("disability_type")
+  nationalId           String?      @map("national_id")
   phone                String?
   status               MemberStatus @default(ACTIVE)
   archivedAt           DateTime?    @map("archived_at")
@@ -624,19 +634,20 @@ model LoginLockout {
 }
 
 model UnknownLoginAttempt {
-  id             String   @id @default(uuid())
-  phoneNumber    String   @unique @map("phone_number")
-  attemptCount   Int      @default(1)
-  firstAttemptAt DateTime @default(now()) @map("first_attempt_at")
-  lastAttemptAt  DateTime @default(now()) @map("last_attempt_at")
-  ipAddress      String?  @map("ip_address")
-  isLocked       Boolean  @default(false) @map("is_locked")
+  id             String    @id @default(uuid())
+  phoneNumber    String    @unique @map("phone_number")
+  attemptCount   Int       @default(1)
+  firstAttemptAt DateTime  @default(now()) @map("first_attempt_at")
+  lastAttemptAt  DateTime  @default(now()) @map("last_attempt_at")
+  ipAddress      String?   @map("ip_address")
+  isLocked       Boolean   @default(false) @map("is_locked")
   lockedUntil    DateTime? @map("locked_until")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
 
   @@map("unknown_login_attempts")
 }
+
 // ─── AUDIT LOG 
 
 model AuditLog {

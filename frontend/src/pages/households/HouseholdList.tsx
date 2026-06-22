@@ -14,6 +14,10 @@ import {
 } from "lucide-react";
 import api from "../../services/api";
 import type { Household, Pagination } from "../../types";
+import {
+  VerificationBadge,
+  VerificationPanel,
+} from "./IdentityVerificationBadge";
 
 export default function HouseholdList() {
   const [search, setSearch] = useState("");
@@ -148,6 +152,7 @@ export default function HouseholdList() {
                 "Location",
                 "Members",
                 "Health Score",
+                "Identity",
                 "Status",
                 "Action",
               ].map((h) => (
@@ -164,7 +169,7 @@ export default function HouseholdList() {
             {isLoading && (
               <tr>
                 <td
-                  colSpan={7}
+                  colSpan={8}
                   className="text-center py-12 text-gray-400 text-sm"
                 >
                   Loading...
@@ -174,7 +179,7 @@ export default function HouseholdList() {
             {!isLoading && data?.data.length === 0 && (
               <tr>
                 <td
-                  colSpan={7}
+                  colSpan={8}
                   className="text-center py-12 text-gray-400 text-sm"
                 >
                   No households found
@@ -214,6 +219,9 @@ export default function HouseholdList() {
                   >
                     {score(h)}/100
                   </span>
+                </td>
+                <td className="px-4 py-3">
+                  <VerificationBadge household={h} />
                 </td>
                 <td className="px-4 py-3">
                   <span
@@ -324,6 +332,9 @@ export default function HouseholdList() {
                     </p>
                   </div>
                 </div>
+
+                {/* Identity Verification */}
+                <VerificationPanel household={detail} />
 
                 {/* Household Info */}
                 <div>

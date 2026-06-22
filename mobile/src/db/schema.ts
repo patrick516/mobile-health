@@ -13,6 +13,35 @@ export const getDb = async (): Promise<SQLite.SQLiteDatabase> => {
 export const initDb = async (): Promise<void> => {
   try {
     const database = await getDb();
+    // Migration — add new columns to existing tables (safe to run repeatedly)
+    const addColumnIfMissing = async (
+      table: string,
+      column: string,
+      definition: string,
+    ) => {
+      try {
+        await database.execAsync(
+          `ALTER TABLE ${table} ADD COLUMN ${column} ${definition};`,
+        );
+      } catch (e: any) {
+        // Ignore "duplicate column" errors — means it already exists
+        if (!e?.message?.includes("duplicate column")) {
+          console.warn(
+            `[DB] Migration warning on ${table}.${column}:`,
+            e?.message,
+          );
+        }
+      }
+    };
+
+    await addColumnIfMissing("households", "head_national_id", "TEXT");
+    await addColumnIfMissing(
+      "households",
+      "consent_given",
+      "INTEGER DEFAULT 0",
+    );
+    await addColumnIfMissing("households", "consent_signature_url", "TEXT");
+    await addColumnIfMissing("members", "national_id", "TEXT");
     await database.execAsync(`
       CREATE TABLE IF NOT EXISTS sync_queue (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -33,6 +62,9 @@ export const initDb = async (): Promise<void> => {
         ta_name TEXT NOT NULL,
         head_of_household_name TEXT NOT NULL,
         head_phone TEXT,
+        head_national_id TEXT,
+        consent_given INTEGER DEFAULT 0,
+        consent_signature_url TEXT,
         household_number TEXT,
         structure_type TEXT,
         water_source TEXT,
@@ -65,6 +97,7 @@ export const initDb = async (): Promise<void> => {
         chronic_illnesses TEXT,
         has_disability INTEGER DEFAULT 0,
         disability_type TEXT,
+        national_id TEXT,
         phone TEXT,
         status TEXT DEFAULT 'ACTIVE',
         synced INTEGER DEFAULT 0,
@@ -252,6 +285,7 @@ export const initDb = async (): Promise<void> => {
         is_permanent INTEGER DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
+      -- placeholder, real ALTER statements go below this block
       CREATE TABLE IF NOT EXISTS stock_requests (
         id TEXT PRIMARY KEY,
         local_id TEXT NOT NULL UNIQUE,

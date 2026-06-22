@@ -15,6 +15,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { COLORS, SIZES, SHADOWS } from "../../../constants/theme";
 import { getDb } from "../../../src/db/schema";
 import { useAppStore } from "../../../src/store";
+import api from "../../../src/services/api";
+import NetInfo from "@react-native-community/netinfo";
+import * as Location from "expo-location";
 
 interface Household {
   id: string;
@@ -71,6 +74,8 @@ export default function HouseholdDetailScreen() {
     "members",
   );
   const [visits, setVisits] = useState<Visit[]>([]);
+  const [showRelocateModal, setShowRelocateModal] = useState(false);
+  const [relocating, setRelocating] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -187,6 +192,132 @@ export default function HouseholdDetailScreen() {
       month: "short",
       year: "numeric",
     });
+
+  const handleRelocateSameZone = async () => {
+    if (!household) return;
+    Alert.alert(
+      "Update Location",
+      "This will update the GPS coordinates for this household. Make sure you are standing at the new location.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Capture New GPS & Update",
+          onPress: async () => {
+            setRelocating(true);
+            try {
+              const { status } =
+                await Location.requestForegroundPermissionsAsync();
+              if (status !== "granted") {
+                Alert.alert(
+                  "Permission Needed",
+                  "Location permission is required.",
+                );
+                return;
+              }
+              const loc = await Location.getCurrentPositionAsync({
+                accuracy: Location.Accuracy.High,
+              });
+              const newLat = loc.coords.latitude;
+              const newLng = loc.coords.longitude;
+
+              const db = await getDb();
+              await db.runAsync(
+                "UPDATE households SET gps_lat = ?, gps_lng = ?, synced = 0 WHERE id = ? OR local_id = ?",
+                [newLat, newLng, household.id, household.local_id],
+              );
+
+              const net = await NetInfo.fetch();
+              if (net.isConnected) {
+                try {
+                  await api.patch(
+                    `/households/${household.id}/relocate-same-zone`,
+                    {
+                      gpsLat: newLat,
+                      gpsLng: newLng,
+                      reason: "Moved within same area",
+                    },
+                  );
+                  await db.runAsync(
+                    "UPDATE households SET synced = 1 WHERE id = ? OR local_id = ?",
+                    [household.id, household.local_id],
+                  );
+                } catch (e) {
+                  console.warn("[RELOCATE] Sync failed, will retry later:", e);
+                }
+              }
+
+              Alert.alert(
+                "Location Updated",
+                "Household GPS has been updated successfully.",
+              );
+              load();
+            } catch (err) {
+              console.error("Relocate same zone error:", err);
+              Alert.alert("Error", "Failed to update location.");
+            } finally {
+              setRelocating(false);
+              setShowRelocateModal(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleRelocateNewZone = async () => {
+    if (!household) return;
+    Alert.alert(
+      "Mark Household as Relocated",
+      "This household will be marked as RELOCATED. Its history (visits, vaccines, referrals) stays preserved. You should re-register this family fresh if you find them in a new zone or district.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Confirm Relocation",
+          style: "destructive",
+          onPress: async () => {
+            setRelocating(true);
+            try {
+              const db = await getDb();
+              await db.runAsync(
+                "UPDATE households SET status = 'RELOCATED', synced = 0 WHERE id = ? OR local_id = ?",
+                [household.id, household.local_id],
+              );
+
+              const net = await NetInfo.fetch();
+              if (net.isConnected) {
+                try {
+                  await api.patch(
+                    `/households/${household.id}/relocate-new-zone`,
+                    {
+                      reason: "Household moved to a different area",
+                    },
+                  );
+                  await db.runAsync(
+                    "UPDATE households SET synced = 1 WHERE id = ? OR local_id = ?",
+                    [household.id, household.local_id],
+                  );
+                } catch (e) {
+                  console.warn("[RELOCATE] Sync failed, will retry later:", e);
+                }
+              }
+
+              Alert.alert(
+                "Household Marked as Relocated",
+                "This household's history has been preserved. Re-register the family if found in a new area.",
+                [{ text: "OK", onPress: () => router.back() }],
+              );
+            } catch (err) {
+              console.error("Relocate new zone error:", err);
+              Alert.alert("Error", "Failed to mark household as relocated.");
+            } finally {
+              setRelocating(false);
+              setShowRelocateModal(false);
+            }
+          },
+        },
+      ],
+    );
+  };
 
   if (loading) {
     return (
@@ -631,6 +762,65 @@ export default function HouseholdDetailScreen() {
                 <Text style={styles.detailVal}>{row.val}</Text>
               </View>
             ))}
+
+            {/* Relocation Actions */}
+            <View style={styles.relocateSection}>
+              <Text style={styles.relocateSectionTitle}>
+                Household Relocation
+              </Text>
+              <Text style={styles.relocateSectionDesc}>
+                Use this if the household has physically moved from its
+                registered location.
+              </Text>
+
+              <TouchableOpacity
+                style={styles.relocateBtn}
+                onPress={handleRelocateSameZone}
+                disabled={relocating}
+              >
+                <Ionicons
+                  name="location-outline"
+                  size={18}
+                  color={COLORS.primary}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.relocateBtnTitle}>
+                    Moved Within Same Area
+                  </Text>
+                  <Text style={styles.relocateBtnSub}>
+                    Update GPS location only — history stays
+                  </Text>
+                </View>
+                <Ionicons
+                  name="chevron-forward"
+                  size={16}
+                  color={COLORS.textMuted}
+                />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.relocateBtn, styles.relocateBtnDanger]}
+                onPress={handleRelocateNewZone}
+                disabled={relocating}
+              >
+                <Ionicons name="exit-outline" size={18} color={COLORS.danger} />
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={[styles.relocateBtnTitle, { color: COLORS.danger }]}
+                  >
+                    Moved to Different Zone/District
+                  </Text>
+                  <Text style={styles.relocateBtnSub}>
+                    Mark as relocated — re-register in the new area
+                  </Text>
+                </View>
+                <Ionicons
+                  name="chevron-forward"
+                  size={16}
+                  color={COLORS.textMuted}
+                />
+              </TouchableOpacity>
+            </View>
           </View>
         )}
 
@@ -639,7 +829,6 @@ export default function HouseholdDetailScreen() {
     </View>
   );
 }
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
@@ -849,5 +1038,46 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     flex: 1,
     textAlign: "right",
+  },
+  relocateSection: {
+    marginTop: SIZES.lg,
+    paddingTop: SIZES.lg,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  relocateSectionTitle: {
+    fontSize: SIZES.fontMd,
+    fontWeight: "bold",
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  relocateSectionDesc: {
+    fontSize: SIZES.fontXs,
+    color: COLORS.textMuted,
+    marginBottom: SIZES.md,
+  },
+  relocateBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SIZES.md,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: SIZES.radiusMd,
+    padding: SIZES.md,
+    marginBottom: SIZES.sm,
+  },
+  relocateBtnDanger: {
+    borderColor: COLORS.dangerLight,
+  },
+  relocateBtnTitle: {
+    fontSize: SIZES.fontSm,
+    fontWeight: "600",
+    color: COLORS.text,
+  },
+  relocateBtnSub: {
+    fontSize: SIZES.fontXs,
+    color: COLORS.textMuted,
+    marginTop: 2,
   },
 });

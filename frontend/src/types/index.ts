@@ -21,6 +21,9 @@ export interface Household {
   householdNumber: string;
   headOfHouseholdName: string;
   headPhone?: string;
+  headNationalId?: string | null;
+  consentGiven?: boolean;
+  consentSignatureUrl?: string | null;
   status: string;
   gpsLat?: number;
   gpsLng?: number;

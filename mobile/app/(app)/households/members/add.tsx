@@ -29,6 +29,7 @@ import {
   clearDraft,
 } from "../../../../src/utils/draftStorage";
 import { showSuccess, showError, showInfo } from "../../../../src/utils/toast";
+import IdScanner from "../../../../components/forms/IdScanner";
 
 const DRAFT_KEY = "member_add";
 
@@ -50,6 +51,7 @@ export default function AddMemberScreen() {
   const [hasDisability, setHasDisability] = useState(false);
   const [disabilityType, setDisabilityType] = useState("");
   const [phone, setPhone] = useState("");
+  const [nationalId, setNationalId] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -73,6 +75,7 @@ export default function AddMemberScreen() {
       setHasDisability(draft.hasDisability);
     if (draft.disabilityType) setDisabilityType(draft.disabilityType);
     if (draft.phone) setPhone(draft.phone);
+    if (draft.nationalId) setNationalId(draft.nationalId);
     showInfo("Draft Restored", "Continuing your previous member entry.");
   };
 
@@ -93,6 +96,7 @@ export default function AddMemberScreen() {
         hasDisability,
         disabilityType,
         phone,
+        nationalId,
       });
     }, 800);
     return () => clearTimeout(timer);
@@ -109,6 +113,7 @@ export default function AddMemberScreen() {
     hasDisability,
     disabilityType,
     phone,
+    nationalId,
   ]);
 
   const showPregnancy =
@@ -191,8 +196,8 @@ export default function AddMemberScreen() {
         `INSERT INTO members (
           id, local_id, household_id, full_name, date_of_birth, estimated_age,
           sex, relationship_to_head, is_pregnant, lmp_date, expected_delivery_date,
-          chronic_illnesses, has_disability, disability_type, phone, status, synced
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`,
+          chronic_illnesses, has_disability, disability_type, national_id, phone, status, synced
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`,
         [
           localId,
           localId,
@@ -208,6 +213,7 @@ export default function AddMemberScreen() {
           chronicIllnesses.length > 0 ? JSON.stringify(chronicIllnesses) : null,
           hasDisability ? 1 : 0,
           hasDisability && disabilityType ? disabilityType : null,
+          nationalId.trim() || null,
           phone.trim() || null,
           "ACTIVE",
         ],
@@ -228,6 +234,7 @@ export default function AddMemberScreen() {
         chronicIllnesses: chronicIllnesses.length > 0 ? chronicIllnesses : null,
         hasDisability,
         disabilityType: hasDisability ? disabilityType : null,
+        nationalId: nationalId.trim() || null,
         phone: phone.trim() || null,
       });
 
@@ -251,6 +258,7 @@ export default function AddMemberScreen() {
               setChronicIllnesses([]);
               setHasDisability(false);
               setPhone("");
+              setNationalId("");
             },
           },
           { text: "Done", onPress: () => router.back() },
@@ -564,6 +572,15 @@ export default function AddMemberScreen() {
               </View>
             </>
           )}
+
+          {/* Phone */}
+          {/* National ID — optional, only adults 16+ have one */}
+          <IdScanner
+            value={nationalId}
+            onChange={setNationalId}
+            label="National ID"
+            required={false}
+          />
 
           {/* Phone */}
           <Text style={styles.label}>Phone Number (optional)</Text>

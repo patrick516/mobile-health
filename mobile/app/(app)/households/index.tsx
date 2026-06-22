@@ -10,7 +10,7 @@ import {
   RefreshControl,
   StatusBar,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { COLORS, SIZES, SHADOWS } from "../../../constants/theme";
 import { getDb } from "../../../src/db/schema";
@@ -63,9 +63,11 @@ export default function HouseholdsScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    loadHouseholds();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadHouseholds(search);
+    }, [loadHouseholds]),
+  );
 
   useEffect(() => {
     const timer = setTimeout(() => loadHouseholds(search), 300);
