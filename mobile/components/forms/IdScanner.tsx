@@ -11,12 +11,14 @@ import {
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Ionicons } from "@expo/vector-icons";
 import { COLORS, SIZES, SHADOWS } from "../../constants/theme";
+import { parseMrz, ParsedMrz } from "../../src/utils/mrzParser";
 
 interface IdScannerProps {
   value: string;
   onChange: (idNumber: string) => void;
   label?: string;
   required?: boolean;
+  onParsedData?: (data: ParsedMrz) => void; // optional — used to auto-fill name/DOB/sex
 }
 
 // Captures a National ID number either by typing manually or scanning the
@@ -28,10 +30,12 @@ export default function IdScanner({
   onChange,
   label = "National ID Number",
   required = false,
+  onParsedData,
 }: IdScannerProps) {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
+  const [lastParsed, setLastParsed] = useState<ParsedMrz | null>(null);
 
   const openScanner = async () => {
     if (!permission?.granted) {
@@ -51,14 +55,28 @@ export default function IdScanner({
   const handleBarcodeScanned = ({ data }: { data: string }) => {
     if (scanned) return;
     setScanned(true);
-    // Raw QR string captured — may contain just the ID number or a longer
-    // encoded string depending on the card. We store it as-is.
-    onChange(data.trim());
     setScannerOpen(false);
-    Alert.alert(
-      "ID Scanned",
-      "National ID captured from QR code. You can edit it below if needed.",
-    );
+
+    const parsed = parseMrz(data.trim());
+
+    if (parsed && parsed.idNumber) {
+      // Successfully parsed structured MRZ data
+      onChange(parsed.idNumber);
+      setLastParsed(parsed);
+      if (onParsedData) onParsedData(parsed);
+      Alert.alert(
+        "ID Scanned",
+        `National ID: ${parsed.idNumber}\nName: ${parsed.fullName || "—"}\nDOB: ${parsed.dateOfBirth || "—"}`,
+      );
+    } else {
+      // Couldn't parse — fall back to storing the raw value
+      onChange(data.trim());
+      setLastParsed(null);
+      Alert.alert(
+        "ID Scanned",
+        "Could not fully read the ID format. Raw value captured — please verify and edit if needed.",
+      );
+    }
   };
 
   return (
@@ -83,6 +101,24 @@ export default function IdScanner({
         Type the ID number manually, or tap the scan icon to scan the QR code on
         the back of the National ID card.
       </Text>
+
+      {lastParsed && (
+        <View style={styles.parsedBox}>
+          <Ionicons name="checkmark-circle" size={16} color={COLORS.success} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.parsedText}>
+              {lastParsed.fullName || "Name not detected"}
+            </Text>
+            <Text style={styles.parsedSubText}>
+              {lastParsed.dateOfBirth ? `DOB: ${lastParsed.dateOfBirth}` : ""}
+              {lastParsed.dateOfBirth && lastParsed.sex !== "UNKNOWN"
+                ? " · "
+                : ""}
+              {lastParsed.sex !== "UNKNOWN" ? lastParsed.sex : ""}
+            </Text>
+          </View>
+        </View>
+      )}
 
       <Modal visible={scannerOpen} animationType="slide">
         <View style={styles.scannerContainer}>
@@ -145,6 +181,27 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     marginTop: 4,
     lineHeight: 16,
+  },
+  parsedBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#F0FDF4",
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+    borderRadius: SIZES.radiusMd,
+    padding: SIZES.sm,
+    marginTop: SIZES.sm,
+  },
+  parsedText: {
+    fontSize: SIZES.fontSm,
+    fontWeight: "600",
+    color: "#166534",
+  },
+  parsedSubText: {
+    fontSize: SIZES.fontXs,
+    color: "#166534",
+    marginTop: 1,
   },
   scannerContainer: { flex: 1, backgroundColor: "#000" },
   scannerHeader: {

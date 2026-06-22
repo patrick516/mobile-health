@@ -1,5 +1,9 @@
 import prisma from "../../config/db.js";
 import { buildVillageScope } from "../../middleware/auth.js";
+import {
+  calculateHouseholdRisk,
+  calculateHealthScore,
+} from "../../utils/riskScore.js";
 // GET /api/households?zoneId=&villageId=&search=&page=&limit=
 export const getHouseholds = async (req, res, next) => {
   try {
@@ -45,6 +49,20 @@ export const getHouseholds = async (req, res, next) => {
               dateOfBirth: true,
               estimatedAge: true,
               isPregnant: true,
+              visits: {
+                orderBy: { visitedAt: "desc" },
+                take: 1,
+                select: { visitedAt: true },
+              },
+              referrals: {
+                where: { status: { in: ["PENDING", "OVERDUE"] } },
+                select: { id: true },
+              },
+              immunisationSchedules: {
+                where: { status: "OVERDUE" },
+                select: { id: true },
+              },
+              ancVisits: { where: { status: "OVERDUE" }, select: { id: true } },
             },
           },
           _count: { select: { members: true } },
@@ -56,9 +74,61 @@ export const getHouseholds = async (req, res, next) => {
       prisma.household.count({ where }),
     ]);
 
+    // Calculate risk level per household using the shared scoring logic
+    const householdsWithRisk = households.map((h) => {
+      const healthScore = calculateHealthScore(h);
+
+      const allVisitDates = h.members
+        .flatMap((m) => m.visits.map((v) => v.visitedAt))
+        .filter(Boolean);
+      const lastVisitDate = allVisitDates.length
+        ? new Date(Math.max(...allVisitDates.map((d) => new Date(d).getTime())))
+        : null;
+      const daysSinceLastVisit = lastVisitDate
+        ? Math.floor(
+            (Date.now() - lastVisitDate.getTime()) / (1000 * 60 * 60 * 24),
+          )
+        : null;
+
+      const pendingReferrals = h.members.reduce(
+        (sum, m) => sum + m.referrals.length,
+        0,
+      );
+      const overdueVaccines = h.members.reduce(
+        (sum, m) => sum + m.immunisationSchedules.length,
+        0,
+      );
+      const overdueAnc = h.members.reduce(
+        (sum, m) => sum + m.ancVisits.length,
+        0,
+      );
+
+      const risk = calculateHouseholdRisk({
+        healthScore,
+        daysSinceLastVisit,
+        pendingReferrals,
+        overdueVaccines,
+        overdueAnc,
+      });
+
+      // Strip the nested detail arrays before sending to client (keep payload light)
+      const { members, ...rest } = h;
+      const cleanMembers = members.map(
+        ({ visits, referrals, immunisationSchedules, ancVisits, ...m }) => m,
+      );
+
+      return {
+        ...rest,
+        members: cleanMembers,
+        riskLevel: risk.level,
+        riskScore: risk.score,
+        riskReasons: risk.reasons,
+      };
+    });
+
     res.json({
       success: true,
-      data: households,
+      data: householdsWithRisk,
       pagination: {
         total,
         page: parseInt(page),

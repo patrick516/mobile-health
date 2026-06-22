@@ -18,6 +18,7 @@ import {
   VerificationBadge,
   VerificationPanel,
 } from "./IdentityVerificationBadge";
+import { RiskBadge, RiskPanel } from "./RiskBadge";
 
 export default function HouseholdList() {
   const [search, setSearch] = useState("");
@@ -152,6 +153,7 @@ export default function HouseholdList() {
                 "Location",
                 "Members",
                 "Health Score",
+                "Risk Level",
                 "Identity",
                 "Status",
                 "Action",
@@ -169,7 +171,7 @@ export default function HouseholdList() {
             {isLoading && (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={9}
                   className="text-center py-12 text-gray-400 text-sm"
                 >
                   Loading...
@@ -179,7 +181,7 @@ export default function HouseholdList() {
             {!isLoading && data?.data.length === 0 && (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={9}
                   className="text-center py-12 text-gray-400 text-sm"
                 >
                   No households found
@@ -219,6 +221,9 @@ export default function HouseholdList() {
                   >
                     {score(h)}/100
                   </span>
+                </td>
+                <td className="px-4 py-3">
+                  <RiskBadge riskLevel={(h as any).riskLevel} />
                 </td>
                 <td className="px-4 py-3">
                   <VerificationBadge household={h} />
@@ -332,6 +337,13 @@ export default function HouseholdList() {
                     </p>
                   </div>
                 </div>
+
+                {/* Risk Stratification */}
+                <RiskPanel
+                  riskLevel={(detail as any).riskLevel}
+                  riskScore={(detail as any).riskScore}
+                  riskReasons={(detail as any).riskReasons}
+                />
 
                 {/* Identity Verification */}
                 <VerificationPanel household={detail} />

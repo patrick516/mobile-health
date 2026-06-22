@@ -1,11 +1,28 @@
 import * as SQLite from "expo-sqlite";
 
 let db: SQLite.SQLiteDatabase | null = null;
+let isInitializing = false;
 
 export const getDb = async (): Promise<SQLite.SQLiteDatabase> => {
+  // Wait if initialization is in progress
+  while (isInitializing) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
   if (!db) {
-    db = await SQLite.openDatabaseAsync("mobilehealth.db");
-    await db.execAsync("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
+    try {
+      isInitializing = true;
+      db = await SQLite.openDatabaseAsync("mobilehealth.db");
+      await db.execAsync(
+        "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;",
+      );
+      console.log("[DB] Database opened successfully");
+    } catch (error) {
+      console.error("[DB] Failed to open database:", error);
+      throw error;
+    } finally {
+      isInitializing = false;
+    }
   }
   return db;
 };
@@ -13,6 +30,7 @@ export const getDb = async (): Promise<SQLite.SQLiteDatabase> => {
 export const initDb = async (): Promise<void> => {
   try {
     const database = await getDb();
+
     // Migration — add new columns to existing tables (safe to run repeatedly)
     const addColumnIfMissing = async (
       table: string,
@@ -42,6 +60,7 @@ export const initDb = async (): Promise<void> => {
     );
     await addColumnIfMissing("households", "consent_signature_url", "TEXT");
     await addColumnIfMissing("members", "national_id", "TEXT");
+
     await database.execAsync(`
       CREATE TABLE IF NOT EXISTS sync_queue (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -205,7 +224,6 @@ export const initDb = async (): Promise<void> => {
         gps_lng REAL,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
-
       CREATE TABLE IF NOT EXISTS cached_users (
         id TEXT PRIMARY KEY,
         phone_number TEXT NOT NULL UNIQUE,
@@ -248,44 +266,6 @@ export const initDb = async (): Promise<void> => {
         is_read INTEGER DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
-    `);
-
-    // Migration — add new tables if they don't exist yet
-    await database.execAsync(`
-      CREATE TABLE IF NOT EXISTS cached_users (
-        id TEXT PRIMARY KEY,
-        phone_number TEXT NOT NULL UNIQUE,
-        pin_hash TEXT NOT NULL,
-        full_name TEXT NOT NULL,
-        role TEXT NOT NULL,
-        zone_allocations TEXT DEFAULT '[]',
-        ta_allocations TEXT DEFAULT '[]',
-        token TEXT,
-        cached_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-     CREATE TABLE IF NOT EXISTS zones (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        ta_id TEXT,
-        ta_name TEXT,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-      CREATE TABLE IF NOT EXISTS login_attempts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        phone_number TEXT NOT NULL,
-        attempted_at TEXT NOT NULL DEFAULT (datetime('now')),
-        success INTEGER DEFAULT 0
-      );
-      CREATE TABLE IF NOT EXISTS login_lockouts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        phone_number TEXT NOT NULL UNIQUE,
-        locked_until TEXT,
-        lockout_count INTEGER DEFAULT 0,
-        last_lockout_at TEXT,
-        is_permanent INTEGER DEFAULT 0,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-      -- placeholder, real ALTER statements go below this block
       CREATE TABLE IF NOT EXISTS stock_requests (
         id TEXT PRIMARY KEY,
         local_id TEXT NOT NULL UNIQUE,
@@ -297,9 +277,47 @@ export const initDb = async (): Promise<void> => {
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
     `);
+
     console.log("[DB] SQLite initialised successfully");
   } catch (err) {
     console.error("[DB] Init error:", err);
     throw err;
+  }
+};
+
+// ─── RESET DATABASE ──────────────────────────────────────────────
+export const resetDatabase = async (): Promise<void> => {
+  try {
+    const database = await getDb();
+
+    // Drop all tables
+    await database.execAsync(`
+      DROP TABLE IF EXISTS sync_queue;
+      DROP TABLE IF EXISTS households;
+      DROP TABLE IF EXISTS members;
+      DROP TABLE IF EXISTS visits;
+      DROP TABLE IF EXISTS referrals;
+      DROP TABLE IF EXISTS immunisations;
+      DROP TABLE IF EXISTS immunisation_schedules;
+      DROP TABLE IF EXISTS anc_visits;
+      DROP TABLE IF EXISTS drug_stock;
+      DROP TABLE IF EXISTS drug_dispenses;
+      DROP TABLE IF EXISTS villages;
+      DROP TABLE IF EXISTS cached_users;
+      DROP TABLE IF EXISTS zones;
+      DROP TABLE IF EXISTS login_attempts;
+      DROP TABLE IF EXISTS login_lockouts;
+      DROP TABLE IF EXISTS notifications;
+      DROP TABLE IF EXISTS stock_requests;
+    `);
+
+    console.log("[DB]  Database reset successfully");
+
+    // Reinitialize
+    await initDb();
+    console.log("[DB] Database reinitialized after reset");
+  } catch (error) {
+    console.error("[DB] Reset error:", error);
+    throw error;
   }
 };

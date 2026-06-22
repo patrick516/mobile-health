@@ -25,6 +25,7 @@ import { enqueue } from "../../../src/db/sync-queue";
 import api from "../../../src/services/api";
 import IdScanner from "../../../components/forms/IdScanner";
 import SignaturePad from "../../../components/forms/SignaturePad";
+import ThumbprintCapture from "../../../components/forms/ThumbprintCapture";
 import {
   saveDraft,
   loadDraft,
@@ -36,7 +37,6 @@ import {
   STRUCTURE_TYPES,
   DISTANCE_OPTIONS,
 } from "../../../constants/diseases";
-// Check if we have internet connection
 import NetInfo from "@react-native-community/netinfo";
 
 interface Village {
@@ -95,6 +95,10 @@ export default function AddHouseholdScreen() {
   const [consentGiven, setConsentGiven] = useState(false);
   const [signaturePath, setSignaturePath] = useState("");
   const [signatureEmpty, setSignatureEmpty] = useState(true);
+  const [verifyMethod, setVerifyMethod] = useState<"thumbprint" | "signature">(
+    "thumbprint",
+  );
+  const [thumbprintCaptured, setThumbprintCaptured] = useState(false);
   const [structureType, setStructureType] = useState("");
   const [waterSource, setWaterSource] = useState("");
   const [latrinePresent, setLatrinePresent] = useState(false);
@@ -106,8 +110,6 @@ export default function AddHouseholdScreen() {
 
   const [saving, setSaving] = useState(false);
   const justSavedRef = useRef(false);
-
-  // Health score calculation
 
   // Health score calculation
   const healthScore = (() => {
@@ -161,8 +163,6 @@ export default function AddHouseholdScreen() {
     showInfo("Draft Restored", "Continuing your previous registration.");
   };
 
-  // Auto-save draft whenever form data changes (debounced 800ms)
-  // Auto-save draft whenever form data changes (debounced 800ms)
   useEffect(() => {
     if (justSavedRef.current) return;
     const timer = setTimeout(() => {
@@ -216,7 +216,6 @@ export default function AddHouseholdScreen() {
       setZones(fetchedZones);
       if (fetchedZones.length === 1) setSelectedZoneId(fetchedZones[0].id);
 
-      // Cache zones to SQLite for offline use
       const db = await getDb();
       for (const z of fetchedZones) {
         await db.runAsync(
@@ -225,7 +224,6 @@ export default function AddHouseholdScreen() {
         );
       }
     } catch {
-      // Offline fallback — load from SQLite
       try {
         const db = await getDb();
         const rows = await db.getAllAsync<Zone>(
@@ -284,7 +282,6 @@ export default function AddHouseholdScreen() {
     setIdChecking(true);
     setExistingMatches([]);
     try {
-      // Ensure DB is ready before querying
       await initDb();
       const db = await getDb();
       const prefix = idPrefix.toUpperCase().trim();
@@ -329,6 +326,7 @@ export default function AddHouseholdScreen() {
     });
     if (!result.canceled) setHouseholdPhoto(result.assets[0].uri);
   };
+
   const handleAddVillage = async () => {
     if (!newVillageName.trim()) return;
 
@@ -400,7 +398,6 @@ export default function AddHouseholdScreen() {
 
     setSaving(true);
     try {
-      // Safety guard — ensure DB and all tables exist before inserting
       await initDb();
 
       const localId = Crypto.randomUUID();
@@ -428,7 +425,9 @@ export default function AddHouseholdScreen() {
           headPhone.trim() || null,
           headNationalId.trim() || null,
           consentGiven ? 1 : 0,
-          signaturePath || null,
+          verifyMethod === "thumbprint"
+            ? "THUMBPRINT_VERIFIED"
+            : signaturePath || null,
           idPreview,
           structureType,
           waterSource,
@@ -447,7 +446,6 @@ export default function AddHouseholdScreen() {
       const netState = await NetInfo.fetch();
 
       if (netState.isConnected) {
-        // Try to sync immediately to server
         try {
           const response = await api.post("/households", {
             localId,
@@ -471,7 +469,6 @@ export default function AddHouseholdScreen() {
           });
 
           if (response.data.success) {
-            // Successfully synced to server, mark as synced
             await db.runAsync(
               "UPDATE households SET synced = 1, id = ? WHERE local_id = ?",
               [response.data.data.id, localId],
@@ -479,7 +476,6 @@ export default function AddHouseholdScreen() {
           }
         } catch (err) {
           console.error("Online sync failed, queueing for later:", err);
-          // Failed to sync online, add to queue
           await enqueue("HOUSEHOLD", {
             localId,
             villageId: selectedVillageId,
@@ -502,7 +498,6 @@ export default function AddHouseholdScreen() {
           });
         }
       } else {
-        // Offline - add to queue
         await enqueue("HOUSEHOLD", {
           localId,
           villageId: selectedVillageId,
@@ -598,7 +593,11 @@ export default function AddHouseholdScreen() {
   const canGoNext = () => {
     if (step === 0) return idConfirmed;
     if (step === 1) return selectedVillageId !== "";
-    if (step === 2) return consentGiven && !signatureEmpty;
+    if (step === 2) {
+      const verified =
+        verifyMethod === "thumbprint" ? thumbprintCaptured : !signatureEmpty;
+      return consentGiven && verified;
+    }
     if (step === 3)
       return (
         headName.trim() !== "" &&
@@ -847,7 +846,6 @@ export default function AddHouseholdScreen() {
                                     style: "destructive",
                                     onPress: async () => {
                                       try {
-                                        // 1. Delete from backend
                                         const netState = await NetInfo.fetch();
                                         if (netState.isConnected) {
                                           try {
@@ -865,14 +863,12 @@ export default function AddHouseholdScreen() {
                                           }
                                         }
 
-                                        // 2. Delete from local SQLite
                                         const db = await getDb();
                                         await db.runAsync(
                                           "DELETE FROM villages WHERE id = ?",
                                           [v.id],
                                         );
 
-                                        // 3. Remove from state
                                         setVillages((p: Village[]) =>
                                           p.filter(
                                             (existing) => existing.id !== v.id,
@@ -1042,13 +1038,70 @@ export default function AddHouseholdScreen() {
               required={false}
             />
 
-            <Text style={styles.label}>Signature of Head of Household *</Text>
-            <SignaturePad
-              onSignatureChange={(path, isEmpty) => {
-                setSignaturePath(path);
-                setSignatureEmpty(isEmpty);
-              }}
-            />
+            <Text style={styles.label}>Identity Confirmation *</Text>
+            <View style={styles.verifyMethodRow}>
+              <TouchableOpacity
+                style={[
+                  styles.verifyMethodBtn,
+                  verifyMethod === "thumbprint" && styles.verifyMethodBtnActive,
+                ]}
+                onPress={() => setVerifyMethod("thumbprint")}
+              >
+                <Ionicons
+                  name="finger-print-outline"
+                  size={18}
+                  color={
+                    verifyMethod === "thumbprint"
+                      ? COLORS.white
+                      : COLORS.primary
+                  }
+                />
+                <Text
+                  style={[
+                    styles.verifyMethodText,
+                    verifyMethod === "thumbprint" &&
+                      styles.verifyMethodTextActive,
+                  ]}
+                >
+                  Thumbprint (Recommended)
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.verifyMethodBtn,
+                  verifyMethod === "signature" && styles.verifyMethodBtnActive,
+                ]}
+                onPress={() => setVerifyMethod("signature")}
+              >
+                <Ionicons
+                  name="create-outline"
+                  size={18}
+                  color={
+                    verifyMethod === "signature" ? COLORS.white : COLORS.primary
+                  }
+                />
+                <Text
+                  style={[
+                    styles.verifyMethodText,
+                    verifyMethod === "signature" &&
+                      styles.verifyMethodTextActive,
+                  ]}
+                >
+                  Signature
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {verifyMethod === "thumbprint" ? (
+              <ThumbprintCapture onCapture={setThumbprintCaptured} />
+            ) : (
+              <SignaturePad
+                onSignatureChange={(path, isEmpty) => {
+                  setSignaturePath(path);
+                  setSignatureEmpty(isEmpty);
+                }}
+              />
+            )}
           </View>
         )}
 
@@ -1259,7 +1312,10 @@ export default function AddHouseholdScreen() {
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewKey}>Consent</Text>
                 <Text style={[styles.reviewVal, { color: COLORS.success }]}>
-                  ✓ Given & Signed
+                  ✓ Given ·{" "}
+                  {verifyMethod === "thumbprint"
+                    ? "Thumbprint Verified"
+                    : "Signed"}
                 </Text>
               </View>
               <View style={[styles.reviewRow, { borderBottomWidth: 0 }]}>
@@ -1589,7 +1645,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     marginBottom: SIZES.sm,
   },
-
   consentBox: {
     flexDirection: "row",
     gap: 10,
@@ -1627,7 +1682,34 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontWeight: "500",
   },
-
+  verifyMethodRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 4,
+    marginBottom: SIZES.md,
+  },
+  verifyMethodBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    borderRadius: SIZES.radiusMd,
+    paddingVertical: SIZES.sm,
+  },
+  verifyMethodBtnActive: {
+    backgroundColor: COLORS.primary,
+  },
+  verifyMethodText: {
+    fontSize: SIZES.fontXs,
+    fontWeight: "600",
+    color: COLORS.primary,
+  },
+  verifyMethodTextActive: {
+    color: COLORS.white,
+  },
   switchRow: {
     flexDirection: "row",
     alignItems: "center",

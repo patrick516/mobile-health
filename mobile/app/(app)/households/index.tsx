@@ -15,6 +15,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { COLORS, SIZES, SHADOWS } from "../../../constants/theme";
 import { getDb } from "../../../src/db/schema";
 import { useAppStore } from "../../../src/store";
+import {
+  calculateHouseholdRisk,
+  RISK_COLORS,
+  RISK_LABELS,
+  RiskLevel,
+} from "../../../src/utils/riskScore";
 
 interface Household {
   id: string;
@@ -25,6 +31,12 @@ interface Household {
   zone_name: string;
   status: string;
   member_count?: number;
+  latrine_present?: number;
+  handwashing_facility?: number;
+  water_source?: string;
+  mosquito_nets?: string;
+  riskLevel?: RiskLevel;
+  riskScore?: number;
 }
 
 export default function HouseholdsScreen() {
@@ -33,7 +45,6 @@ export default function HouseholdsScreen() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-
   const loadHouseholds = useCallback(async (searchTerm = "") => {
     try {
       const db = await getDb();
@@ -54,7 +65,87 @@ export default function HouseholdsScreen() {
         ? [`%${searchTerm}%`, `%${searchTerm}%`, `%${searchTerm}%`]
         : [];
       const rows = await db.getAllAsync<Household>(query, params);
-      setHouseholds(rows);
+
+      // Calculate risk locally for each household using SQLite data
+      const withRisk = await Promise.all(
+        rows.map(async (h) => {
+          // Health score (same formula as household detail screen)
+          let healthScore = 0;
+          if (h.latrine_present) healthScore += 25;
+          if (h.handwashing_facility) healthScore += 25;
+          if (
+            ["BOREHOLE", "PIPED", "PROTECTED_WELL"].includes(
+              h.water_source || "",
+            )
+          )
+            healthScore += 25;
+          if (h.mosquito_nets === "Yes") healthScore += 25;
+
+          // Last visit recency
+          const lastVisit = await db.getFirstAsync<{ visited_at: string }>(
+            `SELECT visited_at FROM visits WHERE household_id = ? OR household_id = ?
+             ORDER BY visited_at DESC LIMIT 1`,
+            [h.id, h.local_id],
+          );
+          const daysSinceLastVisit = lastVisit
+            ? Math.floor(
+                (Date.now() - new Date(lastVisit.visited_at).getTime()) /
+                  (1000 * 60 * 60 * 24),
+              )
+            : null;
+
+          // Pending referrals for members of this household
+          const referralRow = await db.getFirstAsync<{ count: number }>(
+            `SELECT COUNT(*) as count FROM referrals r
+             JOIN members m ON m.id = r.member_id OR m.local_id = r.member_id
+             WHERE (m.household_id = ? OR m.household_id = ?)
+             AND r.status IN ('PENDING', 'OVERDUE')`,
+            [h.id, h.local_id],
+          );
+          const pendingReferrals = referralRow?.count || 0;
+
+          // Overdue vaccines for members of this household
+          const vaccineRow = await db.getFirstAsync<{ count: number }>(
+            `SELECT COUNT(*) as count FROM immunisation_schedules s
+             JOIN members m ON m.id = s.member_id OR m.local_id = s.member_id
+             WHERE (m.household_id = ? OR m.household_id = ?)
+             AND s.status = 'OVERDUE'`,
+            [h.id, h.local_id],
+          );
+          const overdueVaccines = vaccineRow?.count || 0;
+
+          // Overdue ANC for members of this household
+          const ancRow = await db.getFirstAsync<{ count: number }>(
+            `SELECT COUNT(*) as count FROM anc_visits a
+             JOIN members m ON m.id = a.member_id OR m.local_id = a.member_id
+             WHERE (m.household_id = ? OR m.household_id = ?)
+             AND a.status = 'OVERDUE'`,
+            [h.id, h.local_id],
+          );
+          const overdueAnc = ancRow?.count || 0;
+
+          const risk = calculateHouseholdRisk({
+            healthScore,
+            daysSinceLastVisit,
+            pendingReferrals,
+            overdueVaccines,
+            overdueAnc,
+          });
+
+          return { ...h, riskLevel: risk.level, riskScore: risk.score };
+        }),
+      );
+
+      // Sort: High risk first, then Medium, then Low (within same risk, keep recency order)
+      const riskOrder: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+      withRisk.sort((a, b) => {
+        const ra = riskOrder[a.riskLevel || "LOW"];
+        const rb = riskOrder[b.riskLevel || "LOW"];
+        if (ra !== rb) return ra - rb;
+        return (b.riskScore || 0) - (a.riskScore || 0);
+      });
+
+      setHouseholds(withRisk);
     } catch (err) {
       console.error("Load households error:", err);
     } finally {
@@ -81,7 +172,7 @@ export default function HouseholdsScreen() {
 
   const renderItem = ({ item }: { item: Household }) => (
     <TouchableOpacity
-      style={styles.card}
+      style={[styles.card, item.riskLevel === "HIGH" && styles.cardHighRisk]}
       onPress={() => router.push(`/(app)/households/${item.local_id}`)}
       activeOpacity={0.8}
     >
@@ -89,6 +180,14 @@ export default function HouseholdsScreen() {
         <View style={styles.avatar}>
           <Ionicons name="home" size={20} color={COLORS.primary} />
         </View>
+        {item.riskLevel && (
+          <View
+            style={[
+              styles.riskDot,
+              { backgroundColor: RISK_COLORS[item.riskLevel] },
+            ]}
+          />
+        )}
       </View>
       <View style={styles.cardBody}>
         <Text style={styles.headName}>{item.head_of_household_name}</Text>
@@ -99,6 +198,23 @@ export default function HouseholdsScreen() {
           <Ionicons name="location-outline" size={12} /> {item.village_name} ·{" "}
           {item.zone_name}
         </Text>
+        {item.riskLevel && (
+          <View
+            style={[
+              styles.riskBadge,
+              { backgroundColor: RISK_COLORS[item.riskLevel] + "18" },
+            ]}
+          >
+            <Text
+              style={[
+                styles.riskBadgeText,
+                { color: RISK_COLORS[item.riskLevel] },
+              ]}
+            >
+              {RISK_LABELS[item.riskLevel]}
+            </Text>
+          </View>
+        )}
       </View>
       <View style={styles.cardRight}>
         <View style={styles.memberBadge}>
@@ -254,6 +370,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
+  cardHighRisk: {
+    borderColor: "#fecaca",
+    borderWidth: 1.5,
+  },
   cardLeft: { marginRight: SIZES.md },
   avatar: {
     width: 44,
@@ -272,6 +392,24 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   location: { fontSize: SIZES.fontXs, color: COLORS.textMuted, marginTop: 3 },
+  riskBadge: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: SIZES.radiusFull,
+    marginTop: 5,
+  },
+  riskBadgeText: { fontSize: 10, fontWeight: "700" },
+  riskDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    position: "absolute",
+    top: -2,
+    right: -2,
+    borderWidth: 1.5,
+    borderColor: COLORS.white,
+  },
   cardRight: { alignItems: "center", gap: 4, marginLeft: SIZES.sm },
   memberBadge: { alignItems: "center" },
   memberCount: {

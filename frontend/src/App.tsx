@@ -15,6 +15,7 @@ import Allocations from "./pages/admin/Allocations";
 import Facilities from "./pages/admin/Facilities";
 import Reports from "./pages/reports/Reports";
 import Security from "./pages/admin/Security";
+import RelocatedHouseholds from "./pages/admin/RelocatedHouseholds";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token);
@@ -55,6 +56,14 @@ export default function App() {
             element={
               <AdminRoute>
                 <Security />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="admin/relocated-households"
+            element={
+              <AdminRoute>
+                <RelocatedHouseholds />
               </AdminRoute>
             }
           />
