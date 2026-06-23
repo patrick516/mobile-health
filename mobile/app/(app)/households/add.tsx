@@ -474,7 +474,32 @@ export default function AddHouseholdScreen() {
               [response.data.data.id, localId],
             );
           }
-        } catch (err) {
+        } catch (err: any) {
+          if (err?.response?.status === 409 && err?.response?.data?.duplicate) {
+            // Duplicate National ID — don't queue for retry, surface to CHW immediately
+            const existing = err.response.data.existingHousehold;
+            setSaving(false);
+            Alert.alert(
+              "Duplicate National ID",
+              err.response.data.message ||
+                `This National ID is already registered${existing ? ` to ${existing.headOfHouseholdName} (${existing.householdNumber})` : ""}.`,
+              [
+                { text: "Edit Details", onPress: () => setStep(2) },
+                {
+                  text: "Save Anyway (No ID)",
+                  style: "destructive",
+                  onPress: () => {
+                    setHeadNationalId("");
+                    Alert.alert(
+                      "National ID Cleared",
+                      "Tap Register Household again to save without a National ID.",
+                    );
+                  },
+                },
+              ],
+            );
+            return;
+          }
           console.error("Online sync failed, queueing for later:", err);
           await enqueue("HOUSEHOLD", {
             localId,

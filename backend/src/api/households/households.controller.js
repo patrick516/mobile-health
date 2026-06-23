@@ -213,6 +213,39 @@ export const createHousehold = async (req, res, next) => {
       });
     }
 
+    // ── Duplicate National ID check ──
+    // A real National ID number is unique per person, so if one is already
+    // attached to another household head, flag it instead of silently
+    // creating a possible duplicate/fraudulent entry.
+    if (headNationalId && headNationalId.trim() !== "") {
+      const existingByNationalId = await prisma.household.findFirst({
+        where: {
+          headNationalId: headNationalId.trim(),
+          status: "ACTIVE",
+        },
+        include: {
+          village: { include: { zone: { include: { ta: true } } } },
+        },
+      });
+
+      if (existingByNationalId && existingByNationalId.localId !== localId) {
+        return res.status(409).json({
+          success: false,
+          duplicate: true,
+          message: `This National ID is already registered to another household: ${existingByNationalId.headOfHouseholdName} (${existingByNationalId.householdNumber}) in ${existingByNationalId.village?.name || "unknown village"}.`,
+          existingHousehold: {
+            id: existingByNationalId.id,
+            householdNumber: existingByNationalId.householdNumber,
+            headOfHouseholdName: existingByNationalId.headOfHouseholdName,
+            village: existingByNationalId.village?.name,
+            zone: existingByNationalId.village?.zone?.name,
+          },
+        });
+      }
+    }
+
+    // Generate household number: first 3 letters of village + timestamp suffix
+
     // Generate household number: first 3 letters of village + timestamp suffix
     const village = await prisma.village.findUnique({
       where: { id: villageId },

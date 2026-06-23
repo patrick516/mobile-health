@@ -310,7 +310,7 @@ model Household {
   landmark               String?
   gpsLat                 Float?             @map("gps_lat")
   gpsLng                 Float?             @map("gps_lng")
-  headNationalId         String?            @map("head_national_id")
+  headNationalId      String?            @unique @map("head_national_id")
   consentGiven           Boolean            @default(false) @map("consent_given")
   consentSignatureUrl    String?            @map("consent_signature_url")
   registeredByUserId     String             @map("registered_by_user_id")
@@ -346,7 +346,7 @@ model HouseholdMember {
   chronicIllnesses     Json?        @map("chronic_illnesses")
   hasDisability        Boolean      @default(false) @map("has_disability")
   disabilityType       String?      @map("disability_type")
-  nationalId           String?      @map("national_id")
+ nationalId           String?      @unique @map("national_id")
   phone                String?
   status               MemberStatus @default(ACTIVE)
   archivedAt           DateTime?    @map("archived_at")

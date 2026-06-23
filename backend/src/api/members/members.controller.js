@@ -102,6 +102,7 @@ export const createMember = async (req, res, next) => {
       chronicIllnesses,
       hasDisability,
       disabilityType,
+      nationalId,
       phone,
     } = req.body;
 
@@ -113,6 +114,34 @@ export const createMember = async (req, res, next) => {
       });
     }
 
+    // ── Duplicate National ID check (members) ──
+    if (nationalId && nationalId.trim() !== "") {
+      const existingMember = await prisma.householdMember.findFirst({
+        where: {
+          nationalId: nationalId.trim(),
+          status: "ACTIVE",
+        },
+        include: {
+          household: {
+            include: { village: { include: { zone: true } } },
+          },
+        },
+      });
+
+      if (existingMember && existingMember.localId !== localId) {
+        return res.status(409).json({
+          success: false,
+          duplicate: true,
+          message: `This National ID is already registered to ${existingMember.fullName} in household ${existingMember.household?.householdNumber || "unknown"} (${existingMember.household?.village?.name || "unknown village"}).`,
+          existingMember: {
+            id: existingMember.id,
+            fullName: existingMember.fullName,
+            householdNumber: existingMember.household?.householdNumber,
+            village: existingMember.household?.village?.name,
+          },
+        });
+      }
+    }
     // Calculate expected delivery date if pregnant
     let expectedDeliveryDate = null;
     if (isPregnant && lmpDate) {
@@ -136,6 +165,7 @@ export const createMember = async (req, res, next) => {
         chronicIllnesses: chronicIllnesses || null,
         hasDisability: hasDisability || false,
         disabilityType: disabilityType || null,
+        nationalId: nationalId || null,
         phone: phone || null,
         syncedAt: new Date(),
       },

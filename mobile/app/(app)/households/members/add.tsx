@@ -30,6 +30,8 @@ import {
 } from "../../../../src/utils/draftStorage";
 import { showSuccess, showError, showInfo } from "../../../../src/utils/toast";
 import IdScanner from "../../../../components/forms/IdScanner";
+import api from "../../../../src/services/api";
+import NetInfo from "@react-native-community/netinfo";
 
 const DRAFT_KEY = "member_add";
 
@@ -219,24 +221,85 @@ export default function AddMemberScreen() {
         ],
       );
 
-      // Add to sync queue
-      await enqueue("MEMBER", {
-        localId,
-        householdId: selectedHouseholdId,
-        fullName: fullName.trim(),
-        dateOfBirth: dobStr,
-        estimatedAge: ageVal,
-        sex,
-        relationshipToHead: relationship,
-        isPregnant,
-        lmpDate: isPregnant ? lmpDate.toISOString() : null,
-        expectedDeliveryDate: expectedDelivery,
-        chronicIllnesses: chronicIllnesses.length > 0 ? chronicIllnesses : null,
-        hasDisability,
-        disabilityType: hasDisability ? disabilityType : null,
-        nationalId: nationalId.trim() || null,
-        phone: phone.trim() || null,
-      });
+      // Try online create first if National ID is provided, so duplicates
+      // are caught immediately instead of silently failing during sync later
+      let savedOnline = false;
+      if (nationalId.trim() !== "") {
+        const net = await NetInfo.fetch();
+        if (net.isConnected) {
+          try {
+            const response = await api.post("/members", {
+              localId,
+              householdId: selectedHouseholdId,
+              fullName: fullName.trim(),
+              dateOfBirth: dobStr,
+              estimatedAge: ageVal,
+              sex,
+              relationshipToHead: relationship,
+              isPregnant,
+              lmpDate: isPregnant ? lmpDate.toISOString() : null,
+              chronicIllnesses:
+                chronicIllnesses.length > 0 ? chronicIllnesses : null,
+              hasDisability,
+              disabilityType: hasDisability ? disabilityType : null,
+              nationalId: nationalId.trim() || null,
+              phone: phone.trim() || null,
+            });
+            if (response.data.success) {
+              savedOnline = true;
+              await db.runAsync(
+                "UPDATE members SET synced = 1, id = ? WHERE local_id = ?",
+                [response.data.data.id, localId],
+              );
+            }
+          } catch (err: any) {
+            if (
+              err?.response?.status === 409 &&
+              err?.response?.data?.duplicate
+            ) {
+              const existing = err.response.data.existingMember;
+              setSaving(false);
+              Alert.alert(
+                "Duplicate National ID",
+                err.response.data.message ||
+                  `This National ID is already registered${existing ? ` to ${existing.fullName}` : ""}.`,
+                [
+                  { text: "Edit", style: "cancel" },
+                  {
+                    text: "Save Anyway (No ID)",
+                    style: "destructive",
+                    onPress: () => setNationalId(""),
+                  },
+                ],
+              );
+              return;
+            }
+            // Other errors — fall through to offline queue below
+          }
+        }
+      }
+
+      // If not saved online (offline, no ID provided, or non-duplicate error), queue for sync
+      if (!savedOnline) {
+        await enqueue("MEMBER", {
+          localId,
+          householdId: selectedHouseholdId,
+          fullName: fullName.trim(),
+          dateOfBirth: dobStr,
+          estimatedAge: ageVal,
+          sex,
+          relationshipToHead: relationship,
+          isPregnant,
+          lmpDate: isPregnant ? lmpDate.toISOString() : null,
+          expectedDeliveryDate: expectedDelivery,
+          chronicIllnesses:
+            chronicIllnesses.length > 0 ? chronicIllnesses : null,
+          hasDisability,
+          disabilityType: hasDisability ? disabilityType : null,
+          nationalId: nationalId.trim() || null,
+          phone: phone.trim() || null,
+        });
+      }
 
       // If under 5 — note: vaccine schedule created server-side on sync
       // If pregnant — ANC schedule created server-side on sync

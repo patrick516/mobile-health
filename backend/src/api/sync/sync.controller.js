@@ -59,6 +59,30 @@ export const syncBatch = async (req, res, next) => {
                 continue;
               }
 
+              // ── Duplicate National ID check ──
+              if (
+                payload.headNationalId &&
+                payload.headNationalId.trim() !== ""
+              ) {
+                const dupNationalId = await prisma.household.findFirst({
+                  where: {
+                    headNationalId: payload.headNationalId.trim(),
+                    status: "ACTIVE",
+                    localId: { not: localId },
+                  },
+                  include: { village: true },
+                });
+
+                if (dupNationalId) {
+                  failed.push({
+                    localId,
+                    reason: `Duplicate National ID — already registered to ${dupNationalId.headOfHouseholdName} (${dupNationalId.householdNumber}) in ${dupNationalId.village?.name || "another village"}. This record will NOT retry automatically — review on the portal.`,
+                    duplicate: true,
+                  });
+                  continue;
+                }
+              }
+
               const existingHousehold = await prisma.household.findUnique({
                 where: { householdNumber: payload.householdNumber },
               });
@@ -90,7 +114,6 @@ export const syncBatch = async (req, res, next) => {
               continue;
             }
           }
-
           case "MEMBER": {
             console.log(
               "[SYNC DEBUG] Member payload:",
@@ -125,6 +148,27 @@ export const syncBatch = async (req, res, next) => {
                 reason: "Household not yet on server — will retry",
               });
               continue;
+            }
+
+            // ── Duplicate National ID check ──
+            if (payload.nationalId && payload.nationalId.trim() !== "") {
+              const dupMember = await prisma.householdMember.findFirst({
+                where: {
+                  nationalId: payload.nationalId.trim(),
+                  status: "ACTIVE",
+                  localId: { not: localId },
+                },
+                include: { household: true },
+              });
+
+              if (dupMember) {
+                failed.push({
+                  localId,
+                  reason: `Duplicate National ID — already registered to ${dupMember.fullName} in household ${dupMember.household?.householdNumber || "unknown"}. This record will NOT retry automatically — review on the portal.`,
+                  duplicate: true,
+                });
+                continue;
+              }
             }
 
             const member = await prisma.householdMember.upsert({
