@@ -30,6 +30,10 @@ import {
 } from "../../../../src/utils/draftStorage";
 import { showSuccess, showError, showInfo } from "../../../../src/utils/toast";
 import IdScanner from "../../../../components/forms/IdScanner";
+import {
+  checkNationalIdDuplicate,
+  formatDuplicateMessage,
+} from "../../../../src/utils/idDuplicateCheck";
 import api from "../../../../src/services/api";
 import NetInfo from "@react-native-community/netinfo";
 
@@ -636,15 +640,23 @@ export default function AddMemberScreen() {
             </>
           )}
 
-          {/* Phone */}
-          {/* National ID — optional, only adults 16+ have one */}
           <IdScanner
             value={nationalId}
-            onChange={setNationalId}
+            onChange={async (id) => {
+              setNationalId(id);
+              if (!id) return;
+              const result = await checkNationalIdDuplicate(id);
+              if (result.isDuplicate) {
+                Alert.alert(
+                  "Duplicate National ID",
+                  formatDuplicateMessage(result),
+                );
+                setNationalId("");
+              }
+            }}
             label="National ID"
             required={false}
           />
-
           {/* Phone */}
           <Text style={styles.label}>Phone Number (optional)</Text>
           <TextInput

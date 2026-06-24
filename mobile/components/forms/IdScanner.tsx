@@ -2,7 +2,6 @@ import { useState } from "react";
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   Modal,
@@ -10,21 +9,104 @@ import {
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Ionicons } from "@expo/vector-icons";
-import { COLORS, SIZES, SHADOWS } from "../../constants/theme";
-import { parseMrz, ParsedMrz } from "../../src/utils/mrzParser";
+import { COLORS, SIZES } from "../../constants/theme";
 
 interface IdScannerProps {
   value: string;
   onChange: (idNumber: string) => void;
   label?: string;
   required?: boolean;
-  onParsedData?: (data: ParsedMrz) => void; // optional — used to auto-fill name/DOB/sex
+  onParsedData?: (data: {
+    fullName?: string;
+    dateOfBirth?: string;
+    sex?: string;
+  }) => void;
 }
 
-// Captures a National ID number either by typing manually or scanning the
-// QR code printed on the back of the Malawi National ID card.
-// NOTE: This only reads the raw QR string encoded on the card — it does NOT
-// verify against the NRB database (that would require NRB/MoH partnership).
+// Extracts a likely National ID number from a raw QR string, regardless of
+// which encoding format the specific ID card batch uses (different formats
+// have been observed in the field — TD1 MRZ with newlines, and a simpler
+// `~`-delimited format). Rather than committing to one fragile format, we
+// look for the most ID-number-shaped token in the string.
+function extractIdNumber(raw: string): string {
+  const cleaned = raw.trim();
+
+  // Try `~`-delimited format first: token before the first `~` that looks
+  // like an alphanumeric ID (letters+digits, 5-15 chars)
+  const tildeParts = cleaned
+    .split("~")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  for (const part of tildeParts) {
+    if (
+      /^[A-Z0-9]{5,15}$/i.test(part) &&
+      /[0-9]/.test(part) &&
+      /[A-Z]/i.test(part)
+    ) {
+      return part.toUpperCase();
+    }
+  }
+
+  // Try newline-delimited TD1 MRZ format: look for a 9-char alphanumeric
+  // block typically found in the document number field of line 1
+  const lines = cleaned.split(/\r?\n/).filter(Boolean);
+  if (lines.length >= 1) {
+    const docMatch = lines[0].match(/[A-Z0-9<]{9}/);
+    if (docMatch) {
+      const idCandidate = docMatch[0].replace(/</g, "");
+      if (idCandidate.length >= 5) return idCandidate.toUpperCase();
+    }
+  }
+
+  // Fallback — strip separators and angle brackets, take the longest
+  // alphanumeric run as a best guess
+  const tokens = cleaned
+    .split(/[~<\r\n]+/)
+    .filter((t) => /[A-Z0-9]{5,}/i.test(t));
+  if (tokens.length > 0) {
+    return tokens.sort((a, b) => b.length - a.length)[0].toUpperCase();
+  }
+
+  // Last resort — return the raw cleaned string so nothing is silently lost
+  return cleaned;
+}
+
+// Tries to pull a name/DOB/sex out of either known format, for optional
+// auto-fill convenience. Returns whatever it can confidently find — never
+// guesses if uncertain.
+function extractMeta(raw: string): {
+  fullName?: string;
+  dateOfBirth?: string;
+  sex?: string;
+} {
+  const cleaned = raw.trim();
+  const meta: { fullName?: string; dateOfBirth?: string; sex?: string } = {};
+
+  // `~`-delimited format: ID~SURNAME~~GIVEN~SEX~DOB~EXPIRY~
+  const tildeParts = cleaned.split("~").map((p) => p.trim());
+  if (tildeParts.length >= 5) {
+    const sexToken = tildeParts.find((p) => /^(MALE|FEMALE|M|F)$/i.test(p));
+    if (sexToken) meta.sex = /^M/i.test(sexToken) ? "MALE" : "FEMALE";
+
+    const dateToken = tildeParts.find((p) =>
+      /^\d{1,2}\s+[A-Za-z]{3}\s+\d{4}$/.test(p),
+    );
+    if (dateToken) meta.dateOfBirth = dateToken;
+
+    const nameParts = tildeParts.filter(
+      (p) =>
+        p &&
+        p !== sexToken &&
+        p !== dateToken &&
+        !/^[A-Z0-9]{5,15}$/i.test(p) &&
+        !/^\d{1,2}\s+[A-Za-z]{3}\s+\d{4}$/.test(p),
+    );
+    if (nameParts.length > 0) meta.fullName = nameParts.join(" ").trim();
+  }
+
+  return meta;
+}
+
 export default function IdScanner({
   value,
   onChange,
@@ -35,7 +117,6 @@ export default function IdScanner({
   const [scannerOpen, setScannerOpen] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
-  const [lastParsed, setLastParsed] = useState<ParsedMrz | null>(null);
 
   const openScanner = async () => {
     if (!permission?.granted) {
@@ -57,26 +138,18 @@ export default function IdScanner({
     setScanned(true);
     setScannerOpen(false);
 
-    const parsed = parseMrz(data.trim());
+    const idNumber = extractIdNumber(data);
+    const meta = extractMeta(data);
 
-    if (parsed && parsed.idNumber) {
-      // Successfully parsed structured MRZ data
-      onChange(parsed.idNumber);
-      setLastParsed(parsed);
-      if (onParsedData) onParsedData(parsed);
-      Alert.alert(
-        "ID Scanned",
-        `National ID: ${parsed.idNumber}\nName: ${parsed.fullName || "—"}\nDOB: ${parsed.dateOfBirth || "—"}`,
-      );
-    } else {
-      // Couldn't parse — fall back to storing the raw value
-      onChange(data.trim());
-      setLastParsed(null);
-      Alert.alert(
-        "ID Scanned",
-        "Could not fully read the ID format. Raw value captured — please verify and edit if needed.",
-      );
+    onChange(idNumber);
+    if (onParsedData && (meta.fullName || meta.dateOfBirth || meta.sex)) {
+      onParsedData(meta);
     }
+
+    Alert.alert(
+      "ID Scanned",
+      `National ID: ${idNumber}${meta.fullName ? `\nName: ${meta.fullName}` : ""}`,
+    );
   };
 
   return (
@@ -84,41 +157,26 @@ export default function IdScanner({
       <Text style={styles.label}>
         {label} {required ? "*" : "(optional)"}
       </Text>
-      <View style={styles.row}>
-        <TextInput
-          style={[styles.input, { flex: 1 }]}
-          value={value}
-          onChangeText={onChange}
-          placeholder="e.g. MW12345678"
-          placeholderTextColor={COLORS.placeholder}
-          autoCapitalize="characters"
-        />
+
+      {value ? (
+        <View style={styles.scannedBox}>
+          <Ionicons name="checkmark-circle" size={18} color={COLORS.success} />
+          <Text style={styles.scannedValue}>{value}</Text>
+          <TouchableOpacity onPress={() => onChange("")}>
+            <Ionicons name="close-circle" size={18} color={COLORS.textMuted} />
+          </TouchableOpacity>
+        </View>
+      ) : (
         <TouchableOpacity style={styles.scanBtn} onPress={openScanner}>
           <Ionicons name="qr-code-outline" size={20} color={COLORS.white} />
+          <Text style={styles.scanBtnText}>Scan National ID QR Code</Text>
         </TouchableOpacity>
-      </View>
-      <Text style={styles.hint}>
-        Type the ID number manually, or tap the scan icon to scan the QR code on
-        the back of the National ID card.
-      </Text>
-
-      {lastParsed && (
-        <View style={styles.parsedBox}>
-          <Ionicons name="checkmark-circle" size={16} color={COLORS.success} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.parsedText}>
-              {lastParsed.fullName || "Name not detected"}
-            </Text>
-            <Text style={styles.parsedSubText}>
-              {lastParsed.dateOfBirth ? `DOB: ${lastParsed.dateOfBirth}` : ""}
-              {lastParsed.dateOfBirth && lastParsed.sex !== "UNKNOWN"
-                ? " · "
-                : ""}
-              {lastParsed.sex !== "UNKNOWN" ? lastParsed.sex : ""}
-            </Text>
-          </View>
-        </View>
       )}
+
+      <Text style={styles.hint}>
+        Scan the QR code on the back of the National ID card. Manual entry is
+        disabled to ensure ID numbers are captured accurately.
+      </Text>
 
       <Modal visible={scannerOpen} animationType="slide">
         <View style={styles.scannerContainer}>
@@ -130,19 +188,20 @@ export default function IdScanner({
             <View style={{ width: 26 }} />
           </View>
 
-          <CameraView
-            style={styles.camera}
-            facing="back"
-            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-            onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
-          />
-
-          <View style={styles.scannerFooter}>
-            <View style={styles.scanFrame} />
-            <Text style={styles.scannerHint}>
-              Point the camera at the QR code on the back of the National ID
-              card
-            </Text>
+          <View style={styles.cameraWrapper}>
+            <CameraView
+              style={styles.camera}
+              facing="back"
+              barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+              onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
+            />
+            <View style={styles.overlay} pointerEvents="none">
+              <View style={styles.scanFrame} />
+              <Text style={styles.scannerHint}>
+                Point the camera at the QR code on the back of the National ID
+                card
+              </Text>
+            </View>
           </View>
         </View>
       </Modal>
@@ -158,50 +217,43 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     marginTop: SIZES.md,
   },
-  row: { flexDirection: "row", gap: 8 },
-  input: {
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: SIZES.radiusMd,
-    paddingHorizontal: SIZES.lg,
-    paddingVertical: SIZES.md,
-    fontSize: SIZES.fontMd,
-    color: COLORS.text,
-    backgroundColor: COLORS.white,
-  },
   scanBtn: {
-    backgroundColor: COLORS.primary,
-    borderRadius: SIZES.radiusMd,
-    width: 48,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: 8,
+    backgroundColor: COLORS.primary,
+    borderRadius: SIZES.radiusMd,
+    paddingVertical: SIZES.md,
+  },
+  scanBtnText: {
+    color: COLORS.white,
+    fontWeight: "600",
+    fontSize: SIZES.fontSm,
+  },
+  scannedBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+    backgroundColor: "#F0FDF4",
+    borderRadius: SIZES.radiusMd,
+    paddingVertical: SIZES.md,
+    paddingHorizontal: SIZES.lg,
+  },
+  scannedValue: {
+    flex: 1,
+    fontSize: SIZES.fontMd,
+    fontWeight: "700",
+    color: "#166534",
+    fontFamily: "monospace",
   },
   hint: {
     fontSize: SIZES.fontXs,
     color: COLORS.textMuted,
-    marginTop: 4,
+    marginTop: 6,
     lineHeight: 16,
-  },
-  parsedBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "#F0FDF4",
-    borderWidth: 1,
-    borderColor: "#BBF7D0",
-    borderRadius: SIZES.radiusMd,
-    padding: SIZES.sm,
-    marginTop: SIZES.sm,
-  },
-  parsedText: {
-    fontSize: SIZES.fontSm,
-    fontWeight: "600",
-    color: "#166534",
-  },
-  parsedSubText: {
-    fontSize: SIZES.fontXs,
-    color: "#166534",
-    marginTop: 1,
   },
   scannerContainer: { flex: 1, backgroundColor: "#000" },
   scannerHeader: {
@@ -218,19 +270,22 @@ const styles = StyleSheet.create({
     fontSize: SIZES.fontMd,
     fontWeight: "bold",
   },
+  cameraWrapper: { flex: 1, position: "relative" },
   camera: { flex: 1 },
-  scannerFooter: {
+  overlay: {
     position: "absolute",
-    bottom: 60,
+    top: 0,
     left: 0,
     right: 0,
+    bottom: 0,
     alignItems: "center",
-    gap: 16,
+    justifyContent: "center",
+    gap: 24,
   },
   scanFrame: {
-    width: 220,
-    height: 220,
-    borderWidth: 2,
+    width: 240,
+    height: 240,
+    borderWidth: 3,
     borderColor: COLORS.white,
     borderRadius: SIZES.radiusMd,
     backgroundColor: "transparent",
@@ -240,5 +295,7 @@ const styles = StyleSheet.create({
     fontSize: SIZES.fontSm,
     textAlign: "center",
     paddingHorizontal: SIZES.xl,
+    position: "absolute",
+    bottom: 80,
   },
 });

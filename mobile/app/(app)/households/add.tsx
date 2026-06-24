@@ -24,6 +24,10 @@ import { getDb, initDb } from "../../../src/db/schema";
 import { enqueue } from "../../../src/db/sync-queue";
 import api from "../../../src/services/api";
 import IdScanner from "../../../components/forms/IdScanner";
+import {
+  checkNationalIdDuplicate,
+  formatDuplicateMessage,
+} from "../../../src/utils/idDuplicateCheck";
 import SignaturePad from "../../../components/forms/SignaturePad";
 import ThumbprintCapture from "../../../components/forms/ThumbprintCapture";
 import {
@@ -1058,7 +1062,18 @@ export default function AddHouseholdScreen() {
 
             <IdScanner
               value={headNationalId}
-              onChange={setHeadNationalId}
+              onChange={async (id) => {
+                setHeadNationalId(id);
+                if (!id) return;
+                const result = await checkNationalIdDuplicate(id);
+                if (result.isDuplicate) {
+                  Alert.alert(
+                    "Duplicate National ID",
+                    formatDuplicateMessage(result),
+                  );
+                  setHeadNationalId("");
+                }
+              }}
               label="Head of Household National ID"
               required={false}
             />
