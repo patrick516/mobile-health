@@ -175,6 +175,23 @@ export const getHousehold = async (req, res, next) => {
         .json({ success: false, message: "Household not found." });
     }
 
+    // ── Enforce zone/TA/district scoping — same rule as the list endpoint ──
+    // Without this, any authenticated user could fetch any household by ID
+    // regardless of their assigned zone, bypassing privacy entirely.
+    if (req.user.scopeLevel !== "ALL") {
+      const scope = buildVillageScope(req.user);
+      const allowed = await prisma.household.findFirst({
+        where: { id: household.id, village: scope },
+        select: { id: true },
+      });
+      if (!allowed) {
+        return res.status(403).json({
+          success: false,
+          message: "You do not have access to this household.",
+        });
+      }
+    }
+
     res.json({ success: true, data: household });
   } catch (err) {
     next(err);

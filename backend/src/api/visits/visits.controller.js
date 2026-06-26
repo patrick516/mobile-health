@@ -79,6 +79,22 @@ export const getVisit = async (req, res, next) => {
       return res
         .status(404)
         .json({ success: false, message: "Visit not found." });
+
+    // ── Enforce zone/TA/district scoping ──
+    if (req.user.scopeLevel !== "ALL") {
+      const scope = buildVillageScope(req.user);
+      const allowed = await prisma.visit.findFirst({
+        where: { id: visit.id, member: { household: { village: scope } } },
+        select: { id: true },
+      });
+      if (!allowed) {
+        return res.status(403).json({
+          success: false,
+          message: "You do not have access to this visit.",
+        });
+      }
+    }
+
     res.json({ success: true, data: visit });
   } catch (err) {
     next(err);

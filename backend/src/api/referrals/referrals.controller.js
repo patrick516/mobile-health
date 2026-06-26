@@ -101,12 +101,27 @@ export const getReferral = async (req, res, next) => {
       return res
         .status(404)
         .json({ success: false, message: "Referral not found." });
+
+    // ── Enforce zone/TA/district scoping ──
+    if (req.user.scopeLevel !== "ALL") {
+      const scope = buildVillageScope(req.user);
+      const allowed = await prisma.referral.findFirst({
+        where: { id: referral.id, member: { household: { village: scope } } },
+        select: { id: true },
+      });
+      if (!allowed) {
+        return res.status(403).json({
+          success: false,
+          message: "You do not have access to this referral.",
+        });
+      }
+    }
+
     res.json({ success: true, data: referral });
   } catch (err) {
     next(err);
   }
 };
-
 // POST /api/referrals
 export const createReferral = async (req, res, next) => {
   try {
