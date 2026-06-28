@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Building2, Plus } from "lucide-react";
 import api from "../../services/api";
+import Select from "../../components/ui/Select";
 
 const FACILITY_TYPES = [
   { value: "DISTRICT_HOSPITAL", label: "District Hospital" },
@@ -71,25 +72,19 @@ export default function Facilities() {
           <label className="block text-sm font-semibold text-gray-700 mb-1.5">
             Facility Type
           </label>
-          <select
-            className="input"
+          <Select
             value={form.facilityType}
-            onChange={(e) =>
+            onChange={(val) =>
               setForm((p) => ({
                 ...p,
-                facilityType: e.target.value,
+                facilityType: val,
                 districtId: "",
                 taId: "",
               }))
             }
-          >
-            <option value="">Select type...</option>
-            {FACILITY_TYPES.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
-            ))}
-          </select>
+            placeholder="Select type..."
+            options={FACILITY_TYPES}
+          />
         </div>
 
         {form.facilityType === "DISTRICT_HOSPITAL" && (
@@ -97,20 +92,15 @@ export default function Facilities() {
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
               District
             </label>
-            <select
-              className="input"
+            <Select
               value={form.districtId}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, districtId: e.target.value }))
-              }
-            >
-              <option value="">Select district...</option>
-              {districts?.map((d: any) => (
-                <option key={d.id} value={d.id}>
-                  {d.name} — {d.region?.name}
-                </option>
-              ))}
-            </select>
+              onChange={(val) => setForm((p) => ({ ...p, districtId: val }))}
+              placeholder="Select district..."
+              options={(districts || []).map((d: any) => ({
+                value: d.id,
+                label: `${d.name} — ${d.region?.name}`,
+              }))}
+            />
           </div>
         )}
 
@@ -119,18 +109,15 @@ export default function Facilities() {
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
               Traditional Authority
             </label>
-            <select
-              className="input"
+            <Select
               value={form.taId}
-              onChange={(e) => setForm((p) => ({ ...p, taId: e.target.value }))}
-            >
-              <option value="">Select TA...</option>
-              {tas?.map((t: any) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} — {t.district?.name}
-                </option>
-              ))}
-            </select>
+              onChange={(val) => setForm((p) => ({ ...p, taId: val }))}
+              placeholder="Select TA..."
+              options={(tas || []).map((t: any) => ({
+                value: t.id,
+                label: `${t.name} — ${t.district?.name}`,
+              }))}
+            />
           </div>
         )}
 

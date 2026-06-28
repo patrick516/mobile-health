@@ -81,7 +81,9 @@ export default function LoginScreen() {
     setDebugLogs((prev) => [log, ...prev].slice(0, 50));
   };
 
-  // ── Check Database Tables on Mount ──
+  // ── Check Database Tables on Mount (runs ONCE — table creation should
+  // never re-run per keystroke; that was racing against _layout.tsx's own
+  // initDb() call at app boot and causing native prepareAsync crashes) ──
   useEffect(() => {
     const checkDb = async () => {
       try {
@@ -123,21 +125,36 @@ export default function LoginScreen() {
           `);
           addDebugLog("✅ Lockout tables created!");
         }
-
-        if (phone.trim()) {
-          const attempts = await db.getAllAsync<AttemptCount>(
-            `SELECT COUNT(*) as count FROM login_attempts WHERE phone_number = ? AND success = 0`,
-            [phone.trim()],
-          );
-          addDebugLog(`📝 Current failed attempts: ${attempts[0]?.count || 0}`);
-          setAttemptCount(attempts[0]?.count || 0);
-        }
       } catch (error: any) {
         addDebugLog(`❌ DB Check Error: ${error.message}`);
       }
     };
 
     checkDb();
+  }, []);
+
+  // ── Update failed-attempt counter as the phone number changes ──
+  // (read-only lookup, no table creation, no initDb() — safe to re-run
+  // per keystroke since it only queries, never writes schema)
+  useEffect(() => {
+    const updateAttemptCount = async () => {
+      if (!phone.trim()) {
+        setAttemptCount(0);
+        return;
+      }
+      try {
+        const db = await getDb();
+        const attempts = await db.getAllAsync<AttemptCount>(
+          `SELECT COUNT(*) as count FROM login_attempts WHERE phone_number = ? AND success = 0`,
+          [phone.trim()],
+        );
+        setAttemptCount(attempts[0]?.count || 0);
+      } catch (error: any) {
+        addDebugLog(` Attempt count error: ${error.message}`);
+      }
+    };
+
+    updateAttemptCount();
   }, [phone]);
 
   const checkLockout = async (
@@ -481,6 +498,27 @@ export default function LoginScreen() {
             pin: pin.trim(),
             deviceId: "mobile-app",
           });
+
+          // PIN was reset by an admin — no session yet, redirect to the
+          // "create new PIN" screen with what little identity info the
+          // server gave us, instead of treating this as a normal login.
+          if (res.data.mustChangePin) {
+            addDebugLog(
+              "🔑 PIN reset pending — redirecting to change-PIN screen",
+            );
+            await clearFailedAttempts(phone.trim());
+            router.push({
+              pathname: "/(auth)/change-pin",
+              params: {
+                userId: res.data.data.userId,
+                tempPin: pin.trim(),
+                fullName: res.data.data.fullName,
+              },
+            });
+            setLoading(false);
+            return;
+          }
+
           const { token, user } = res.data.data;
           addDebugLog(`✅ Server login SUCCESS for: ${user.fullName}`);
           await AsyncStorage.setItem("auth_token", token);

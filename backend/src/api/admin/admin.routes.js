@@ -5,6 +5,7 @@ import {
   updateUser,
   deactivateUser,
   reactivateUser,
+  resetUserPin,
   createRegion,
   createDistrict,
   createTA,
@@ -33,10 +34,16 @@ router.patch(
   role("SUPER_ADMIN", "ADMIN"),
   deactivateUser,
 );
+
 router.patch(
   "/users/:id/reactivate",
   role("SUPER_ADMIN", "ADMIN"),
   reactivateUser,
+);
+router.patch(
+  "/users/:id/reset-pin",
+  role("SUPER_ADMIN", "ADMIN"),
+  resetUserPin,
 );
 
 // Geography — regions and districts are SUPER_ADMIN only

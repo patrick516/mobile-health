@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Building2 } from "lucide-react";
 import api from "../../services/api";
 import { useAuthStore } from "../../store/auth.store";
+import Select from "../../components/ui/Select";
 
 export default function FacilitySetup() {
   const navigate = useNavigate();
@@ -90,22 +91,19 @@ export default function FacilitySetup() {
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
               Region
             </label>
-            <select
-              className="input"
+            <Select
               value={regionId}
-              onChange={(e) => {
-                setRegionId(e.target.value);
+              onChange={(val) => {
+                setRegionId(val);
                 setDistrictId("");
                 setFacilityId("");
               }}
-            >
-              <option value="">Select region...</option>
-              {regions?.map((r: any) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
+              placeholder="Select region..."
+              options={(regions || []).map((r: any) => ({
+                value: r.id,
+                label: r.name,
+              }))}
+            />
           </div>
 
           {regionId && (
@@ -113,21 +111,18 @@ export default function FacilitySetup() {
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                 District
               </label>
-              <select
-                className="input"
+              <Select
                 value={districtId}
-                onChange={(e) => {
-                  setDistrictId(e.target.value);
+                onChange={(val) => {
+                  setDistrictId(val);
                   setFacilityId("");
                 }}
-              >
-                <option value="">Select district...</option>
-                {districts?.map((d: any) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
+                placeholder="Select district..."
+                options={(districts || []).map((d: any) => ({
+                  value: d.id,
+                  label: d.name,
+                }))}
+              />
             </div>
           )}
 
@@ -136,26 +131,27 @@ export default function FacilitySetup() {
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                 Facility
               </label>
-              <select
-                className="input"
+              <Select
                 value={facilityId}
-                onChange={(e) => setFacilityId(e.target.value)}
-              >
-                <option value="">Select facility...</option>
-                {facilities?.map((f: any) => (
-                  <option key={f.id} value={f.id}>
-                    {f.name} — {f.facilityType?.replace(/_/g, " ")}
-                  </option>
-                ))}
-                {(!facilities || facilities.length === 0) && (
-                  <option disabled value="">
-                    No facilities in this district yet
-                  </option>
-                )}
-              </select>
+                onChange={(val) => setFacilityId(val)}
+                placeholder="Select facility..."
+                options={
+                  facilities && facilities.length > 0
+                    ? facilities.map((f: any) => ({
+                        value: f.id,
+                        label: `${f.name} — ${f.facilityType?.replace(/_/g, " ")}`,
+                      }))
+                    : [
+                        {
+                          value: "",
+                          label: "No facilities in this district yet",
+                          disabled: true,
+                        },
+                      ]
+                }
+              />
             </div>
           )}
-
           <button
             className="btn-primary w-full mt-2"
             onClick={handleSave}

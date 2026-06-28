@@ -10,6 +10,15 @@
     @apply bg-gray-50 text-gray-900 antialiased;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
+  /* Tints native form controls (checkboxes, radios, select focus ring)
+     to match the sidebar's teal instead of the browser's default blue.
+     Note: this does NOT restyle the dropdown popup's hover/selected
+     option highlight in Chrome — that part needs a custom component. */
+  select,
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: #0f766e;
+  }
 }
 
 @layer components {

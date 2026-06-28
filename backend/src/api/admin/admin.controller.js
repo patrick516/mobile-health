@@ -153,6 +153,85 @@ export const reactivateUser = async (req, res, next) => {
     next(err);
   }
 };
+
+// PATCH /api/admin/users/:id/reset-pin
+// Generates a random temp PIN, hashes and saves it, flags the account so
+// the next login forces a new PIN. Returns the plaintext temp PIN ONCE —
+// it is never stored or logged anywhere, only shown to the admin so they
+// can relay it by phone/SMS manually.
+export const resetUserPin = async (req, res, next) => {
+  try {
+    const targetUser = await prisma.user.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, fullName: true, role: true, facilityId: true },
+    });
+
+    if (!targetUser) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found." });
+    }
+
+    // ── Role scoping ──
+    // ADMIN may only reset CCW / NURSE / DISTRICT_OFFICER within their
+    // own facility. SUPER_ADMIN may reset anyone, including ADMINs.
+    if (req.user.role === "ADMIN") {
+      const allowedRoles = ["CCW", "NURSE", "DISTRICT_OFFICER"];
+      if (!allowedRoles.includes(targetUser.role)) {
+        return res.status(403).json({
+          success: false,
+          message: "You are not permitted to reset this account's PIN.",
+        });
+      }
+      if (
+        !req.user.facilityId ||
+        targetUser.facilityId !== req.user.facilityId
+      ) {
+        return res.status(403).json({
+          success: false,
+          message: "This user does not belong to your facility.",
+        });
+      }
+    } else if (req.user.role !== "SUPER_ADMIN") {
+      return res.status(403).json({
+        success: false,
+        message: "You are not permitted to reset PINs.",
+      });
+    }
+
+    // Generate a random 4-digit temp PIN, e.g. "0294"
+    const tempPin = String(Math.floor(1000 + Math.random() * 9000));
+    const pinHash = await bcrypt.hash(tempPin, 12);
+
+    await prisma.user.update({
+      where: { id: targetUser.id },
+      data: {
+        pinHash,
+        mustChangePin: true,
+        pinResetAt: new Date(),
+        pinResetById: req.user.id,
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: "PIN_RESET",
+        recordType: "USER",
+        recordId: targetUser.id,
+        newValue: { resetBy: req.user.id, resetAt: new Date().toISOString() },
+      },
+    });
+
+    res.json({
+      success: true,
+      message: `Temporary PIN generated for ${targetUser.fullName}. Relay it to them now — it will not be shown again.`,
+      data: { tempPin },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
 // ─── GEOGRAPHY
 export const createRegion = async (req, res, next) => {
   try {

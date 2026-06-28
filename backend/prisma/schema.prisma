@@ -226,15 +226,18 @@ model Village {
 // ─── USERS & ALLOCATIONS 
 
 model User {
-  id          String   @id @default(uuid())
-  fullName    String   @map("full_name")
-  phoneNumber String   @unique @map("phone_number")
-  pinHash     String   @map("pin_hash")
-  role        Role
-  facilityId  String?  @map("facility_id")
-  isActive    Boolean  @default(true) @map("is_active")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id            String    @id @default(uuid())
+  fullName      String    @map("full_name")
+  phoneNumber   String    @unique @map("phone_number")
+  pinHash       String    @map("pin_hash")
+  role          Role
+  facilityId    String?   @map("facility_id")
+  isActive      Boolean   @default(true) @map("is_active")
+  mustChangePin Boolean   @default(false) @map("must_change_pin")
+  pinResetAt    DateTime? @map("pin_reset_at")
+  pinResetById  String?   @map("pin_reset_by_id")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
 
   facility             Facility?            @relation("FacilityStaff", fields: [facilityId], references: [id])
   zoneAllocations      UserZoneAllocation[] @relation("AllocatedUser")
@@ -310,7 +313,7 @@ model Household {
   landmark               String?
   gpsLat                 Float?             @map("gps_lat")
   gpsLng                 Float?             @map("gps_lng")
-  headNationalId      String?            @unique @map("head_national_id")
+  headNationalId         String?            @unique @map("head_national_id")
   consentGiven           Boolean            @default(false) @map("consent_given")
   consentSignatureUrl    String?            @map("consent_signature_url")
   registeredByUserId     String             @map("registered_by_user_id")
@@ -346,7 +349,7 @@ model HouseholdMember {
   chronicIllnesses     Json?        @map("chronic_illnesses")
   hasDisability        Boolean      @default(false) @map("has_disability")
   disabilityType       String?      @map("disability_type")
- nationalId           String?      @unique @map("national_id")
+  nationalId           String?      @unique @map("national_id")
   phone                String?
   status               MemberStatus @default(ACTIVE)
   archivedAt           DateTime?    @map("archived_at")

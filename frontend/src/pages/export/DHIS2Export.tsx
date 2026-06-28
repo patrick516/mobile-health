@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Download, FileText } from "lucide-react";
 import api from "../../services/api";
+import DatePicker from "../../components/ui/DatePicker";
 
 export default function DHIS2Export() {
   const [from, setFrom] = useState("");
@@ -51,23 +52,13 @@ export default function DHIS2Export() {
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
               From Date
             </label>
-            <input
-              type="date"
-              className="input"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-            />
+            <DatePicker value={from} max={to || undefined} onChange={setFrom} />
           </div>
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
               To Date
             </label>
-            <input
-              type="date"
-              className="input"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-            />
+            <DatePicker value={to} min={from || undefined} onChange={setTo} />
           </div>
         </div>
 

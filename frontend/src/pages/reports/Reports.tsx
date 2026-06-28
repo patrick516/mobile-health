@@ -10,6 +10,8 @@ import {
   Loader2,
 } from "lucide-react";
 import api from "../../services/api";
+import Select from "../../components/ui/Select";
+import DatePicker from "../../components/ui/DatePicker";
 
 // ─── Types
 type ReportType =
@@ -202,89 +204,76 @@ export default function Reports() {
 
       {/* Filters + Export */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-wrap items-end gap-4">
-        <div>
+        <div className="w-40">
           <label className="block text-xs font-medium text-gray-500 mb-1">
             From Date
           </label>
-          <input
-            type="date"
-            value={from}
-            max={to}
-            onChange={(e) => setFrom(e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
-          />
+          <DatePicker value={from} max={to} onChange={setFrom} />
         </div>
-        <div>
+        <div className="w-40">
           <label className="block text-xs font-medium text-gray-500 mb-1">
             To Date
           </label>
-          <input
-            type="date"
-            value={to}
-            min={from}
-            max={today}
-            onChange={(e) => setTo(e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
-          />
+          <DatePicker value={to} min={from} max={today} onChange={setTo} />
         </div>
 
-        <div>
+        <div className="w-44">
           <label className="block text-xs font-medium text-gray-500 mb-1">
             Region
           </label>
-          <select
+          <Select
             value={regionId}
-            onChange={(e) => {
-              setRegionId(e.target.value);
+            onChange={(val) => {
+              setRegionId(val);
               setDistrictId("");
               setZoneId("");
             }}
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 outline-none"
-          >
-            <option value="">All Regions</option>
-            {regions?.map((r: any) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-          </select>
+            placeholder="All Regions"
+            options={[
+              { value: "", label: "All Regions" },
+              ...(regions || []).map((r: any) => ({
+                value: r.id,
+                label: r.name,
+              })),
+            ]}
+          />
         </div>
-        <div>
+        <div className="w-44">
           <label className="block text-xs font-medium text-gray-500 mb-1">
             District
           </label>
-          <select
+          <Select
             value={districtId}
-            onChange={(e) => {
-              setDistrictId(e.target.value);
+            onChange={(val) => {
+              setDistrictId(val);
               setZoneId("");
             }}
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 outline-none"
-          >
-            <option value="">All Districts</option>
-            {filteredDistricts?.map((d: any) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
+            placeholder="All Districts"
+            options={[
+              { value: "", label: "All Districts" },
+              ...(filteredDistricts || []).map((d: any) => ({
+                value: d.id,
+                label: d.name,
+              })),
+            ]}
+          />
         </div>
-        <div>
+        <div className="w-44">
           <label className="block text-xs font-medium text-gray-500 mb-1">
             Zone
           </label>
-          <select
+          <Select
             value={zoneId}
-            onChange={(e) => setZoneId(e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 outline-none"
-          >
-            <option value="">All Zones</option>
-            {filteredZones?.map((z: any) => (
-              <option key={z.id} value={z.id}>
-                {z.name}
-              </option>
-            ))}
-          </select>
+            onChange={(val) => setZoneId(val)}
+            placeholder="All Zones"
+            options={[
+              { value: "", label: "All Zones" },
+              ...(filteredZones || []).map((z: any) => ({
+                value: z.id,
+                label: z.name,
+              })),
+            ]}
+          />
         </div>
 
         <div className="flex-1" />

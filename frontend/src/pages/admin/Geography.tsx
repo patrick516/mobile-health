@@ -4,6 +4,7 @@ import { ChevronRight, Plus } from "lucide-react";
 import api from "../../services/api";
 import type { Region } from "../../types";
 import { useAuthStore } from "../../store/auth.store";
+import Select from "../../components/ui/Select";
 export default function Geography() {
   const isSuperAdmin = useAuthStore((s) => s.isSuperAdmin());
   const { user } = useAuthStore();
@@ -185,19 +186,21 @@ export default function Geography() {
           <label className="block text-sm font-semibold text-gray-700 mb-1.5">
             Type
           </label>
-          <select
-            className="input"
+          <Select
             value={form.type}
-            onChange={(e) =>
-              setForm((p) => ({ ...p, type: e.target.value, parentId: "" }))
+            onChange={(val) =>
+              setForm((p) => ({ ...p, type: val, parentId: "" }))
             }
-          >
-            <option value="">Select type...</option>
-            {isSuperAdmin && <option value="region">Region</option>}
-            {isSuperAdmin && <option value="district">District</option>}
-            <option value="ta">Traditional Authority</option>
-            <option value="zone">Zone</option>
-          </select>
+            placeholder="Select type..."
+            options={[
+              ...(isSuperAdmin ? [{ value: "region", label: "Region" }] : []),
+              ...(isSuperAdmin
+                ? [{ value: "district", label: "District" }]
+                : []),
+              { value: "ta", label: "Traditional Authority" },
+              { value: "zone", label: "Zone" },
+            ]}
+          />
         </div>
 
         {/* District → needs Region first */}
@@ -206,23 +209,17 @@ export default function Geography() {
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
               Region
             </label>
-            <select
-              className="input"
+            <Select
               value={form.parentId}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, parentId: e.target.value }))
-              }
-            >
-              <option value="">Select region...</option>
-              {tree?.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
+              onChange={(val) => setForm((p) => ({ ...p, parentId: val }))}
+              placeholder="Select region..."
+              options={(tree || []).map((r) => ({
+                value: r.id,
+                label: r.name,
+              }))}
+            />
           </div>
         )}
-
         {/* TA → needs Region then District (SUPER_ADMIN), or auto-uses facility district (ADMIN) */}
         {form.type === "ta" && (
           <>
@@ -239,44 +236,34 @@ export default function Geography() {
                   <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                     Region
                   </label>
-                  <select
-                    className="input"
+                  <Select
                     value={form.regionId}
-                    onChange={(e) =>
-                      setForm((p) => ({
-                        ...p,
-                        regionId: e.target.value,
-                        parentId: "",
-                      }))
+                    onChange={(val) =>
+                      setForm((p) => ({ ...p, regionId: val, parentId: "" }))
                     }
-                  >
-                    <option value="">Select region...</option>
-                    {tree?.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.name}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Select region..."
+                    options={(tree || []).map((r) => ({
+                      value: r.id,
+                      label: r.name,
+                    }))}
+                  />
                 </div>
                 {form.regionId && (
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                       District
                     </label>
-                    <select
-                      className="input"
+                    <Select
                       value={form.parentId}
-                      onChange={(e) =>
-                        setForm((p) => ({ ...p, parentId: e.target.value }))
+                      onChange={(val) =>
+                        setForm((p) => ({ ...p, parentId: val }))
                       }
-                    >
-                      <option value="">Select district...</option>
-                      {districts?.map((d: any) => (
-                        <option key={d.id} value={d.id}>
-                          {d.name}
-                        </option>
-                      ))}
-                    </select>
+                      placeholder="Select district..."
+                      options={(districts || []).map((d: any) => ({
+                        value: d.id,
+                        label: d.name,
+                      }))}
+                    />
                   </div>
                 )}
               </>
@@ -299,25 +286,24 @@ export default function Geography() {
                   <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                     Traditional Authority
                   </label>
-                  <select
-                    className="input"
+                  <Select
                     value={form.parentId}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, parentId: e.target.value }))
+                    onChange={(val) =>
+                      setForm((p) => ({ ...p, parentId: val }))
                     }
-                  >
-                    <option value="">Select TA...</option>
-                    {tas?.map((t: any) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
-                    {(!tas || tas.length === 0) && (
-                      <option disabled value="">
-                        No TAs found — add a TA first
-                      </option>
-                    )}
-                  </select>
+                    placeholder="Select TA..."
+                    options={
+                      tas && tas.length > 0
+                        ? tas.map((t: any) => ({ value: t.id, label: t.name }))
+                        : [
+                            {
+                              value: "",
+                              label: "No TAs found — add a TA first",
+                              disabled: true,
+                            },
+                          ]
+                    }
+                  />
                 </div>
               </>
             ) : (
@@ -326,49 +312,43 @@ export default function Geography() {
                   <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                     Region
                   </label>
-                  <select
-                    className="input"
+                  <Select
                     value={form.regionId}
-                    onChange={(e) =>
+                    onChange={(val) =>
                       setForm((p) => ({
                         ...p,
-                        regionId: e.target.value,
+                        regionId: val,
                         districtId: "",
                         parentId: "",
                       }))
                     }
-                  >
-                    <option value="">Select region...</option>
-                    {tree?.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.name}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Select region..."
+                    options={(tree || []).map((r) => ({
+                      value: r.id,
+                      label: r.name,
+                    }))}
+                  />
                 </div>
                 {form.regionId && (
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                       District
                     </label>
-                    <select
-                      className="input"
+                    <Select
                       value={form.districtId}
-                      onChange={(e) =>
+                      onChange={(val) =>
                         setForm((p) => ({
                           ...p,
-                          districtId: e.target.value,
+                          districtId: val,
                           parentId: "",
                         }))
                       }
-                    >
-                      <option value="">Select district...</option>
-                      {districts?.map((d: any) => (
-                        <option key={d.id} value={d.id}>
-                          {d.name}
-                        </option>
-                      ))}
-                    </select>
+                      placeholder="Select district..."
+                      options={(districts || []).map((d: any) => ({
+                        value: d.id,
+                        label: d.name,
+                      }))}
+                    />
                   </div>
                 )}
                 {form.districtId && (
@@ -376,32 +356,33 @@ export default function Geography() {
                     <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                       Traditional Authority
                     </label>
-                    <select
-                      className="input"
+                    <Select
                       value={form.parentId}
-                      onChange={(e) =>
-                        setForm((p) => ({ ...p, parentId: e.target.value }))
+                      onChange={(val) =>
+                        setForm((p) => ({ ...p, parentId: val }))
                       }
-                    >
-                      <option value="">Select TA...</option>
-                      {tas?.map((t: any) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
-                      ))}
-                      {(!tas || tas.length === 0) && (
-                        <option disabled value="">
-                          No TAs found — add a TA first
-                        </option>
-                      )}
-                    </select>
+                      placeholder="Select TA..."
+                      options={
+                        tas && tas.length > 0
+                          ? tas.map((t: any) => ({
+                              value: t.id,
+                              label: t.name,
+                            }))
+                          : [
+                              {
+                                value: "",
+                                label: "No TAs found — add a TA first",
+                                disabled: true,
+                              },
+                            ]
+                      }
+                    />
                   </div>
                 )}
               </>
             )}
           </>
         )}
-
         {form.type && (
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">

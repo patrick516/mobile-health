@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Network, Plus } from "lucide-react";
 import api from "../../services/api";
 import { useAuthStore } from "../../store/auth.store";
+import Select from "../../components/ui/Select";
 
 export default function Allocations() {
   const queryClient = useQueryClient();
@@ -189,28 +190,34 @@ export default function Allocations() {
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
               Allocation Type
             </label>
-            <select
-              className="input"
+            <Select
               value={form.type}
-              onChange={(e) =>
+              onChange={(val) =>
                 setForm((p) => ({
                   ...p,
-                  type: e.target.value,
+                  type: val,
                   userId: "",
                   ...resetCascade(),
                 }))
               }
-            >
-              {isSuperAdmin && (
-                <option value="facility">Admin → Facility</option>
-              )}
-              {(isAdmin || isSuperAdmin) && (
-                <option value="zone">CCW → Zone</option>
-              )}
-              {(isAdmin || isSuperAdmin) && (
-                <option value="ta">Nurse/DO → Traditional Authority</option>
-              )}
-            </select>
+              placeholder="Select type..."
+              options={[
+                ...(isSuperAdmin
+                  ? [{ value: "facility", label: "Admin → Facility" }]
+                  : []),
+                ...(isAdmin || isSuperAdmin
+                  ? [{ value: "zone", label: "CCW → Zone" }]
+                  : []),
+                ...(isAdmin || isSuperAdmin
+                  ? [
+                      {
+                        value: "ta",
+                        label: "Nurse/DO → Traditional Authority",
+                      },
+                    ]
+                  : []),
+              ]}
+            />
           </div>
 
           {/* User selector */}
@@ -222,21 +229,17 @@ export default function Allocations() {
                   ? "CCW"
                   : "Nurse / District Officer"}
             </label>
-            <select
-              className="input"
+            <Select
               value={form.userId}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, userId: e.target.value }))
-              }
-            >
-              <option value="">Select user...</option>
-              {getAllocatableUsers().map((u: any) => (
-                <option key={u.id} value={u.id}>
-                  {u.fullName} ({u.role.replace("_", " ")})
-                  {u.facility ? ` — ${u.facility.name}` : " — No facility"}
-                </option>
-              ))}
-            </select>
+              onChange={(val) => setForm((p) => ({ ...p, userId: val }))}
+              placeholder="Select user..."
+              options={getAllocatableUsers().map((u: any) => ({
+                value: u.id,
+                label: `${u.fullName} (${u.role.replace("_", " ")})${
+                  u.facility ? ` — ${u.facility.name}` : " — No facility"
+                }`,
+              }))}
+            />
           </div>
 
           {/* SUPER_ADMIN sees full cascade, ADMIN skips to TA directly */}
@@ -246,13 +249,12 @@ export default function Allocations() {
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                   Region
                 </label>
-                <select
-                  className="input"
+                <Select
                   value={form.regionId}
-                  onChange={(e) =>
+                  onChange={(val) =>
                     setForm((p) => ({
                       ...p,
-                      regionId: e.target.value,
+                      regionId: val,
                       districtId: "",
                       filterTaId: "",
                       taId: "",
@@ -260,14 +262,12 @@ export default function Allocations() {
                       facilityId: "",
                     }))
                   }
-                >
-                  <option value="">Select region...</option>
-                  {regions?.map((r: any) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="Select region..."
+                  options={(regions || []).map((r: any) => ({
+                    value: r.id,
+                    label: r.name,
+                  }))}
+                />
               </div>
 
               {form.regionId && (
@@ -275,32 +275,28 @@ export default function Allocations() {
                   <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                     District
                   </label>
-                  <select
-                    className="input"
+                  <Select
                     value={form.districtId}
-                    onChange={(e) =>
+                    onChange={(val) =>
                       setForm((p) => ({
                         ...p,
-                        districtId: e.target.value,
+                        districtId: val,
                         filterTaId: "",
                         taId: "",
                         zoneId: "",
                         facilityId: "",
                       }))
                     }
-                  >
-                    <option value="">Select district...</option>
-                    {districts?.map((d: any) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Select district..."
+                    options={(districts || []).map((d: any) => ({
+                      value: d.id,
+                      label: d.name,
+                    }))}
+                  />
                 </div>
               )}
             </>
           )}
-
           {isAdmin && user?.facility && (
             <div className="bg-teal-50 border border-teal-200 rounded-lg px-3 py-2">
               <p className="text-xs text-teal-700 font-medium">
@@ -315,25 +311,25 @@ export default function Allocations() {
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                 Facility
               </label>
-              <select
-                className="input"
+              <Select
                 value={form.facilityId}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, facilityId: e.target.value }))
+                onChange={(val) => setForm((p) => ({ ...p, facilityId: val }))}
+                placeholder="Select facility..."
+                options={
+                  facilities && facilities.length > 0
+                    ? facilities.map((f: any) => ({
+                        value: f.id,
+                        label: `${f.name} — ${f.facilityType?.replace(/_/g, " ")}`,
+                      }))
+                    : [
+                        {
+                          value: "",
+                          label: "No facilities in this district",
+                          disabled: true,
+                        },
+                      ]
                 }
-              >
-                <option value="">Select facility...</option>
-                {facilities?.map((f: any) => (
-                  <option key={f.id} value={f.id}>
-                    {f.name} — {f.facilityType?.replace(/_/g, " ")}
-                  </option>
-                ))}
-                {(!facilities || facilities.length === 0) && (
-                  <option disabled value="">
-                    No facilities in this district
-                  </option>
-                )}
-              </select>
+              />
             </div>
           )}
 
@@ -344,30 +340,29 @@ export default function Allocations() {
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                   Traditional Authority
                 </label>
-                <select
-                  className="input"
+                <Select
                   value={form.type === "ta" ? form.taId : form.filterTaId}
-                  onChange={(e) =>
+                  onChange={(val) =>
                     setForm((p) => ({
                       ...p,
                       ...(form.type === "ta"
-                        ? { taId: e.target.value }
-                        : { filterTaId: e.target.value, zoneId: "" }),
+                        ? { taId: val }
+                        : { filterTaId: val, zoneId: "" }),
                     }))
                   }
-                >
-                  <option value="">Select TA...</option>
-                  {tas?.map((t: any) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                  {(!tas || tas.length === 0) && (
-                    <option disabled value="">
-                      No TAs found — add a TA first
-                    </option>
-                  )}
-                </select>
+                  placeholder="Select TA..."
+                  options={
+                    tas && tas.length > 0
+                      ? tas.map((t: any) => ({ value: t.id, label: t.name }))
+                      : [
+                          {
+                            value: "",
+                            label: "No TAs found — add a TA first",
+                            disabled: true,
+                          },
+                        ]
+                  }
+                />
               </div>
             )}
 
@@ -377,25 +372,23 @@ export default function Allocations() {
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                 Zone
               </label>
-              <select
-                className="input"
+              <Select
                 value={form.zoneId}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, zoneId: e.target.value }))
+                onChange={(val) => setForm((p) => ({ ...p, zoneId: val }))}
+                placeholder="Select zone..."
+                options={
+                  zones && zones.length > 0
+                    ? zones.map((z: any) => ({ value: z.id, label: z.name }))
+                    : [
+                        {
+                          value: "",
+                          label:
+                            "No zones found — add zones in Geography first",
+                          disabled: true,
+                        },
+                      ]
                 }
-              >
-                <option value="">Select zone...</option>
-                {zones?.map((z: any) => (
-                  <option key={z.id} value={z.id}>
-                    {z.name}
-                  </option>
-                ))}
-                {(!zones || zones.length === 0) && (
-                  <option disabled value="">
-                    No zones found — add zones in Geography first
-                  </option>
-                )}
-              </select>
+              />
             </div>
           )}
 

@@ -251,6 +251,22 @@ export const login = async (req, res, next) => {
       data: { phoneNumber, ipAddress, deviceId, success: true },
     });
 
+    // ── Step 4a: PIN was reset by an admin — force a new PIN before
+    // issuing a normal session. No token, no user data beyond what's
+    // needed to drive the "create new PIN" screen.
+    if (user.mustChangePin) {
+      return res.json({
+        success: true,
+        mustChangePin: true,
+        message: "Your PIN was reset. Please create a new PIN to continue.",
+        data: {
+          userId: user.id,
+          fullName: user.fullName,
+          phoneNumber: user.phoneNumber,
+        },
+      });
+    }
+
     // ── Step 4b: Block CCW with no zone allocation (after PIN verified) ──
     if (user.role === "CCW" && user.zoneAllocations.length === 0) {
       return res.status(403).json({
@@ -409,6 +425,71 @@ export const changePin = async (req, res, next) => {
     await prisma.user.update({ where: { id: req.user.id }, data: { pinHash } });
 
     res.json({ success: true, message: "PIN changed successfully." });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// PATCH /api/auth/complete-pin-reset
+// No token required — this only runs immediately after login responds
+// with mustChangePin: true, using the temp PIN as proof of identity.
+// Mirrors changePin's verify-then-update pattern, but takes userId
+// directly instead of reading it off req.user, since there's no
+// session yet at this point in the flow.
+export const completePinReset = async (req, res, next) => {
+  try {
+    const { userId, tempPin, newPin } = req.body;
+
+    if (!userId || !tempPin || !newPin) {
+      return res.status(400).json({
+        success: false,
+        message: "userId, tempPin and newPin are required.",
+      });
+    }
+
+    if (String(newPin).length !== 4 || isNaN(newPin)) {
+      return res.status(400).json({
+        success: false,
+        message: "PIN must be exactly 4 digits.",
+      });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid request.",
+      });
+    }
+
+    if (!user.mustChangePin) {
+      // Nothing to reset — don't let this endpoint be used as a generic
+      // "change my PIN with no auth" backdoor outside the reset flow.
+      return res.status(400).json({
+        success: false,
+        message: "No PIN reset is pending for this account.",
+      });
+    }
+
+    const tempPinMatch = await bcrypt.compare(String(tempPin), user.pinHash);
+    if (!tempPinMatch) {
+      return res.status(401).json({
+        success: false,
+        message: "Temporary PIN is incorrect.",
+      });
+    }
+
+    const pinHash = await bcrypt.hash(String(newPin), 12);
+    await prisma.user.update({
+      where: { id: userId },
+      data: { pinHash, mustChangePin: false },
+    });
+
+    res.json({
+      success: true,
+      message: "PIN updated successfully. You can now log in.",
+    });
   } catch (err) {
     next(err);
   }
