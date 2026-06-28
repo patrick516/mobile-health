@@ -27,7 +27,7 @@ async function main() {
     update: {},
     create: { name: "Northern Region" },
   });
-  console.log("✅ Regions seeded");
+  console.log(" Regions seeded");
 
   //  DISTRICTS
   const blantyre = await prisma.district.upsert({
@@ -50,7 +50,7 @@ async function main() {
     update: {},
     create: { name: "Mzimba", regionId: northern.id },
   });
-  console.log("✅ Districts seeded");
+  console.log("Districts seeded");
 
   //  TRADITIONAL AUTHORITIES
   const taKapeni = await prisma.traditionalAuthority.upsert({
@@ -70,7 +70,7 @@ async function main() {
     update: {},
     create: { name: "TA Lilongwe", districtId: lilongwe.id },
   });
-  console.log("✅ Traditional Authorities seeded");
+  console.log(" Traditional Authorities seeded");
 
   //  ZONES
   const zone1 = await prisma.zone.upsert({
@@ -88,7 +88,7 @@ async function main() {
     update: {},
     create: { name: "Ndindi Zone 1", taId: taNdindi.id },
   });
-  console.log("✅ Zones seeded");
+  console.log(" Zones seeded");
 
   //  FACILITIES
   await prisma.facility.upsert({
@@ -119,7 +119,7 @@ async function main() {
       gpsLng: 35.0058,
     },
   });
-  console.log("✅ Facilities seeded");
+  console.log(" Facilities seeded");
 
   //  DRUGS
   const drugs = [
@@ -202,7 +202,7 @@ async function main() {
       create: drug,
     });
   }
-  console.log("✅ Drugs seeded");
+  console.log(" Drugs seeded");
 
   //  ADMIN USER
   const adminPin = await bcrypt.hash("1234", 12);
@@ -217,7 +217,7 @@ async function main() {
       isActive: true,
     },
   });
-  console.log("✅ Admin user created — Phone: 0999000001 | PIN: 1234");
+  console.log(" Admin user created — Phone: 0999000001 | PIN: 1234");
 
   //  NURSE USER
   const nursePin = await bcrypt.hash("1234", 12);
@@ -232,7 +232,7 @@ async function main() {
       isActive: true,
     },
   });
-  console.log("✅ Nurse user created — Phone: 0999000002 | PIN: 1234");
+  console.log(" Nurse user created — Phone: 0999000002 | PIN: 1234");
 
   // ─── DISTRICT OFFICER
   const dhoPin = await bcrypt.hash("1234", 12);
@@ -247,7 +247,7 @@ async function main() {
       isActive: true,
     },
   });
-  console.log("✅ District Officer created — Phone: 0999000003 | PIN: 1234");
+  console.log(" District Officer created — Phone: 0999000003 | PIN: 1234");
 
   //  CCW USERS
   const ccwPin = await bcrypt.hash("1234", 12);
@@ -274,7 +274,7 @@ async function main() {
     },
   });
   console.log(
-    "✅ CCW users created — Phones: 0999000004, 0999000005 | PIN: 1234",
+    " CCW users created — Phones: 0999000004, 0999000005 | PIN: 1234",
   );
 
   //  ALLOCATIONS OF CCWs TO ZONES
@@ -288,7 +288,7 @@ async function main() {
     update: {},
     create: { userId: ccw2.id, zoneId: zone2.id, allocatedById: admin.id },
   });
-  console.log("✅ Zone allocations done");
+  console.log(" Zone allocations done");
 
   //  DRUG STOCK FOR CCWs
   const allDrugs = await prisma.drug.findMany();

@@ -5,10 +5,18 @@ import prisma from "../../config/db.js";
 export const getUsers = async (req, res, next) => {
   try {
     const { role, isActive } = req.query;
+
+    // ADMIN (facility-scoped) only sees users belonging to their facility
+    let facilityScope = {};
+    if (req.user.role === "ADMIN" && req.user.facilityId) {
+      facilityScope = { facilityId: req.user.facilityId };
+    }
+
     const users = await prisma.user.findMany({
       where: {
         ...(role ? { role } : {}),
         ...(isActive !== undefined ? { isActive: isActive === "true" } : {}),
+        ...facilityScope,
       },
       select: {
         id: true,
@@ -51,15 +59,28 @@ export const createUser = async (req, res, next) => {
         .json({ success: false, message: "PIN must be 4 digits." });
     }
     const pinHash = await bcrypt.hash(String(pin), 12);
+
+    // ADMIN creating users — auto-assign their facility to the new user
+    // unless SUPER_ADMIN explicitly provides a facilityId
+    let assignedFacilityId = null;
+    if (["NURSE", "DISTRICT_OFFICER", "CCW"].includes(role)) {
+      if (req.user.role === "ADMIN" && req.user.facilityId) {
+        assignedFacilityId = req.user.facilityId;
+      } else if (req.user.role === "SUPER_ADMIN") {
+        assignedFacilityId = facilityId || null;
+      }
+    } else if (role === "ADMIN") {
+      // SUPER_ADMIN creating an ADMIN — facility assigned later via allocation
+      assignedFacilityId = facilityId || null;
+    }
+
     const user = await prisma.user.create({
       data: {
         fullName,
         phoneNumber,
         pinHash,
         role,
-        facilityId: ["NURSE", "DISTRICT_OFFICER"].includes(role)
-          ? facilityId || null
-          : null,
+        facilityId: assignedFacilityId,
       },
       select: {
         id: true,

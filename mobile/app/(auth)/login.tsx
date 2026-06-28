@@ -362,7 +362,6 @@ export default function LoginScreen() {
     }
   };
 
-  // ── Cache User Locally ──
   const cacheUserLocally = async (user: any, token: string, pin: string) => {
     try {
       addDebugLog(`💾 Caching user: ${user.fullName}`);
@@ -374,8 +373,8 @@ export default function LoginScreen() {
       );
       await db.runAsync(
         `INSERT OR REPLACE INTO cached_users 
-         (id, phone_number, pin_hash, full_name, role, zone_allocations, ta_allocations, token)
-         VALUES (?,?,?,?,?,?,?,?)`,
+         (id, phone_number, pin_hash, full_name, role, zone_allocations, ta_allocations, token, facility)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
         [
           user.id,
           user.phoneNumber,
@@ -385,6 +384,7 @@ export default function LoginScreen() {
           JSON.stringify(user.zoneAllocations || []),
           JSON.stringify(user.taAllocations || []),
           token,
+          JSON.stringify(user.facility || null),
         ],
       );
 
@@ -422,12 +422,13 @@ export default function LoginScreen() {
         return false;
       }
 
-      addDebugLog(`✅ Found cached user: ${cached.full_name}`);
+      addDebugLog(` Found cached user: ${cached.full_name}`);
       const user = {
         id: cached.id,
         fullName: cached.full_name,
         phoneNumber: cached.phone_number,
         role: cached.role,
+        facility: cached.facility ? JSON.parse(cached.facility) : null,
         zoneAllocations: JSON.parse(cached.zone_allocations || "[]"),
         taAllocations: JSON.parse(cached.ta_allocations || "[]"),
       };
@@ -478,6 +479,7 @@ export default function LoginScreen() {
           const res = await api.post("/auth/login", {
             phoneNumber: phone.trim(),
             pin: pin.trim(),
+            deviceId: "mobile-app",
           });
           const { token, user } = res.data.data;
           addDebugLog(`✅ Server login SUCCESS for: ${user.fullName}`);
@@ -537,11 +539,31 @@ export default function LoginScreen() {
               err?.response?.data?.message || "Incorrect phone number or PIN.";
             Alert.alert("Login Failed", serverMsg);
           } else if (status === 403) {
-            addDebugLog("🚫 Account deactivated by admin");
-            Alert.alert(
-              "Account Suspended",
-              "Your account has been deactivated. Contact your supervisor.",
-            );
+            const serverMsg = err?.response?.data?.message || "";
+            const code = err?.response?.data?.code || "";
+            addDebugLog(`🔍 403 details — code: ${code} | msg: ${serverMsg}`);
+            if (serverMsg.includes("portal-only")) {
+              addDebugLog("🚫 Portal-only account tried mobile login");
+              Alert.alert(
+                "Wrong Platform",
+                "This account is for the web portal only. Please log in at the MobileHealth web portal.",
+              );
+            } else if (
+              code === "NO_ZONE_ALLOCATION" ||
+              serverMsg.includes("not been allocated")
+            ) {
+              addDebugLog("🚫 CCW has no zone allocation");
+              Alert.alert(
+                "Setup Incomplete",
+                "Your account has not been assigned to a zone yet. Please contact your supervisor.",
+              );
+            } else {
+              addDebugLog("🚫 Account deactivated by admin");
+              Alert.alert(
+                "Account Suspended",
+                "Your account has been deactivated. Contact your supervisor.",
+              );
+            }
           } else {
             addDebugLog("⚠️ Network error, trying offline login...");
             const ok = await tryOfflineLogin(phone.trim(), pin);
@@ -784,7 +806,8 @@ export default function LoginScreen() {
                     if (net.isConnected) {
                       const res = await api.post("/auth/login", {
                         phoneNumber: phone.trim(),
-                        pin: "0000", // dummy — just to trigger server lockout check
+                        pin: "0000",
+                        deviceId: "mobile-app",
                       });
                       // If we get here (success unlikely) — not locked
                       setIsLocked(false);

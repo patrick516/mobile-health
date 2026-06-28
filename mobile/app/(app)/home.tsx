@@ -125,12 +125,20 @@ export default function HomeScreen() {
 
       {/* Header */}
       <View style={styles.header}>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={styles.greeting}>{greeting()},</Text>
           <Text style={styles.userName}>
             {user?.fullName || "Health Worker"}
           </Text>
           <Text style={styles.role}>{user?.role?.replace("_", " ")}</Text>
+          {user?.facility && (
+            <Text style={styles.facilityTag}>🏥 {user.facility.name}</Text>
+          )}
+          {user?.zoneAllocations && user.zoneAllocations.length > 0 && (
+            <Text style={styles.zoneTag}>
+              📍 {user.zoneAllocations.map((za) => za.zone.name).join(", ")}
+            </Text>
+          )}
         </View>
         <View style={styles.headerActions}>
           <TouchableOpacity style={styles.langBtn} onPress={toggleLanguage}>
@@ -320,5 +328,16 @@ const styles = StyleSheet.create({
     fontSize: SIZES.fontXs,
     color: COLORS.textSecondary,
     marginTop: 4,
+  },
+  facilityTag: {
+    color: "rgba(255,255,255,0.9)",
+    fontSize: SIZES.fontXs,
+    marginTop: 4,
+    fontWeight: "600",
+  },
+  zoneTag: {
+    color: "rgba(255,255,255,0.75)",
+    fontSize: SIZES.fontXs,
+    marginTop: 2,
   },
 });

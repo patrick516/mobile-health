@@ -64,7 +64,7 @@ export const authenticate = async (req, res, next) => {
     let taIds = user.taAllocations.map((a) => a.taId); // legacy fallback
     let zoneIds = user.zoneAllocations.map((a) => a.zoneId);
 
-    if (user.role === "ADMIN") {
+    if (user.role === "SUPER_ADMIN" || user.role === "ADMIN") {
       scopeLevel = "ALL";
     } else if (user.role === "CCW") {
       scopeLevel = "ZONE";
@@ -98,15 +98,12 @@ export const authenticate = async (req, res, next) => {
   }
 };
 
-// ─── Helper: builds a Prisma "where" fragment scoping by village's geography ───
-// Pass the requested taId (optional, for District Hospital drill-down) so it
-// can be validated against the user's district scope.
 export const buildVillageScope = (user, requestedTaId) => {
   if (user.scopeLevel === "ALL") return {};
 
   if (user.scopeLevel === "DISTRICT") {
+    if (!user.districtId) return { id: "__no_match__" };
     if (requestedTaId) {
-      // District Hospital drilling into one TA — must belong to their district
       return {
         zone: { ta: { id: requestedTaId, districtId: user.districtId } },
       };
@@ -115,10 +112,15 @@ export const buildVillageScope = (user, requestedTaId) => {
   }
 
   if (user.scopeLevel === "TA") {
+    // Empty taIds — show nothing
+    if (!user.taIds || user.taIds.length === 0) return { id: "__no_match__" };
     return { zone: { taId: { in: user.taIds } } };
   }
 
   if (user.scopeLevel === "ZONE") {
+    // Empty zoneIds — CCW not yet allocated, show nothing
+    if (!user.zoneIds || user.zoneIds.length === 0)
+      return { id: "__no_match__" };
     return { zone: { id: { in: user.zoneIds } } };
   }
 

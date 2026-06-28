@@ -5,6 +5,11 @@ interface User {
   fullName: string;
   phoneNumber: string;
   role: string;
+  facility?: {
+    id: string;
+    name: string;
+    facilityType: string | null;
+  } | null;
   zoneAllocations: Array<{ zone: { id: string; name: string; taId: string } }>;
   taAllocations: Array<{ ta: { id: string; name: string } }>;
 }

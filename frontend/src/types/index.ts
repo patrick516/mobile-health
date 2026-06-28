@@ -2,7 +2,7 @@ export interface User {
   id: string;
   fullName: string;
   phoneNumber: string;
-  role: "CCW" | "NURSE" | "DISTRICT_OFFICER" | "ADMIN";
+  role: "CCW" | "NURSE" | "DISTRICT_OFFICER" | "ADMIN" | "SUPER_ADMIN";
   isActive: boolean;
   zoneAllocations: Array<{ zone: { id: string; name: string; taId: string } }>;
   taAllocations: Array<{ ta: { id: string; name: string } }>;

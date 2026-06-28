@@ -8,6 +8,7 @@ interface AuthState {
   setAuth: (user: User, token: string) => void;
   clearAuth: () => void;
   isAdmin: () => boolean;
+  isSuperAdmin: () => boolean;
   isNurse: () => boolean;
   isDHO: () => boolean;
   scopeLevel: () => "ALL" | "DISTRICT" | "TA" | "ZONE";
@@ -28,7 +29,9 @@ export const useAuthStore = create<AuthState>()(
         localStorage.removeItem("auth_user");
         set({ user: null, token: null });
       },
-      isAdmin: () => get().user?.role === "ADMIN",
+      isAdmin: () =>
+        get().user?.role === "ADMIN" || get().user?.role === "SUPER_ADMIN",
+      isSuperAdmin: () => get().user?.role === "SUPER_ADMIN",
       isNurse: () => get().user?.role === "NURSE",
       isDHO: () => get().user?.role === "DISTRICT_OFFICER",
       scopeLevel: () => (get().user as any)?.scopeLevel || "ALL",

@@ -3,10 +3,19 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, Plus } from "lucide-react";
 import api from "../../services/api";
 import type { Region } from "../../types";
-
+import { useAuthStore } from "../../store/auth.store";
 export default function Geography() {
+  const isSuperAdmin = useAuthStore((s) => s.isSuperAdmin());
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === "ADMIN";
   const queryClient = useQueryClient();
-  const [form, setForm] = useState({ type: "", name: "", parentId: "" });
+  const [form, setForm] = useState({
+    type: "",
+    name: "",
+    parentId: "",
+    regionId: "",
+    districtId: "",
+  });
   const [error, setError] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
@@ -16,13 +25,33 @@ export default function Geography() {
   });
 
   const { data: districts } = useQuery({
-    queryKey: ["districts"],
-    queryFn: () => api.get("/geography/districts").then((r) => r.data.data),
+    queryKey: ["districts", form.regionId],
+    queryFn: () =>
+      api
+        .get(
+          `/geography/districts${form.regionId ? `?regionId=${form.regionId}` : ""}`,
+        )
+        .then((r) => r.data.data),
+    enabled:
+      form.type === "ta" || form.type === "zone" || form.type === "district",
   });
 
+  const adminDistrictId = user?.facility?.districtId;
+
   const { data: tas } = useQuery({
-    queryKey: ["tas"],
-    queryFn: () => api.get("/geography/tas").then((r) => r.data.data),
+    queryKey: ["tas", isAdmin ? adminDistrictId : form.districtId],
+    queryFn: () => {
+      const distId = isAdmin ? adminDistrictId : form.districtId;
+      return api
+        .get(`/geography/tas?districtId=${distId}`)
+        .then((r) => r.data.data);
+    },
+    enabled:
+      form.type === "zone" || form.type === "ta"
+        ? isAdmin
+          ? !!adminDistrictId
+          : !!form.districtId
+        : false,
   });
 
   const createMutation = useMutation({
@@ -43,13 +72,19 @@ export default function Geography() {
             : type === "ta"
               ? "/admin/geography/tas"
               : "/admin/geography/zones";
+      // ADMIN creating TA — auto-use their facility's districtId
+      const taDistrictId =
+        isAdmin && user?.facility?.districtId
+          ? user.facility.districtId
+          : parentId;
+
       const body =
         type === "region"
           ? { name }
           : type === "district"
             ? { name, regionId: parentId }
             : type === "ta"
-              ? { name, districtId: parentId }
+              ? { name, districtId: taDistrictId }
               : { name, taId: parentId };
       return api.post(endpoint, body);
     },
@@ -57,7 +92,13 @@ export default function Geography() {
       queryClient.invalidateQueries({ queryKey: ["geography-tree"] });
       queryClient.invalidateQueries({ queryKey: ["districts"] });
       queryClient.invalidateQueries({ queryKey: ["tas"] });
-      setForm({ type: "", name: "", parentId: "" });
+      setForm({
+        type: "",
+        name: "",
+        parentId: "",
+        regionId: "",
+        districtId: "",
+      });
       setError("");
     },
     onError: (err: any) => {
@@ -152,13 +193,14 @@ export default function Geography() {
             }
           >
             <option value="">Select type...</option>
-            <option value="region">Region</option>
-            <option value="district">District</option>
+            {isSuperAdmin && <option value="region">Region</option>}
+            {isSuperAdmin && <option value="district">District</option>}
             <option value="ta">Traditional Authority</option>
             <option value="zone">Zone</option>
           </select>
         </div>
 
+        {/* District → needs Region first */}
         {form.type === "district" && (
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
@@ -181,53 +223,183 @@ export default function Geography() {
           </div>
         )}
 
+        {/* TA → needs Region then District (SUPER_ADMIN), or auto-uses facility district (ADMIN) */}
         {form.type === "ta" && (
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              District
-            </label>
-            <select
-              className="input"
-              value={form.parentId}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, parentId: e.target.value }))
-              }
-            >
-              <option value="">Select district...</option>
-              {districts?.map((d: any) => (
-                <option key={d.id} value={d.id}>
-                  {d.name} — {d.region?.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          <>
+            {isAdmin && user?.facility ? (
+              <div className="bg-teal-50 border border-teal-200 rounded-lg px-3 py-2">
+                <p className="text-xs text-teal-700 font-medium">
+                  📍 Adding TA to: <strong>{user.facility.name}</strong>{" "}
+                  district
+                </p>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                    Region
+                  </label>
+                  <select
+                    className="input"
+                    value={form.regionId}
+                    onChange={(e) =>
+                      setForm((p) => ({
+                        ...p,
+                        regionId: e.target.value,
+                        parentId: "",
+                      }))
+                    }
+                  >
+                    <option value="">Select region...</option>
+                    {tree?.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {form.regionId && (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                      District
+                    </label>
+                    <select
+                      className="input"
+                      value={form.parentId}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, parentId: e.target.value }))
+                      }
+                    >
+                      <option value="">Select district...</option>
+                      {districts?.map((d: any) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </>
+            )}
+          </>
         )}
 
+        {/* Zone → ADMIN skips Region/District, SUPER_ADMIN sees full cascade */}
         {form.type === "zone" && (
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Traditional Authority
-            </label>
-            <select
-              className="input"
-              value={form.parentId}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, parentId: e.target.value }))
-              }
-            >
-              <option value="">Select TA...</option>
-              {tas?.map((t: any) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} — {t.district?.name ?? ""}
-                </option>
-              ))}
-              {(!tas || tas.length === 0) && (
-                <option disabled value="">
-                  No TAs found — add a TA first
-                </option>
-              )}
-            </select>
-          </div>
+          <>
+            {isAdmin && user?.facility ? (
+              <>
+                <div className="bg-teal-50 border border-teal-200 rounded-lg px-3 py-2">
+                  <p className="text-xs text-teal-700 font-medium">
+                    📍 Adding Zone within: <strong>{user.facility.name}</strong>{" "}
+                    district
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                    Traditional Authority
+                  </label>
+                  <select
+                    className="input"
+                    value={form.parentId}
+                    onChange={(e) =>
+                      setForm((p) => ({ ...p, parentId: e.target.value }))
+                    }
+                  >
+                    <option value="">Select TA...</option>
+                    {tas?.map((t: any) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                    {(!tas || tas.length === 0) && (
+                      <option disabled value="">
+                        No TAs found — add a TA first
+                      </option>
+                    )}
+                  </select>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                    Region
+                  </label>
+                  <select
+                    className="input"
+                    value={form.regionId}
+                    onChange={(e) =>
+                      setForm((p) => ({
+                        ...p,
+                        regionId: e.target.value,
+                        districtId: "",
+                        parentId: "",
+                      }))
+                    }
+                  >
+                    <option value="">Select region...</option>
+                    {tree?.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {form.regionId && (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                      District
+                    </label>
+                    <select
+                      className="input"
+                      value={form.districtId}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          districtId: e.target.value,
+                          parentId: "",
+                        }))
+                      }
+                    >
+                      <option value="">Select district...</option>
+                      {districts?.map((d: any) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {form.districtId && (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                      Traditional Authority
+                    </label>
+                    <select
+                      className="input"
+                      value={form.parentId}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, parentId: e.target.value }))
+                      }
+                    >
+                      <option value="">Select TA...</option>
+                      {tas?.map((t: any) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                      {(!tas || tas.length === 0) && (
+                        <option disabled value="">
+                          No TAs found — add a TA first
+                        </option>
+                      )}
+                    </select>
+                  </div>
+                )}
+              </>
+            )}
+          </>
         )}
 
         {form.type && (

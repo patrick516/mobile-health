@@ -127,6 +127,28 @@ export const login = async (req, res, next) => {
       });
     }
 
+    // ── Step 2b: Enforce platform separation ──
+    const isWebLogin = !deviceId;
+    const isMobileLogin = !!deviceId;
+    const portalRoles = ["SUPER_ADMIN", "ADMIN", "NURSE", "DISTRICT_OFFICER"];
+    const mobileRoles = ["CCW"];
+
+    if (isWebLogin && !portalRoles.includes(user.role)) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "This account is mobile-only. Please use the MobileHealth app.",
+      });
+    }
+
+    if (isMobileLogin && !mobileRoles.includes(user.role)) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "This account is portal-only. Please log in via the web portal.",
+      });
+    }
+
     // ── Step 3: Check PIN ──
     const pinMatch = await bcrypt.compare(String(pin), user.pinHash);
 
@@ -229,6 +251,15 @@ export const login = async (req, res, next) => {
       data: { phoneNumber, ipAddress, deviceId, success: true },
     });
 
+    // ── Step 4b: Block CCW with no zone allocation (after PIN verified) ──
+    if (user.role === "CCW" && user.zoneAllocations.length === 0) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Your account has not been allocated to a zone yet. Contact your supervisor.",
+        code: "NO_ZONE_ALLOCATION",
+      });
+    }
     // Clear any existing lockout on successful login
     await prisma.loginLockout.deleteMany({ where: { phoneNumber } });
 

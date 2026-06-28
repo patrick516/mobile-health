@@ -60,6 +60,7 @@ export const initDb = async (): Promise<void> => {
     );
     await addColumnIfMissing("households", "consent_signature_url", "TEXT");
     await addColumnIfMissing("members", "national_id", "TEXT");
+    await addColumnIfMissing("cached_users", "facility", "TEXT DEFAULT NULL");
 
     await database.execAsync(`
       CREATE TABLE IF NOT EXISTS sync_queue (
@@ -224,7 +225,7 @@ export const initDb = async (): Promise<void> => {
         gps_lng REAL,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
-      CREATE TABLE IF NOT EXISTS cached_users (
+     CREATE TABLE IF NOT EXISTS cached_users (
         id TEXT PRIMARY KEY,
         phone_number TEXT NOT NULL UNIQUE,
         pin_hash TEXT NOT NULL,
@@ -233,6 +234,7 @@ export const initDb = async (): Promise<void> => {
         zone_allocations TEXT DEFAULT '[]',
         ta_allocations TEXT DEFAULT '[]',
         token TEXT,
+        facility TEXT DEFAULT NULL,
         cached_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
       CREATE TABLE IF NOT EXISTS zones (

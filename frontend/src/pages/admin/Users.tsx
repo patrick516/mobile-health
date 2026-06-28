@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { UserPlus, UserX } from "lucide-react";
 import api from "../../services/api";
+import { useAuthStore } from "../../store/auth.store";
 
 interface User {
   id: string;
@@ -11,10 +12,12 @@ interface User {
   isActive: boolean;
 }
 
+// SUPER_ADMIN is not creatable from UI — only via seed/DB
 const ROLES = ["CCW", "NURSE", "DISTRICT_OFFICER", "ADMIN"];
 
 export default function Users() {
   const queryClient = useQueryClient();
+  const { user } = useAuthStore();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
     fullName: "",
@@ -22,6 +25,8 @@ export default function Users() {
     pin: "",
     role: "CCW",
     facilityId: "",
+    regionId: "",
+    districtId: "",
   });
   const [error, setError] = useState("");
 
@@ -30,12 +35,34 @@ export default function Users() {
     queryFn: () => api.get("/admin/users").then((r) => r.data.data),
   });
 
-  const { data: facilities } = useQuery({
-    queryKey: ["facilities"],
-    queryFn: () => api.get("/admin/facilities").then((r) => r.data.data),
+  const { data: regions } = useQuery({
+    queryKey: ["regions"],
+    queryFn: () => api.get("/geography/regions").then((r) => r.data.data),
   });
 
-  const needsFacility = ["NURSE", "DISTRICT_OFFICER"].includes(form.role);
+  const { data: districts } = useQuery({
+    queryKey: ["user-districts", form.regionId],
+    queryFn: () =>
+      api
+        .get(`/geography/districts?regionId=${form.regionId}`)
+        .then((r) => r.data.data),
+    enabled: !!form.regionId,
+  });
+
+  const { data: facilities } = useQuery({
+    queryKey: ["user-facilities", form.districtId],
+    queryFn: () =>
+      api
+        .get(`/admin/facilities?districtId=${form.districtId}`)
+        .then((r) => r.data.data),
+    enabled: !!form.districtId,
+  });
+
+  const needsFacility =
+    ["NURSE", "DISTRICT_OFFICER"].includes(form.role) &&
+    user?.role === "SUPER_ADMIN";
+  const isMobileOnly = form.role === "CCW";
+
   const createMutation = useMutation({
     mutationFn: (data: object) => api.post("/admin/users", data),
     onSuccess: () => {
@@ -47,6 +74,8 @@ export default function Users() {
         pin: "",
         role: "CCW",
         facilityId: "",
+        regionId: "",
+        districtId: "",
       });
     },
     onError: (err: any) =>
@@ -154,31 +183,96 @@ export default function Users() {
                 ))}
               </select>
             </div>
-            {needsFacility && (
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                  Assigned Facility
-                </label>
-                <select
-                  className="input"
-                  value={form.facilityId}
-                  onChange={(e) =>
-                    setForm((p) => ({ ...p, facilityId: e.target.value }))
-                  }
-                >
-                  <option value="">Select facility...</option>
-                  {facilities?.map((f: any) => (
-                    <option key={f.id} value={f.id}>
-                      {f.name} — {f.facilityType?.replace("_", " ")}
-                      {f.district
-                        ? ` (${f.district.name})`
-                        : f.ta
-                          ? ` (${f.ta.name})`
-                          : ""}
-                    </option>
-                  ))}
-                </select>
+            {isMobileOnly && (
+              <div className="col-span-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+                <p className="text-sm text-amber-800 font-medium">
+                  📱 CCW users are mobile-only. They log in via the mobile app
+                  and are allocated to zones, not facilities.
+                </p>
               </div>
+            )}
+
+            {needsFacility && (
+              <>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                    Region
+                  </label>
+                  <select
+                    className="input"
+                    value={form.regionId}
+                    onChange={(e) =>
+                      setForm((p) => ({
+                        ...p,
+                        regionId: e.target.value,
+                        districtId: "",
+                        facilityId: "",
+                      }))
+                    }
+                  >
+                    <option value="">Select region...</option>
+                    {regions?.map((r: any) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {form.regionId && (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                      District
+                    </label>
+                    <select
+                      className="input"
+                      value={form.districtId}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          districtId: e.target.value,
+                          facilityId: "",
+                        }))
+                      }
+                    >
+                      <option value="">Select district...</option>
+                      {districts?.map((d: any) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {form.districtId && (
+                  <div className="col-span-2">
+                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                      Facility
+                    </label>
+                    <select
+                      className="input"
+                      value={form.facilityId}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, facilityId: e.target.value }))
+                      }
+                    >
+                      <option value="">Select facility...</option>
+                      {facilities?.map((f: any) => (
+                        <option key={f.id} value={f.id}>
+                          {f.name} — {f.facilityType?.replace(/_/g, " ")}
+                        </option>
+                      ))}
+                      {(!facilities || facilities.length === 0) && (
+                        <option disabled value="">
+                          No facilities in this district — add one in Facilities
+                          first
+                        </option>
+                      )}
+                    </select>
+                  </div>
+                )}
+              </>
             )}
           </div>
           <div className="flex gap-3">

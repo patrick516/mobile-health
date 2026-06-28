@@ -16,31 +16,50 @@ import Facilities from "./pages/admin/Facilities";
 import Reports from "./pages/reports/Reports";
 import Security from "./pages/admin/Security";
 import RelocatedHouseholds from "./pages/admin/RelocatedHouseholds";
+import FacilitySetup from "./pages/admin/FacilitySetup";
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const token = useAuthStore((s) => s.token);
-  if (!token) return <Navigate to="/login" replace />;
-  return <>{children}</>;
-}
+// function ProtectedRoute({ children }: { children: React.ReactNode }) {
+//   const token = useAuthStore((s) => s.token);
+//   if (!token) return <Navigate to="/login" replace />;
+//   return <>{children}</>;
+// }
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
-  const { token, isAdmin } = useAuthStore();
+  const { token, isAdmin, user } = useAuthStore();
   if (!token) return <Navigate to="/login" replace />;
   if (!isAdmin()) return <Navigate to="/" replace />;
+  // ADMIN (not SUPER_ADMIN) must have a facility assigned
+  if (user?.role === "ADMIN" && !user?.facility) {
+    return <Navigate to="/facility-setup" replace />;
+  }
   return <>{children}</>;
 }
 
+function ProtectedWithFacilityGuard({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const { token, user } = useAuthStore();
+  if (!token) return <Navigate to="/login" replace />;
+  // ADMIN with no facility → force setup
+  if (user?.role === "ADMIN" && !user?.facility) {
+    return <Navigate to="/facility-setup" replace />;
+  }
+  return <>{children}</>;
+}
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/facility-setup" element={<FacilitySetup />} />
         <Route
           path="/"
           element={
-            <ProtectedRoute>
+            <ProtectedWithFacilityGuard>
               <Layout />
-            </ProtectedRoute>
+            </ProtectedWithFacilityGuard>
           }
         >
           <Route index element={<Overview />} />

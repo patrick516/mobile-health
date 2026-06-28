@@ -48,7 +48,7 @@ export default function Login() {
           </div>
           <h1 className="text-2xl font-bold text-white">MobileHealth Malawi</h1>
           <p className="text-teal-300 text-sm mt-1">
-            Community Health Worker Platform
+            Health Portal — Staff & Administration
           </p>
         </div>
 
@@ -60,8 +60,24 @@ export default function Login() {
           </p>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">
-              {error}
+            <div
+              className={`border px-4 py-3 rounded-lg text-sm mb-4 ${
+                error.includes("mobile-only")
+                  ? "bg-amber-50 border-amber-200 text-amber-800"
+                  : "bg-red-50 border-red-200 text-red-700"
+              }`}
+            >
+              {error.includes("mobile-only") ? (
+                <div>
+                  <p className="font-semibold mb-0.5">📱 Mobile-only account</p>
+                  <p>
+                    CCW accounts are not allowed on the web portal. Please use
+                    the <strong>MobileHealth app</strong> on your phone.
+                  </p>
+                </div>
+              ) : (
+                error
+              )}
             </div>
           )}
 
@@ -104,7 +120,7 @@ export default function Login() {
         </div>
 
         <p className="text-center text-teal-400 text-xs mt-6">
-          MobileHealth Malawi v1.0
+          MobileHealth Malawi v1.0 — Web Portal
         </p>
       </div>
     </div>

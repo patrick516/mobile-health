@@ -23,34 +23,48 @@ import { role } from "../../middleware/role.js";
 
 const router = Router();
 router.use(authenticate);
-router.use(role("ADMIN"));
 
-// Users
-router.get("/users", getUsers);
-router.post("/users", createUser);
-router.patch("/users/:id", updateUser);
-router.patch("/users/:id/deactivate", deactivateUser);
-router.patch("/users/:id/reactivate", reactivateUser);
-// Geography
-router.post("/geography/regions", createRegion);
-router.post("/geography/districts", createDistrict);
-router.post("/geography/tas", createTA);
-router.post("/geography/zones", createZone);
+// ─── SUPER_ADMIN only ─────────────────────────────────────────────────────────
+router.get("/users", role("SUPER_ADMIN", "ADMIN"), getUsers);
+router.post("/users", role("SUPER_ADMIN", "ADMIN"), createUser);
+router.patch("/users/:id", role("SUPER_ADMIN", "ADMIN"), updateUser);
+router.patch(
+  "/users/:id/deactivate",
+  role("SUPER_ADMIN", "ADMIN"),
+  deactivateUser,
+);
+router.patch(
+  "/users/:id/reactivate",
+  role("SUPER_ADMIN", "ADMIN"),
+  reactivateUser,
+);
 
-// Allocations
-router.post("/allocations/zone", allocateUserToZone);
-router.post("/allocations/ta", allocateUserToTA);
+// Geography — regions and districts are SUPER_ADMIN only
+router.post("/geography/regions", role("SUPER_ADMIN"), createRegion);
+router.post("/geography/districts", role("SUPER_ADMIN"), createDistrict);
 
-// Facilities
-router.get("/facilities", getFacilities);
-router.post("/facilities", createFacility);
+// TAs and Zones — ADMIN can add within their facility scope
+router.post("/geography/tas", role("SUPER_ADMIN", "ADMIN"), createTA);
+router.post("/geography/zones", role("SUPER_ADMIN", "ADMIN"), createZone);
 
-// Drugs
-router.post("/drugs", createDrug);
-router.patch("/drugs/:id", updateDrug);
+// Allocations — ADMIN can allocate within their scope
+router.post(
+  "/allocations/zone",
+  role("SUPER_ADMIN", "ADMIN"),
+  allocateUserToZone,
+);
+router.post("/allocations/ta", role("SUPER_ADMIN", "ADMIN"), allocateUserToTA);
 
-// Security
-router.get("/security/alerts", getSecurityAlerts);
-router.patch("/security/unlock/:id", unlockUser);
+// Facilities — SUPER_ADMIN manages facilities
+router.get("/facilities", role("SUPER_ADMIN", "ADMIN"), getFacilities);
+router.post("/facilities", role("SUPER_ADMIN"), createFacility);
+
+// Drugs — SUPER_ADMIN manages drug catalogue
+router.post("/drugs", role("SUPER_ADMIN"), createDrug);
+router.patch("/drugs/:id", role("SUPER_ADMIN"), updateDrug);
+
+// Security — SUPER_ADMIN only
+router.get("/security/alerts", role("SUPER_ADMIN"), getSecurityAlerts);
+router.patch("/security/unlock/:id", role("SUPER_ADMIN"), unlockUser);
 
 export default router;

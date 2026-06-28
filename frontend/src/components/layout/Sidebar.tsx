@@ -35,39 +35,49 @@ const NAV = [
     to: "/export",
     icon: Download,
     label: "DHIS2 Export",
-    roles: ["DISTRICT_OFFICER", "ADMIN"],
+    roles: ["DISTRICT_OFFICER", "ADMIN", "SUPER_ADMIN"],
   },
   {
     to: "/reports",
     icon: FileBarChart,
     label: "Reports",
-    roles: ["DISTRICT_OFFICER", "ADMIN"],
+    roles: ["DISTRICT_OFFICER", "ADMIN", "SUPER_ADMIN"],
   },
-  { to: "/admin/users", icon: Users, label: "Users", roles: ["ADMIN"] },
-  { to: "/admin/geography", icon: Map, label: "Geography", roles: ["ADMIN"] },
+  {
+    to: "/admin/users",
+    icon: Users,
+    label: "Users",
+    roles: ["ADMIN", "SUPER_ADMIN"],
+  },
+  {
+    to: "/admin/geography",
+    icon: Map,
+    label: "Geography",
+    roles: ["ADMIN", "SUPER_ADMIN"],
+  },
   {
     to: "/admin/allocations",
     icon: Network,
     label: "Allocations",
-    roles: ["ADMIN"],
+    roles: ["ADMIN", "SUPER_ADMIN"],
   },
   {
     to: "/admin/facilities",
     icon: Building2,
     label: "Facilities",
-    roles: ["ADMIN"],
+    roles: ["ADMIN", "SUPER_ADMIN"],
   },
   {
     to: "/admin/security",
     icon: ShieldAlert,
     label: "Security",
-    roles: ["ADMIN"],
+    roles: ["SUPER_ADMIN"],
   },
   {
     to: "/admin/relocated-households",
     icon: MapPinOff,
     label: "Relocated Households",
-    roles: ["ADMIN"],
+    roles: ["ADMIN", "SUPER_ADMIN"],
   },
 ];
 
@@ -91,7 +101,16 @@ export default function Sidebar() {
           <p className="text-white font-bold text-sm leading-tight">
             MobileHealth
           </p>
-          <p className="text-teal-300 text-xs">Malawi</p>
+          {user?.facility ? (
+            <p
+              className="text-teal-300 text-xs truncate max-w-[130px]"
+              title={user.facility.name}
+            >
+              {user.facility.name}
+            </p>
+          ) : (
+            <p className="text-teal-300 text-xs">Malawi</p>
+          )}
         </div>
       </div>
 

@@ -12,6 +12,7 @@ export const getRegions = async (req, res, next) => {
     next(err);
   }
 };
+// GET /api/geography/districts?regionId=  ← this line stays, just add above it
 
 // GET /api/geography/districts?regionId=
 export const getDistricts = async (req, res, next) => {
@@ -28,12 +29,31 @@ export const getDistricts = async (req, res, next) => {
   }
 };
 
-// GET /api/geography/tas?districtId=
+// GET /api/geography/tas?districtId=&regionId=
 export const getTAs = async (req, res, next) => {
   try {
-    const { districtId } = req.query;
+    const { districtId, regionId } = req.query;
+
+    // Facility scoping for non-admin users
+    let facilityFilter = {};
+    if (req.user.role !== "ADMIN" && req.user.facilityId) {
+      const facility = await prisma.facility.findUnique({
+        where: { id: req.user.facilityId },
+        select: { districtId: true, taId: true },
+      });
+      if (facility?.taId) {
+        facilityFilter = { id: facility.taId };
+      } else if (facility?.districtId) {
+        facilityFilter = { districtId: facility.districtId };
+      }
+    }
+
     const tas = await prisma.traditionalAuthority.findMany({
-      where: districtId ? { districtId } : undefined,
+      where: {
+        ...(districtId ? { districtId } : {}),
+        ...(regionId && !districtId ? { district: { regionId } } : {}),
+        ...facilityFilter,
+      },
       include: { district: { include: { region: true } } },
       orderBy: { name: "asc" },
     });
@@ -70,19 +90,42 @@ export const getMyTAs = async (req, res, next) => {
   }
 };
 
-// GET /api/geography/zones?taId=
+// GET /api/geography/zones?taId=&districtId=&regionId=
 export const getZones = async (req, res, next) => {
   try {
-    const { taId } = req.query;
+    const { taId, districtId, regionId } = req.query;
 
-    // CCW and nurses only see zones they are allocated to
-    // Admin and DHO see all
     const isRestricted = ["CCW", "NURSE"].includes(req.user.role);
+
+    // Build cascading where clause
+    let taFilter = {};
+    if (taId) {
+      taFilter = { taId };
+    } else if (districtId) {
+      taFilter = { ta: { districtId } };
+    } else if (regionId) {
+      taFilter = { ta: { district: { regionId } } };
+    }
+
+    // Facility scoping — non-admin users only see zones within their facility's geography
+    let facilityFilter = {};
+    if (req.user.role !== "ADMIN" && req.user.facilityId) {
+      const facility = await prisma.facility.findUnique({
+        where: { id: req.user.facilityId },
+        select: { districtId: true, taId: true },
+      });
+      if (facility?.taId) {
+        facilityFilter = { taId: facility.taId };
+      } else if (facility?.districtId) {
+        facilityFilter = { ta: { districtId: facility.districtId } };
+      }
+    }
 
     const zones = await prisma.zone.findMany({
       where: {
-        ...(taId ? { taId } : {}),
-        ...(isRestricted && req.user.zoneIds.length > 0
+        ...taFilter,
+        ...facilityFilter,
+        ...(isRestricted && req.user.zoneIds?.length > 0
           ? { id: { in: req.user.zoneIds } }
           : {}),
       },
