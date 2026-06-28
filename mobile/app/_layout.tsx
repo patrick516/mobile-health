@@ -14,7 +14,7 @@ import Toast from "react-native-toast-message";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { COLORS, SIZES } from "../constants/theme";
 import { useAppStore } from "../src/store";
-import { initDb, resetDatabase } from "../src/db/schema";
+import { initDb, resetDatabase, backfillSyncedFlags } from "../src/db/schema";
 import {
   cleanOrphanedRecords,
   debugPendingRecords,
@@ -37,6 +37,15 @@ export default function RootLayout() {
     try {
       await initDb();
       console.log("[DB] ✅ Database initialized successfully");
+
+      // One-time catch-up: fixes any household/member/etc. row whose
+      // sync_queue entry was already confirmed before markRecordTablesSynced
+      // existed, so detail screens stop showing "Pending Sync" forever.
+      try {
+        await backfillSyncedFlags();
+      } catch (backfillError) {
+        console.error("[DB] Backfill error:", backfillError);
+      }
 
       // Clean sync queue
       try {

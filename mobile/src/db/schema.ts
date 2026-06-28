@@ -12,10 +12,11 @@ export const getDb = async (): Promise<SQLite.SQLiteDatabase> => {
   if (!db) {
     try {
       isInitializing = true;
-      db = await SQLite.openDatabaseAsync("mobilehealth.db");
-      await db.execAsync(
+      const rawDb = await SQLite.openDatabaseAsync("mobilehealth.db");
+      await rawDb.execAsync(
         "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;",
       );
+      db = wrapWithQueue(rawDb);
       console.log("[DB] Database opened successfully");
     } catch (error) {
       console.error("[DB] Failed to open database:", error);
@@ -26,6 +27,34 @@ export const getDb = async (): Promise<SQLite.SQLiteDatabase> => {
   }
   return db;
 };
+
+// ─── Serialize concurrent statement execution ──────────────────────
+// expo-sqlite on Android has thrown native NullPointerExceptions in
+// prepareAsync when two callers issue statements on the same connection
+// at the same moment (e.g. background sync pull running while a screen
+// mounts and queries at the same time). This wraps the four async query
+// methods so every call — from any of the ~50 getDb() call sites across
+// the app — runs strictly one after another, in the order requested.
+// Nothing about the returned object's shape or usage changes; every
+// existing call site keeps working exactly as written.
+function wrapWithQueue(rawDb: SQLite.SQLiteDatabase): SQLite.SQLiteDatabase {
+  let queue: Promise<any> = Promise.resolve();
+  const serialize = <T extends (...args: any[]) => Promise<any>>(fn: T): T => {
+    return ((...args: any[]) => {
+      const run = () => fn.apply(rawDb, args);
+      const result = queue.then(run, run);
+      queue = result.catch(() => {});
+      return result;
+    }) as T;
+  };
+
+  rawDb.runAsync = serialize(rawDb.runAsync.bind(rawDb));
+  rawDb.getAllAsync = serialize(rawDb.getAllAsync.bind(rawDb));
+  rawDb.getFirstAsync = serialize(rawDb.getFirstAsync.bind(rawDb));
+  rawDb.execAsync = serialize(rawDb.execAsync.bind(rawDb));
+
+  return rawDb;
+}
 
 export const initDb = async (): Promise<void> => {
   try {
@@ -61,7 +90,9 @@ export const initDb = async (): Promise<void> => {
     await addColumnIfMissing("households", "consent_signature_url", "TEXT");
     await addColumnIfMissing("members", "national_id", "TEXT");
     await addColumnIfMissing("cached_users", "facility", "TEXT DEFAULT NULL");
-
+    // Needed for same-zone visibility + "Added by X" attribution label
+    await addColumnIfMissing("households", "registered_by_user_id", "TEXT");
+    await addColumnIfMissing("households", "registered_by_name", "TEXT");
     await database.execAsync(`
       CREATE TABLE IF NOT EXISTS sync_queue (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -286,7 +317,45 @@ export const initDb = async (): Promise<void> => {
     throw err;
   }
 };
+// ─── ONE-TIME BACKFILL ──────────────────────────────────────────────
+// Before markRecordTablesSynced existed, confirmed sync_queue records
+// never propagated synced=1 onto their actual table (households,
+// members, etc). This catches anything stuck in that state. Safe to
+// run on every app start — it only touches rows that are still 0.
+export const backfillSyncedFlags = async (): Promise<void> => {
+  try {
+    const database = await getDb();
+    const tableByType: Record<string, string> = {
+      HOUSEHOLD: "households",
+      MEMBER: "members",
+      VISIT: "visits",
+      REFERRAL: "referrals",
+      IMMUNISATION: "immunisations",
+      DRUG_DISPENSE: "drug_dispenses",
+      STOCK_REQUEST: "stock_requests",
+      ANC_VISIT: "anc_visits",
+    };
 
+    for (const [type, table] of Object.entries(tableByType)) {
+      const result: any = await database.runAsync(
+        `UPDATE ${table} SET synced = 1
+         WHERE synced = 0
+         AND local_id IN (
+           SELECT local_id FROM sync_queue
+           WHERE record_type = ? AND synced = 1
+         )`,
+        [type],
+      );
+      if (result?.changes > 0) {
+        console.log(
+          `[DB] Backfilled ${result.changes} synced flag(s) on ${table}`,
+        );
+      }
+    }
+  } catch (err) {
+    console.error("[DB] Backfill error:", err);
+  }
+};
 // ─── RESET DATABASE ──────────────────────────────────────────────
 export const resetDatabase = async (): Promise<void> => {
   try {

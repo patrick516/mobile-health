@@ -416,8 +416,9 @@ export default function AddHouseholdScreen() {
           consent_given, consent_signature_url, household_number,
           structure_type, water_source, latrine_present, handwashing_facility,
           distance_to_facility, mosquito_nets, number_of_rooms,
-          landmark, gps_lat, gps_lng, status, synced
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`,
+          landmark, gps_lat, gps_lng, status, synced,
+          registered_by_user_id, registered_by_name
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?)`,
         [
           localId,
           localId,
@@ -444,9 +445,10 @@ export default function AddHouseholdScreen() {
           gpsLat,
           gpsLng,
           "ACTIVE",
+          user?.id || null,
+          user?.fullName || null,
         ],
       );
-
       const netState = await NetInfo.fetch();
 
       if (netState.isConnected) {

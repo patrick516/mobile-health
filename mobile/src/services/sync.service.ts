@@ -1,10 +1,57 @@
 import NetInfo from "@react-native-community/netinfo";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getPending, markSynced, incrementRetry } from "../db/sync-queue";
+
 import api from "./api";
 import { getDb } from "../db/schema";
 import * as Crypto from "expo-crypto";
 
+const TABLE_BY_TYPE: Record<string, string> = {
+  HOUSEHOLD: "households",
+  MEMBER: "members",
+  VISIT: "visits",
+  REFERRAL: "referrals",
+  IMMUNISATION: "immunisations",
+  DRUG_DISPENSE: "drug_dispenses",
+  STOCK_REQUEST: "stock_requests",
+  ANC_VISIT: "anc_visits",
+  // VILLAGE has no local "synced" column on the villages table — skip it
+};
+
+// After the sync_queue confirms a batch, mirror "synced = 1" onto the
+// actual record table too, since detail screens read that column directly
+// and never look at sync_queue.
+const markRecordTablesSynced = async (
+  batch: { type: string; localId: string }[],
+  confirmedLocalIds: string[],
+) => {
+  const db = await getDb();
+  const confirmedSet = new Set(confirmedLocalIds);
+
+  // Group confirmed localIds by table, since each type writes to a
+  // different table and we want one UPDATE per table, not one per record.
+  const idsByTable: Record<string, string[]> = {};
+  for (const record of batch) {
+    if (!confirmedSet.has(record.localId)) continue;
+    const table = TABLE_BY_TYPE[record.type];
+    if (!table) continue;
+    if (!idsByTable[table]) idsByTable[table] = [];
+    idsByTable[table].push(record.localId);
+  }
+
+  for (const [table, ids] of Object.entries(idsByTable)) {
+    if (ids.length === 0) continue;
+    const placeholders = ids.map(() => "?").join(",");
+    try {
+      await db.runAsync(
+        `UPDATE ${table} SET synced = 1 WHERE local_id IN (${placeholders})`,
+        ids,
+      );
+    } catch (err) {
+      console.error(`[SYNC] Failed to mark ${table} synced:`, err);
+    }
+  }
+};
 // Pull immunisation schedules, drug stock and referral feedback from server
 const pullFromServer = async () => {
   try {
@@ -344,6 +391,12 @@ export const runSync = async (): Promise<{
 
           if (confirmed?.length > 0) {
             await markSynced(confirmed);
+            // markSynced only updates sync_queue.synced — the actual record
+            // tables (households/members/visits/etc.) have their own synced
+            // column that the queue path never touches, unlike the immediate
+            // online-save path which sets it directly. Mirror that here so
+            // detail screens stop showing "Pending Sync" after a confirmed sync.
+            await markRecordTablesSynced(batch, confirmed);
             totalSynced += confirmed.length;
           }
 

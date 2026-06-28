@@ -37,6 +37,8 @@ interface Household {
   mosquito_nets?: string;
   riskLevel?: RiskLevel;
   riskScore?: number;
+  registered_by_user_id?: string;
+  registered_by_name?: string;
 }
 
 export default function HouseholdsScreen() {
@@ -45,25 +47,50 @@ export default function HouseholdsScreen() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const user = useAppStore((s) => s.user);
+
   const loadHouseholds = useCallback(async (searchTerm = "") => {
     try {
       const db = await getDb();
+
+      // Same-zone visibility: a CCW only sees households in zone(s) they're
+      // allocated to — never cross-zone, even if local SQLite holds other data.
+      const myZoneNames: string[] =
+        user?.zoneAllocations
+          ?.map((za: any) => za.zone?.name)
+          .filter(Boolean) || [];
+
+      if (myZoneNames.length === 0) {
+        // Not allocated to any zone — show nothing, same fail-safe as backend
+        setHouseholds([]);
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+
+      const zonePlaceholders = myZoneNames.map(() => "?").join(",");
+
       const query = searchTerm
         ? `SELECT h.*, COUNT(m.id) as member_count
            FROM households h
            LEFT JOIN members m ON m.household_id = h.id AND m.status = 'ACTIVE'
-           WHERE h.status = 'ACTIVE'
+           WHERE h.status = 'ACTIVE' AND h.zone_name IN (${zonePlaceholders})
            AND (h.head_of_household_name LIKE ? OR h.household_number LIKE ? OR h.village_name LIKE ?)
            GROUP BY h.id ORDER BY h.created_at DESC`
         : `SELECT h.*, COUNT(m.id) as member_count
            FROM households h
            LEFT JOIN members m ON m.household_id = h.id AND m.status = 'ACTIVE'
-           WHERE h.status = 'ACTIVE'
+           WHERE h.status = 'ACTIVE' AND h.zone_name IN (${zonePlaceholders})
            GROUP BY h.id ORDER BY h.created_at DESC`;
 
       const params = searchTerm
-        ? [`%${searchTerm}%`, `%${searchTerm}%`, `%${searchTerm}%`]
-        : [];
+        ? [
+            ...myZoneNames,
+            `%${searchTerm}%`,
+            `%${searchTerm}%`,
+            `%${searchTerm}%`,
+          ]
+        : [...myZoneNames];
       const rows = await db.getAllAsync<Household>(query, params);
 
       // Calculate risk locally for each household using SQLite data
@@ -198,6 +225,19 @@ export default function HouseholdsScreen() {
           <Ionicons name="location-outline" size={12} /> {item.village_name} ·{" "}
           {item.zone_name}
         </Text>
+        {item.registered_by_user_id &&
+          item.registered_by_user_id !== user?.id && (
+            <View style={styles.addedByBadge}>
+              <Ionicons
+                name="person-outline"
+                size={10}
+                color={COLORS.textMuted}
+              />
+              <Text style={styles.addedByText}>
+                Added by {item.registered_by_name || "another CCW"}
+              </Text>
+            </View>
+          )}
         {item.riskLevel && (
           <View
             style={[
@@ -444,4 +484,16 @@ const styles = StyleSheet.create({
     marginTop: SIZES.xl,
   },
   emptyBtnText: { color: COLORS.white, fontWeight: "bold" },
+
+  addedByBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 4,
+  },
+  addedByText: {
+    fontSize: 10,
+    color: COLORS.textMuted,
+    fontStyle: "italic",
+  },
 });
