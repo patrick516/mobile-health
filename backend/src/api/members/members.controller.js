@@ -80,6 +80,22 @@ export const getMember = async (req, res, next) => {
       return res
         .status(404)
         .json({ success: false, message: "Member not found." });
+
+    // ── Enforce zone/TA/district scoping ──
+    if (req.user.scopeLevel !== "ALL") {
+      const scope = buildVillageScope(req.user);
+      const allowed = await prisma.householdMember.findFirst({
+        where: { id: member.id, household: { village: scope } },
+        select: { id: true },
+      });
+      if (!allowed) {
+        return res.status(403).json({
+          success: false,
+          message: "You do not have access to this member.",
+        });
+      }
+    }
+
     res.json({ success: true, data: member });
   } catch (err) {
     next(err);

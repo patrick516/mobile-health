@@ -17,6 +17,7 @@ import Reports from "./pages/reports/Reports";
 import Security from "./pages/admin/Security";
 import RelocatedHouseholds from "./pages/admin/RelocatedHouseholds";
 import FacilitySetup from "./pages/admin/FacilitySetup";
+import ChangePin from "./pages/auth/ChangePin";
 
 // function ProtectedRoute({ children }: { children: React.ReactNode }) {
 //   const token = useAuthStore((s) => s.token);
@@ -54,6 +55,7 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/facility-setup" element={<FacilitySetup />} />
+        <Route path="/change-pin" element={<ChangePin />} />
         <Route
           path="/"
           element={

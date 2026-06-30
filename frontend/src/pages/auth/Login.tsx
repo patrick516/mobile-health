@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "../../store/auth.store";
 import api from "../../services/api";
 
@@ -9,7 +9,9 @@ export default function Login() {
   const [phone, setPhone] = useState("");
   const [pin, setPin] = useState("");
   const [loading, setLoading] = useState(false);
+  const location = useLocation();
   const [error, setError] = useState("");
+  const [successMsg] = useState(location.state?.message || "");
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,6 +24,11 @@ export default function Login() {
         phoneNumber: phone.trim(),
         pin: pin.trim(),
       });
+      // Check if PIN reset is required before issuing session
+      if (res.data.mustChangePin) {
+        navigate("/change-pin", { state: res.data.data });
+        return;
+      }
       const { token, user } = res.data.data;
       setAuth(user, token);
       navigate("/");
@@ -59,6 +66,11 @@ export default function Login() {
             Enter your phone number and PIN
           </p>
 
+          {successMsg && (
+            <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm mb-4">
+              {successMsg}
+            </div>
+          )}
           {error && (
             <div
               className={`border px-4 py-3 rounded-lg text-sm mb-4 ${
