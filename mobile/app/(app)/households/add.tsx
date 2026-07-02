@@ -40,6 +40,9 @@ import {
   WATER_SOURCES,
   STRUCTURE_TYPES,
   DISTANCE_OPTIONS,
+  WALL_MATERIALS,
+  ROOF_MATERIALS,
+  FLOOR_TYPES,
 } from "../../../constants/diseases";
 import NetInfo from "@react-native-community/netinfo";
 
@@ -104,6 +107,10 @@ export default function AddHouseholdScreen() {
   );
   const [thumbprintCaptured, setThumbprintCaptured] = useState(false);
   const [structureType, setStructureType] = useState("");
+  const [wallMaterial, setWallMaterial] = useState("");
+  const [roofMaterial, setRoofMaterial] = useState("");
+  const [floorType, setFloorType] = useState("");
+  const [hasElectricity, setHasElectricity] = useState(false);
   const [waterSource, setWaterSource] = useState("");
   const [latrinePresent, setLatrinePresent] = useState(false);
   const [handwashing, setHandwashing] = useState(false);
@@ -111,7 +118,6 @@ export default function AddHouseholdScreen() {
   const [mosquitoNets, setMosquitoNets] = useState("");
   const [numberOfRooms, setNumberOfRooms] = useState("");
   const [householdPhoto, setHouseholdPhoto] = useState<string | null>(null);
-
   const [saving, setSaving] = useState(false);
   const justSavedRef = useRef(false);
 
@@ -156,6 +162,10 @@ export default function AddHouseholdScreen() {
     if (draft.headName) setHeadName(draft.headName);
     if (draft.headPhone) setHeadPhone(draft.headPhone);
     if (draft.structureType) setStructureType(draft.structureType);
+    if (draft.wallMaterial) setWallMaterial(draft.wallMaterial);
+    if (draft.roofMaterial) setRoofMaterial(draft.roofMaterial);
+    if (draft.floorType) setFloorType(draft.floorType);
+    if (draft.hasElectricity) setHasElectricity(draft.hasElectricity);
     if (draft.waterSource) setWaterSource(draft.waterSource);
     if (draft.latrinePresent) setLatrinePresent(draft.latrinePresent);
     if (draft.handwashing) setHandwashing(draft.handwashing);
@@ -181,6 +191,10 @@ export default function AddHouseholdScreen() {
         headName,
         headPhone,
         structureType,
+        wallMaterial,
+        roofMaterial,
+        floorType,
+        hasElectricity,
         waterSource,
         latrinePresent,
         handwashing,
@@ -414,11 +428,12 @@ export default function AddHouseholdScreen() {
           id, local_id, village_id, village_name, zone_name, ta_name,
           head_of_household_name, head_phone, head_national_id,
           consent_given, consent_signature_url, household_number,
-          structure_type, water_source, latrine_present, handwashing_facility,
+          structure_type, wall_material, roof_material, floor_type,
+          has_electricity, water_source, latrine_present, handwashing_facility,
           distance_to_facility, mosquito_nets, number_of_rooms,
           landmark, gps_lat, gps_lng, status, synced,
           registered_by_user_id, registered_by_name
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?)`,
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?)`,
         [
           localId,
           localId,
@@ -434,7 +449,11 @@ export default function AddHouseholdScreen() {
             ? "THUMBPRINT_VERIFIED"
             : signaturePath || null,
           idPreview,
-          structureType,
+          structureType || wallMaterial,
+          wallMaterial || null,
+          roofMaterial || null,
+          floorType || null,
+          hasElectricity ? 1 : 0,
           waterSource,
           latrinePresent ? 1 : 0,
           handwashing ? 1 : 0,
@@ -462,7 +481,11 @@ export default function AddHouseholdScreen() {
             consentGiven,
             consentSignatureUrl: signaturePath || null,
             householdNumber: idPreview,
-            structureType,
+            structureType: structureType || wallMaterial,
+            wallMaterial: wallMaterial || null,
+            roofMaterial: roofMaterial || null,
+            floorType: floorType || null,
+            hasElectricity,
             waterSource,
             latrinePresent,
             handwashingFacility: handwashing,
@@ -516,7 +539,11 @@ export default function AddHouseholdScreen() {
             consentGiven,
             consentSignatureUrl: signaturePath || null,
             householdNumber: idPreview,
-            structureType,
+            structureType: structureType || wallMaterial,
+            wallMaterial: wallMaterial || null,
+            roofMaterial: roofMaterial || null,
+            floorType: floorType || null,
+            hasElectricity,
             waterSource,
             latrinePresent,
             handwashingFacility: handwashing,
@@ -538,7 +565,11 @@ export default function AddHouseholdScreen() {
           consentGiven,
           consentSignatureUrl: signaturePath || null,
           householdNumber: idPreview,
-          structureType,
+          structureType: structureType || wallMaterial,
+          wallMaterial: wallMaterial || null,
+          roofMaterial: roofMaterial || null,
+          floorType: floorType || null,
+          hasElectricity,
           waterSource,
           latrinePresent,
           handwashingFacility: handwashing,
@@ -632,7 +663,8 @@ export default function AddHouseholdScreen() {
     if (step === 3)
       return (
         headName.trim() !== "" &&
-        structureType !== "" &&
+        wallMaterial !== "" &&
+        roofMaterial !== "" &&
         waterSource !== "" &&
         distanceToFacility !== ""
       );
@@ -1198,14 +1230,38 @@ export default function AddHouseholdScreen() {
               keyboardType="phone-pad"
             />
 
-            <Text style={styles.label}>Structure Type *</Text>
+            <Text style={styles.label}>Wall Material *</Text>
             <View style={styles.optionGrid}>
-              {STRUCTURE_TYPES.map((s) => (
+              {WALL_MATERIALS.map((s) => (
                 <Opt
                   key={s.code}
                   label={language === "en" ? s.labelEn : s.labelNy}
-                  selected={structureType === s.code}
-                  onPress={() => setStructureType(s.code)}
+                  selected={wallMaterial === s.code}
+                  onPress={() => setWallMaterial(s.code)}
+                />
+              ))}
+            </View>
+
+            <Text style={styles.label}>Roof Material *</Text>
+            <View style={styles.optionGrid}>
+              {ROOF_MATERIALS.map((s) => (
+                <Opt
+                  key={s.code}
+                  label={language === "en" ? s.labelEn : s.labelNy}
+                  selected={roofMaterial === s.code}
+                  onPress={() => setRoofMaterial(s.code)}
+                />
+              ))}
+            </View>
+
+            <Text style={styles.label}>Floor Type</Text>
+            <View style={styles.optionGrid}>
+              {FLOOR_TYPES.map((s) => (
+                <Opt
+                  key={s.code}
+                  label={language === "en" ? s.labelEn : s.labelNy}
+                  selected={floorType === s.code}
+                  onPress={() => setFloorType(s.code)}
                 />
               ))}
             </View>
@@ -1246,6 +1302,12 @@ export default function AddHouseholdScreen() {
                 sub: "With soap available?",
                 val: handwashing,
                 set: setHandwashing,
+              },
+              {
+                label: "Electricity",
+                sub: "Does the household have electricity?",
+                val: hasElectricity,
+                set: setHasElectricity,
               },
             ].map((sw) => (
               <View key={sw.label} style={styles.switchRow}>
@@ -1317,10 +1379,30 @@ export default function AddHouseholdScreen() {
                 </Text>
               </View>
               <View style={styles.reviewRow}>
-                <Text style={styles.reviewKey}>Water Source</Text>
+                <Text style={styles.reviewKey}>Wall Material</Text>
                 <Text style={styles.reviewVal}>
-                  {WATER_SOURCES.find((w) => w.code === waterSource)?.labelEn ||
+                  {WALL_MATERIALS.find((w) => w.code === wallMaterial)
+                    ?.labelEn || "-"}
+                </Text>
+              </View>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewKey}>Roof Material</Text>
+                <Text style={styles.reviewVal}>
+                  {ROOF_MATERIALS.find((r) => r.code === roofMaterial)
+                    ?.labelEn || "-"}
+                </Text>
+              </View>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewKey}>Floor Type</Text>
+                <Text style={styles.reviewVal}>
+                  {FLOOR_TYPES.find((f) => f.code === floorType)?.labelEn ||
                     "-"}
+                </Text>
+              </View>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewKey}>Electricity</Text>
+                <Text style={styles.reviewVal}>
+                  {hasElectricity ? "Yes" : "No"}
                 </Text>
               </View>
               <View style={styles.reviewRow}>

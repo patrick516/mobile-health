@@ -93,6 +93,15 @@ export const initDb = async (): Promise<void> => {
     // Needed for same-zone visibility + "Added by X" attribution label
     await addColumnIfMissing("households", "registered_by_user_id", "TEXT");
     await addColumnIfMissing("households", "registered_by_name", "TEXT");
+    // New structure fields
+    await addColumnIfMissing("households", "wall_material", "TEXT");
+    await addColumnIfMissing("households", "roof_material", "TEXT");
+    await addColumnIfMissing("households", "floor_type", "TEXT");
+    await addColumnIfMissing(
+      "households",
+      "has_electricity",
+      "INTEGER DEFAULT 0",
+    );
     await database.execAsync(`
       CREATE TABLE IF NOT EXISTS sync_queue (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -118,6 +127,10 @@ export const initDb = async (): Promise<void> => {
         consent_signature_url TEXT,
         household_number TEXT,
         structure_type TEXT,
+        wall_material TEXT,
+        roof_material TEXT,
+        floor_type TEXT,
+        has_electricity INTEGER DEFAULT 0,
         water_source TEXT,
         latrine_present INTEGER DEFAULT 0,
         latrine_type TEXT,

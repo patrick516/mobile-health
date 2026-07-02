@@ -184,6 +184,11 @@ export const WATER_SOURCES = [
     labelEn: "Unprotected Well",
     labelNy: "Chitsime Choipa",
   },
+  {
+    code: "RAIN_WATER",
+    labelEn: "Rain Water Harvesting",
+    labelNy: "Madzi a Mvula",
+  },
   { code: "OTHER", labelEn: "Other", labelNy: "Ena" },
 ];
 
@@ -192,6 +197,33 @@ export const STRUCTURE_TYPES = [
   { code: "MUD", labelEn: "Mud", labelNy: "Dothi" },
   { code: "IRON_SHEET", labelEn: "Iron Sheet", labelNy: "Zingwe" },
   { code: "GRASS_THATCH", labelEn: "Grass Thatch", labelNy: "Udzu" },
+  { code: "OTHER", labelEn: "Other", labelNy: "Ena" },
+];
+
+export const WALL_MATERIALS = [
+  { code: "BRICK", labelEn: "Brick", labelNy: "Njerwa" },
+  { code: "MUD_CLAY", labelEn: "Mud / Clay", labelNy: "Dothi" },
+  { code: "WOOD_TIMBER", labelEn: "Wood / Timber", labelNy: "Mtengo" },
+  { code: "IRON_SHEET", labelEn: "Iron Sheet", labelNy: "Zingwe" },
+  { code: "OTHER", labelEn: "Other", labelNy: "Ena" },
+];
+
+export const ROOF_MATERIALS = [
+  { code: "IRON_SHEET", labelEn: "Iron Sheet", labelNy: "Zingwe" },
+  { code: "GRASS_THATCH", labelEn: "Grass Thatch", labelNy: "Udzu" },
+  { code: "TILES", labelEn: "Tiles", labelNy: "Matayala" },
+  {
+    code: "PLASTIC_TARPAULIN",
+    labelEn: "Plastic / Tarpaulin",
+    labelNy: "Talapu",
+  },
+  { code: "OTHER", labelEn: "Other", labelNy: "Ena" },
+];
+
+export const FLOOR_TYPES = [
+  { code: "CEMENT", labelEn: "Cement", labelNy: "Sementi" },
+  { code: "MUD_EARTH", labelEn: "Mud / Earth", labelNy: "Dothi" },
+  { code: "TILES", labelEn: "Tiles", labelNy: "Matayala" },
   { code: "OTHER", labelEn: "Other", labelNy: "Ena" },
 ];
 

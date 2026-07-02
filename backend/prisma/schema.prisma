@@ -24,12 +24,36 @@ enum StructureType {
   OTHER
 }
 
+enum WallMaterial {
+  BRICK
+  MUD_CLAY
+  WOOD_TIMBER
+  IRON_SHEET
+  OTHER
+}
+
+enum RoofMaterial {
+  IRON_SHEET
+  GRASS_THATCH
+  TILES
+  PLASTIC_TARPAULIN
+  OTHER
+}
+
+enum FloorType {
+  CEMENT
+  MUD_EARTH
+  TILES
+  OTHER
+}
+
 enum WaterSource {
   BOREHOLE
   RIVER
   PIPED
   PROTECTED_WELL
   UNPROTECTED_WELL
+  RAIN_WATER
   OTHER
 }
 
@@ -302,6 +326,10 @@ model Household {
   headOfHouseholdName    String             @map("head_of_household_name")
   headPhone              String?            @map("head_phone")
   structureType          StructureType      @map("structure_type")
+  wallMaterial           WallMaterial?      @map("wall_material")
+  roofMaterial           RoofMaterial?      @map("roof_material")
+  floorType              FloorType?         @map("floor_type")
+  hasElectricity         Boolean            @default(false) @map("has_electricity")
   waterSource            WaterSource        @map("water_source")
   latrinePresent         Boolean            @map("latrine_present")
   latrineType            LatrineType?       @map("latrine_type")

@@ -377,9 +377,30 @@ export default function HouseholdList() {
                       </span>
                     </div>
                     <div className="flex items-center gap-2 text-sm">
-                      <span className="text-gray-500">Structure:</span>
+                      <span className="text-gray-500">Wall:</span>
                       <span className="font-medium">
-                        {detail.structureType}
+                        {(detail as any).wallMaterial?.replace(/_/g, " ") ||
+                          detail.structureType ||
+                          "—"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-gray-500">Roof:</span>
+                      <span className="font-medium">
+                        {(detail as any).roofMaterial?.replace(/_/g, " ") ||
+                          "—"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-gray-500">Floor:</span>
+                      <span className="font-medium">
+                        {(detail as any).floorType?.replace(/_/g, " ") || "—"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-gray-500">Electricity:</span>
+                      <span className="font-medium">
+                        {(detail as any).hasElectricity ? "✅ Yes" : "❌ No"}
                       </span>
                     </div>
                     <div className="flex items-center gap-2 text-sm">
