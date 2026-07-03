@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import prisma from "../../config/db.js";
 
-// ─── USERS ────────────────────────────────────────────────────────────────────
+// ─── USERS
 export const getUsers = async (req, res, next) => {
   try {
     const { role, isActive } = req.query;
@@ -369,20 +369,44 @@ export const allocateUserToTA = async (req, res, next) => {
   }
 };
 
-// ─── FACILITIES
-// ─── FACILITIES
 export const getFacilities = async (req, res, next) => {
   try {
     const { facilityType, districtId, taId } = req.query;
+
+    // ─── SCOPE FOR ADMIN ───
+    let scopeFilter = {};
+    if (req.user.role === "ADMIN" && req.user.facilityId) {
+      const adminFacility = await prisma.facility.findUnique({
+        where: { id: req.user.facilityId },
+        select: { districtId: true, taId: true },
+      });
+      if (adminFacility?.districtId) {
+        scopeFilter = { districtId: adminFacility.districtId };
+      } else if (adminFacility?.taId) {
+        // If facility is at TA level, get the district from the TA
+        const ta = await prisma.traditionalAuthority.findUnique({
+          where: { id: adminFacility.taId },
+          select: { districtId: true },
+        });
+        if (ta?.districtId) {
+          scopeFilter = { districtId: ta.districtId };
+        }
+      }
+    }
+
     const facilities = await prisma.facility.findMany({
       where: {
         ...(facilityType ? { facilityType } : {}),
         ...(districtId ? { districtId } : {}),
         ...(taId ? { taId } : {}),
+        ...scopeFilter,
       },
       include: {
         district: { select: { id: true, name: true } },
         ta: { select: { id: true, name: true, districtId: true } },
+        parentDistrictHospital: {
+          select: { id: true, name: true },
+        },
       },
       orderBy: { name: "asc" },
     });
@@ -394,37 +418,140 @@ export const getFacilities = async (req, res, next) => {
 
 export const createFacility = async (req, res, next) => {
   try {
-    const { name, facilityType, districtId, taId, gpsLat, gpsLng } = req.body;
-    if (!name || !facilityType)
+    const {
+      name,
+      facilityType,
+      districtId,
+      taId,
+      gpsLat,
+      gpsLng,
+      parentDistrictHospitalId, // new field
+    } = req.body;
+
+    if (!name || !facilityType) {
       return res.status(400).json({
         success: false,
         message: "Facility name and type are required.",
       });
+    }
 
-    if (facilityType === "DISTRICT_HOSPITAL" && !districtId)
-      return res.status(400).json({
-        success: false,
-        message: "District is required for a District Hospital.",
+    // ─── DISTRICT HOSPITAL ──────────────────────────────
+    if (facilityType === "DISTRICT_HOSPITAL") {
+      if (!districtId) {
+        return res.status(400).json({
+          success: false,
+          message: "District is required for a District Hospital.",
+        });
+      }
+      const facility = await prisma.facility.create({
+        data: {
+          name,
+          facilityType,
+          districtId,
+          taId: null,
+          gpsLat: gpsLat || null,
+          gpsLng: gpsLng || null,
+        },
       });
+      return res.status(201).json({ success: true, data: facility });
+    }
 
-    if (["TA_HOSPITAL", "CLINIC"].includes(facilityType) && !taId)
-      return res.status(400).json({
-        success: false,
-        message:
-          "Traditional Authority is required for a TA Hospital or Clinic.",
+    // ─── TA HOSPITAL ──────────────────────────────────────
+    if (facilityType === "TA_HOSPITAL") {
+      // 1. Parent district hospital must be provided
+      if (!parentDistrictHospitalId) {
+        return res.status(400).json({
+          success: false,
+          message: "TA Hospital must be tied to a District Hospital.",
+        });
+      }
+
+      // 2. Validate parent exists and is a DISTRICT_HOSPITAL
+      const parent = await prisma.facility.findUnique({
+        where: { id: parentDistrictHospitalId },
+        select: { facilityType: true, districtId: true },
       });
+      if (!parent) {
+        return res.status(404).json({
+          success: false,
+          message: "District Hospital not found.",
+        });
+      }
+      if (parent.facilityType !== "DISTRICT_HOSPITAL") {
+        return res.status(400).json({
+          success: false,
+          message: "Parent facility must be a District Hospital.",
+        });
+      }
 
-    const facility = await prisma.facility.create({
-      data: {
-        name,
-        facilityType,
-        districtId: facilityType === "DISTRICT_HOSPITAL" ? districtId : null,
-        taId: ["TA_HOSPITAL", "CLINIC"].includes(facilityType) ? taId : null,
-        gpsLat: gpsLat || null,
-        gpsLng: gpsLng || null,
-      },
+      // 3. TA must be provided
+      if (!taId) {
+        return res.status(400).json({
+          success: false,
+          message: "Traditional Authority is required for a TA Hospital.",
+        });
+      }
+
+      // 4. TA must belong to the same district as the parent
+      const ta = await prisma.traditionalAuthority.findUnique({
+        where: { id: taId },
+        select: { districtId: true },
+      });
+      if (!ta) {
+        return res.status(404).json({
+          success: false,
+          message: "Traditional Authority not found.",
+        });
+      }
+      if (ta.districtId !== parent.districtId) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "The selected TA must be in the same district as the parent District Hospital.",
+        });
+      }
+
+      // 5. Create the TA Hospital
+      const facility = await prisma.facility.create({
+        data: {
+          name,
+          facilityType,
+          districtId: parent.districtId,
+          taId,
+          gpsLat: gpsLat || null,
+          gpsLng: gpsLng || null,
+          parentDistrictHospitalId,
+        },
+      });
+      return res.status(201).json({ success: true, data: facility });
+    }
+
+    // ─── CLINIC ──────────────────────────────────────────
+    if (facilityType === "CLINIC") {
+      if (!taId) {
+        return res.status(400).json({
+          success: false,
+          message: "Traditional Authority is required for a Clinic.",
+        });
+      }
+      const facility = await prisma.facility.create({
+        data: {
+          name,
+          facilityType,
+          districtId: null,
+          taId,
+          gpsLat: gpsLat || null,
+          gpsLng: gpsLng || null,
+        },
+      });
+      return res.status(201).json({ success: true, data: facility });
+    }
+
+    // Fallback (should never reach here)
+    return res.status(400).json({
+      success: false,
+      message: "Invalid facility type.",
     });
-    res.status(201).json({ success: true, data: facility });
   } catch (err) {
     next(err);
   }

@@ -442,6 +442,11 @@ model Facility {
   gpsLng       Float?        @map("gps_lng")
   createdAt    DateTime      @default(now()) @map("created_at")
 
+  // ─── NEW: Parent District Hospital for TA Hospitals ───
+  parentDistrictHospitalId String?   @map("parent_district_hospital_id")
+  parentDistrictHospital   Facility? @relation("DistrictHospitalTA", fields: [parentDistrictHospitalId], references: [id])
+  childTAHospitals         Facility[] @relation("DistrictHospitalTA")
+
   district  District?             @relation(fields: [districtId], references: [id])
   ta        TraditionalAuthority? @relation(fields: [taId], references: [id])
   referrals Referral[]

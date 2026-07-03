@@ -17,6 +17,7 @@ export default function Facilities() {
     facilityType: "",
     districtId: "",
     taId: "",
+    parentDistrictHospitalId: "",
   });
   const [error, setError] = useState("");
 
@@ -40,7 +41,13 @@ export default function Facilities() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-facilities"] });
       queryClient.invalidateQueries({ queryKey: ["facilities"] });
-      setForm({ name: "", facilityType: "", districtId: "", taId: "" });
+      setForm({
+        name: "",
+        facilityType: "",
+        districtId: "",
+        taId: "",
+        parentDistrictHospitalId: "",
+      });
       setError("");
     },
     onError: (err: any) =>
@@ -80,6 +87,7 @@ export default function Facilities() {
                 facilityType: val,
                 districtId: "",
                 taId: "",
+                parentDistrictHospitalId: "",
               }))
             }
             placeholder="Select type..."
@@ -104,10 +112,47 @@ export default function Facilities() {
           </div>
         )}
 
-        {["TA_HOSPITAL", "CLINIC"].includes(form.facilityType) && (
+        {form.facilityType === "TA_HOSPITAL" && (
+          <>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                Parent District Hospital *
+              </label>
+              <Select
+                value={form.parentDistrictHospitalId}
+                onChange={(val) =>
+                  setForm((p) => ({ ...p, parentDistrictHospitalId: val }))
+                }
+                placeholder="Select parent district hospital..."
+                options={(facilities || [])
+                  .filter((f: any) => f.facilityType === "DISTRICT_HOSPITAL")
+                  .map((f: any) => ({
+                    value: f.id,
+                    label: `${f.name} — ${f.district?.name || "No district"}`,
+                  }))}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                Traditional Authority *
+              </label>
+              <Select
+                value={form.taId}
+                onChange={(val) => setForm((p) => ({ ...p, taId: val }))}
+                placeholder="Select TA..."
+                options={(tas || []).map((t: any) => ({
+                  value: t.id,
+                  label: `${t.name} — ${t.district?.name}`,
+                }))}
+              />
+            </div>
+          </>
+        )}
+
+        {form.facilityType === "CLINIC" && (
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Traditional Authority
+              Traditional Authority *
             </label>
             <Select
               value={form.taId}
@@ -143,8 +188,9 @@ export default function Facilities() {
               createMutation.isPending ||
               !form.name ||
               (form.facilityType === "DISTRICT_HOSPITAL" && !form.districtId) ||
-              (["TA_HOSPITAL", "CLINIC"].includes(form.facilityType) &&
-                !form.taId)
+              (form.facilityType === "TA_HOSPITAL" &&
+                (!form.taId || !form.parentDistrictHospitalId)) ||
+              (form.facilityType === "CLINIC" && !form.taId)
             }
           >
             <Plus size={16} />
@@ -169,6 +215,11 @@ export default function Facilities() {
                 <p className="text-sm font-medium text-gray-900">{f.name}</p>
                 <p className="text-xs text-gray-500">
                   {f.district?.name || f.ta?.name || "No location set"}
+                  {f.parentDistrictHospital && (
+                    <span className="ml-2 text-teal-600">
+                      ← {f.parentDistrictHospital.name}
+                    </span>
+                  )}
                 </p>
               </div>
               <span className={typeColor[f.facilityType] ?? "badge-gray"}>

@@ -64,7 +64,7 @@ router.post("/allocations/ta", role("SUPER_ADMIN", "ADMIN"), allocateUserToTA);
 
 // Facilities — SUPER_ADMIN manages facilities
 router.get("/facilities", role("SUPER_ADMIN", "ADMIN"), getFacilities);
-router.post("/facilities", role("SUPER_ADMIN"), createFacility);
+router.post("/facilities", role("SUPER_ADMIN", "ADMIN"), createFacility);
 
 // Drugs — SUPER_ADMIN manages drug catalogue
 router.post("/drugs", role("SUPER_ADMIN"), createDrug);

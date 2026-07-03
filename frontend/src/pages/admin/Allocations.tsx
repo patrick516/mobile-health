@@ -378,7 +378,12 @@ export default function Allocations() {
                 placeholder="Select zone..."
                 options={
                   zones && zones.length > 0
-                    ? zones.map((z: any) => ({ value: z.id, label: z.name }))
+                    ? zones.map((z: any) => ({
+                        value: z.id,
+                        label: z.facilityName
+                          ? `${z.name} (${z.facilityName})`
+                          : z.name,
+                      }))
                     : [
                         {
                           value: "",

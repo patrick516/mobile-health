@@ -34,9 +34,25 @@ export const getTAs = async (req, res, next) => {
   try {
     const { districtId, regionId } = req.query;
 
-    // Facility scoping for non-admin users
+    // ─── SCOPE FOR ADMIN ───
     let facilityFilter = {};
-    if (req.user.role !== "ADMIN" && req.user.facilityId) {
+
+    // If user is ADMIN, restrict to their facility's district
+    if (req.user.role === "ADMIN" && req.user.facilityId) {
+      const facility = await prisma.facility.findUnique({
+        where: { id: req.user.facilityId },
+        select: { districtId: true, taId: true },
+      });
+      if (facility?.districtId) {
+        // ADMIN scoped to a district — show all TAs in that district
+        facilityFilter = { districtId: facility.districtId };
+      } else if (facility?.taId) {
+        // ADMIN scoped to a specific TA — show only that TA
+        facilityFilter = { id: facility.taId };
+      }
+    }
+    // For non-admin users, use existing scoping logic
+    else if (req.user.role !== "ADMIN" && req.user.facilityId) {
       const facility = await prisma.facility.findUnique({
         where: { id: req.user.facilityId },
         select: { districtId: true, taId: true },
@@ -68,14 +84,31 @@ export const getMyTAs = async (req, res, next) => {
   try {
     let where = {};
 
-    if (req.user.role === "ADMIN") {
-      where = {}; // sees all
-    } else if (req.user.scopeLevel === "DISTRICT" && req.user.districtId) {
+    // ─── ADMIN: scope to their district ───
+    if (req.user.role === "ADMIN" && req.user.facilityId) {
+      const facility = await prisma.facility.findUnique({
+        where: { id: req.user.facilityId },
+        select: { districtId: true, taId: true },
+      });
+      if (facility?.districtId) {
+        where = { districtId: facility.districtId };
+      } else if (facility?.taId) {
+        where = { id: facility.taId };
+      } else {
+        // Fallback: no scope
+        where = {};
+      }
+    }
+    // ─── DISTRICT_OFFICER: scope to their district ───
+    else if (req.user.scopeLevel === "DISTRICT" && req.user.districtId) {
       where = { districtId: req.user.districtId };
-    } else if (req.user.scopeLevel === "TA" && req.user.taIds.length > 0) {
+    }
+    // ─── NURSE or TA-level user ───
+    else if (req.user.scopeLevel === "TA" && req.user.taIds?.length > 0) {
       where = { id: { in: req.user.taIds } };
-    } else {
-      // CCW or unscoped user — no TA-level filtering applies to them
+    }
+    // ─── CCW or unscoped user ───
+    else {
       return res.json({ success: true, data: [] });
     }
 
@@ -89,7 +122,6 @@ export const getMyTAs = async (req, res, next) => {
     next(err);
   }
 };
-
 // GET /api/geography/zones?taId=&districtId=&regionId=
 export const getZones = async (req, res, next) => {
   try {
@@ -97,7 +129,6 @@ export const getZones = async (req, res, next) => {
 
     const isRestricted = ["CCW", "NURSE"].includes(req.user.role);
 
-    // Build cascading where clause
     let taFilter = {};
     if (taId) {
       taFilter = { taId };
@@ -107,7 +138,6 @@ export const getZones = async (req, res, next) => {
       taFilter = { ta: { district: { regionId } } };
     }
 
-    // Facility scoping — non-admin users only see zones within their facility's geography
     let facilityFilter = {};
     if (req.user.role !== "ADMIN" && req.user.facilityId) {
       const facility = await prisma.facility.findUnique({
@@ -129,10 +159,34 @@ export const getZones = async (req, res, next) => {
           ? { id: { in: req.user.zoneIds } }
           : {}),
       },
-      include: { ta: { include: { district: { include: { region: true } } } } },
+      include: {
+        ta: {
+          include: {
+            district: { include: { region: true } },
+            facilities: {
+              // ← New: pull facilities for this TA
+              where: {
+                facilityType: { in: ["TA_HOSPITAL", "CLINIC"] },
+              },
+              take: 1, // take the first one (or order by name)
+              orderBy: { name: "asc" },
+            },
+          },
+        },
+      },
       orderBy: { name: "asc" },
     });
-    res.json({ success: true, data: zones });
+
+    // Transform to add facilityName
+    const enrichedZones = zones.map((zone) => {
+      const facility = zone.ta?.facilities?.[0] || null;
+      return {
+        ...zone,
+        facilityName: facility?.name || null,
+      };
+    });
+
+    res.json({ success: true, data: enrichedZones });
   } catch (err) {
     next(err);
   }
