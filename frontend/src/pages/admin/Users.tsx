@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { UserPlus, UserX, KeyRound, Copy, Check } from "lucide-react";
 import api from "../../services/api";
 import { useAuthStore } from "../../store/auth.store";
+
 import Select from "../../components/ui/Select";
 
 interface User {
@@ -240,23 +241,21 @@ export default function Users() {
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                 Role
               </label>
-              <select
-                className="input"
+              <Select
                 value={form.role}
-                onChange={(e) =>
+                onChange={(val) =>
                   setForm((p) => ({
                     ...p,
-                    role: e.target.value,
+                    role: val,
                     facilityId: "",
                   }))
                 }
-              >
-                {ROLES.map((r) => (
-                  <option key={r} value={r}>
-                    {r.replace("_", " ")}
-                  </option>
-                ))}
-              </select>
+                placeholder="Select role..."
+                options={ROLES.map((r) => ({
+                  value: r,
+                  label: r.replace("_", " "),
+                }))}
+              />
             </div>
             {isMobileOnly && (
               <div className="col-span-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
@@ -273,25 +272,22 @@ export default function Users() {
                   <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                     Region
                   </label>
-                  <select
-                    className="input"
+                  <Select
                     value={form.regionId}
-                    onChange={(e) =>
+                    onChange={(val) =>
                       setForm((p) => ({
                         ...p,
-                        regionId: e.target.value,
+                        regionId: val,
                         districtId: "",
                         facilityId: "",
                       }))
                     }
-                  >
-                    <option value="">Select region...</option>
-                    {regions?.map((r: any) => (
-                      <option key={r.id} value={r.id}>
-                        {r.name}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Select region..."
+                    options={(regions || []).map((r: any) => ({
+                      value: r.id,
+                      label: r.name,
+                    }))}
+                  />
                 </div>
 
                 {form.regionId && (
@@ -299,24 +295,21 @@ export default function Users() {
                     <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                       District
                     </label>
-                    <select
-                      className="input"
+                    <Select
                       value={form.districtId}
-                      onChange={(e) =>
+                      onChange={(val) =>
                         setForm((p) => ({
                           ...p,
-                          districtId: e.target.value,
+                          districtId: val,
                           facilityId: "",
                         }))
                       }
-                    >
-                      <option value="">Select district...</option>
-                      {districts?.map((d: any) => (
-                        <option key={d.id} value={d.id}>
-                          {d.name}
-                        </option>
-                      ))}
-                    </select>
+                      placeholder="Select district..."
+                      options={(districts || []).map((d: any) => ({
+                        value: d.id,
+                        label: d.name,
+                      }))}
+                    />
                   </div>
                 )}
 
@@ -325,26 +318,28 @@ export default function Users() {
                     <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                       Facility
                     </label>
-                    <select
-                      className="input"
+                    <Select
                       value={form.facilityId}
-                      onChange={(e) =>
-                        setForm((p) => ({ ...p, facilityId: e.target.value }))
+                      onChange={(val) =>
+                        setForm((p) => ({ ...p, facilityId: val }))
                       }
-                    >
-                      <option value="">Select facility...</option>
-                      {facilities?.map((f: any) => (
-                        <option key={f.id} value={f.id}>
-                          {f.name} — {f.facilityType?.replace(/_/g, " ")}
-                        </option>
-                      ))}
-                      {(!facilities || facilities.length === 0) && (
-                        <option disabled value="">
-                          No facilities in this district — add one in Facilities
-                          first
-                        </option>
-                      )}
-                    </select>
+                      placeholder="Select facility..."
+                      options={
+                        facilities && facilities.length > 0
+                          ? facilities.map((f: any) => ({
+                              value: f.id,
+                              label: `${f.name} — ${f.facilityType?.replace(/_/g, " ")}`,
+                            }))
+                          : [
+                              {
+                                value: "",
+                                label:
+                                  "No facilities in this district — add one in Facilities first",
+                                disabled: true,
+                              },
+                            ]
+                      }
+                    />
                   </div>
                 )}
               </>
