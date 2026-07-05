@@ -1,6 +1,14 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { UserPlus, UserX, KeyRound, Copy, Check } from "lucide-react";
+import {
+  UserPlus,
+  UserX,
+  KeyRound,
+  Copy,
+  Check,
+  Eye,
+  EyeOff,
+} from "lucide-react";
 import api from "../../services/api";
 import { useAuthStore } from "../../store/auth.store";
 
@@ -24,12 +32,13 @@ export default function Users() {
   const [form, setForm] = useState({
     fullName: "",
     phoneNumber: "",
-    pin: "",
+    pin: "1234",
     role: "CCW",
     facilityId: "",
     regionId: "",
     districtId: "",
   });
+  const [showPin, setShowPin] = useState(false);
 
   const [resetTarget, setResetTarget] = useState<User | null>(null);
   const [resetResult, setResetResult] = useState<{
@@ -227,15 +236,24 @@ export default function Users() {
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                 PIN (4 digits)
               </label>
-              <input
-                className="input"
-                type="password"
-                maxLength={4}
-                value={form.pin}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, pin: e.target.value }))
-                }
-              />
+              <div className="relative">
+                <input
+                  className="input pr-10"
+                  type={showPin ? "text" : "password"}
+                  maxLength={4}
+                  value={form.pin}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, pin: e.target.value }))
+                  }
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPin((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  {showPin ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
