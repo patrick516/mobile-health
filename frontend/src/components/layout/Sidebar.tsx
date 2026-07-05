@@ -56,17 +56,18 @@ const NAV = [
     roles: ["ADMIN", "SUPER_ADMIN"],
   },
   {
-    to: "/admin/allocations",
-    icon: Network,
-    label: "Allocations",
-    roles: ["ADMIN", "SUPER_ADMIN"],
-  },
-  {
     to: "/admin/facilities",
     icon: Building2,
     label: "Facilities",
     roles: ["ADMIN", "SUPER_ADMIN"],
   },
+  {
+    to: "/admin/allocations",
+    icon: Network,
+    label: "Allocations",
+    roles: ["ADMIN", "SUPER_ADMIN"],
+  },
+
   {
     to: "/admin/security",
     icon: ShieldAlert,

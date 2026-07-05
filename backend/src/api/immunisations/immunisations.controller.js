@@ -13,8 +13,11 @@ export const getSchedules = async (req, res, next) => {
       ...(!memberId && hasScope
         ? { member: { household: { village: villageScope } } }
         : {}),
+      // CCW sees only schedules for members in their own registered households
+      ...(!memberId && req.user.role === "CCW"
+        ? { member: { household: { registeredByUserId: req.user.id } } }
+        : {}),
     };
-
     const schedules = await prisma.immunisationSchedule.findMany({
       where,
       include: {
@@ -67,6 +70,9 @@ export const getDue = async (req, res, next) => {
         member: {
           status: "ACTIVE",
           ...(hasScope ? { household: { village: villageScope } } : {}),
+          ...(req.user.role === "CCW"
+            ? { household: { registeredByUserId: req.user.id } }
+            : {}),
         },
       },
       include: {

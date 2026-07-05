@@ -9,7 +9,7 @@ import {
   RefreshControl,
   Alert,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { COLORS, SIZES, SHADOWS } from "../../../constants/theme";
 import { getDb } from "../../../src/db/schema";
@@ -51,18 +51,25 @@ const URGENCY_COLOR: Record<string, string> = {
 export default function ReferralsScreen() {
   const language = useAppStore((s) => s.language);
   const [referrals, setReferrals] = useState<Referral[]>([]);
-  const [filter, setFilter] = useState<"ALL" | "PENDING" | "COMPLETED">("ALL");
+  const [filter, setFilter] = useState<
+    "ALL" | "PENDING" | "COMPLETED" | "OVERDUE"
+  >("ALL");
+  const userId = useAppStore((s) => s.user?.id) as string;
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const db = await getDb();
+      const uid: string = userId || "";
       const rows = await db.getAllAsync<Referral>(
         `SELECT r.*, m.full_name as member_name
          FROM referrals r
          LEFT JOIN members m ON m.id = r.member_id
+         LEFT JOIN households h ON m.household_id = h.id
+         WHERE h.registered_by_user_id = ?
          ORDER BY r.created_at DESC`,
+        [uid],
       );
       setReferrals(rows);
     } catch (err) {
@@ -73,10 +80,11 @@ export default function ReferralsScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [load]);
-
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
   const markAsCompleted = async (referral: Referral) => {
     if (referral.status === "COMPLETED") {
       Alert.alert(

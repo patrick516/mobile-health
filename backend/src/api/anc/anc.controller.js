@@ -13,6 +13,10 @@ export const getAncSchedules = async (req, res, next) => {
         isPregnant: true,
         status: "ACTIVE",
         ...(hasScope ? { household: { village: villageScope } } : {}),
+        // CCW sees only ANC for members in their own registered households
+        ...(req.user.role === "CCW"
+          ? { household: { registeredByUserId: req.user.id } }
+          : {}),
       },
     };
 

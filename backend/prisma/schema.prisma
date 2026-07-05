@@ -255,8 +255,9 @@ model User {
   phoneNumber   String    @unique @map("phone_number")
   pinHash       String    @map("pin_hash")
   role          Role
-  facilityId    String?   @map("facility_id")
-  isActive      Boolean   @default(true) @map("is_active")
+ facilityId      String?  @map("facility_id")
+  isActive        Boolean  @default(true) @map("is_active")
+  mustChangePin   Boolean  @default(false) @map("must_change_pin")
   mustChangePin Boolean   @default(false) @map("must_change_pin")
   pinResetAt    DateTime? @map("pin_reset_at")
   pinResetById  String?   @map("pin_reset_by_id")

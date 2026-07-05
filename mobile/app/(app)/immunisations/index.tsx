@@ -8,7 +8,7 @@ import {
   StatusBar,
   RefreshControl,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { COLORS, SIZES, SHADOWS } from "../../../constants/theme";
 import { getDb } from "../../../src/db/schema";
@@ -34,11 +34,11 @@ export default function ImmunisationsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  const userId = useAppStore((s) => s.user?.id);
+
   const load = useCallback(async () => {
     try {
       const db = await getDb();
-
-      // DEBUG: Check what IDs exist
       const members = await db.getAllAsync(
         "SELECT id, local_id, full_name FROM members",
       );
@@ -51,6 +51,7 @@ export default function ImmunisationsScreen() {
       console.log("=== SCHEDULES IN DB ===");
       console.log(schedules);
 
+      const uid: string = userId || "";
       const rows = await db.getAllAsync<DueVaccine>(
         `SELECT
          s.id as schedule_id, s.member_id, s.vaccine_code,
@@ -60,7 +61,9 @@ export default function ImmunisationsScreen() {
        LEFT JOIN members m ON m.id = s.member_id
        LEFT JOIN households h ON h.id = m.household_id
        WHERE s.status IN ('DUE', 'OVERDUE')
+         AND h.registered_by_user_id = ?
        ORDER BY s.due_date ASC`,
+        [uid],
       );
       console.log("=== JOIN RESULT (should have member names) ===");
       console.log(
@@ -76,9 +79,11 @@ export default function ImmunisationsScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
 
   const filtered =
     filter === "ALL"

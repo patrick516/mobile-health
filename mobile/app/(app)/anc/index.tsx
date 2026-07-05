@@ -8,7 +8,7 @@ import {
   StatusBar,
   RefreshControl,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { COLORS, SIZES, SHADOWS } from "../../../constants/theme";
 import { getDb } from "../../../src/db/schema";
@@ -33,9 +33,12 @@ export default function ANCScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  const userId = useAppStore((s) => s.user?.id);
+
   const load = useCallback(async () => {
     try {
       const db = await getDb();
+      const uid: string = userId || "";
       const rows = await db.getAllAsync<AncRecord>(
         `SELECT
            a.id, a.member_id, a.anc_number, a.expected_date,
@@ -46,7 +49,9 @@ export default function ANCScreen() {
          LEFT JOIN members m ON m.id = a.member_id
          LEFT JOIN households h ON h.id = m.household_id
          WHERE m.is_pregnant = 1
+           AND h.registered_by_user_id = ?
          ORDER BY a.expected_date ASC`,
+        [uid],
       );
       setRecords(rows);
     } catch (err) {
@@ -56,11 +61,11 @@ export default function ANCScreen() {
       setRefreshing(false);
     }
   }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
   const formatDate = (d: string) =>
     d
       ? new Date(d).toLocaleDateString("en-GB", {

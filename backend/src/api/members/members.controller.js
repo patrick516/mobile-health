@@ -41,6 +41,10 @@ export const getMembers = async (req, res, next) => {
         ...(!householdId && hasScope
           ? { household: { village: villageScope } }
           : {}),
+        // CCW sees only members in households they registered
+        ...(!householdId && req.user.role === "CCW"
+          ? { household: { registeredByUserId: req.user.id } }
+          : {}),
       },
       include: {
         household: { include: { village: true } },

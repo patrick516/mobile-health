@@ -91,7 +91,7 @@ export const initDb = async (): Promise<void> => {
     await addColumnIfMissing("members", "national_id", "TEXT");
     await addColumnIfMissing("cached_users", "facility", "TEXT DEFAULT NULL");
     // Needed for same-zone visibility + "Added by X" attribution label
-    await addColumnIfMissing("households", "registered_by_user_id", "TEXT");
+    await addColumnIfMissing("notifications", "user_id", "TEXT");
     await addColumnIfMissing("households", "registered_by_name", "TEXT");
     // New structure fields
     await addColumnIfMissing("households", "wall_material", "TEXT");
@@ -309,6 +309,7 @@ export const initDb = async (): Promise<void> => {
         message TEXT NOT NULL,
         type TEXT NOT NULL,
         related_id TEXT,
+        user_id TEXT,
         is_read INTEGER DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );

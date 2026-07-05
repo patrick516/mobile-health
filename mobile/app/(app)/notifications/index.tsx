@@ -30,13 +30,15 @@ export default function NotificationsScreen() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
+  const userId = useAppStore((s) => s.user?.id);
+
   const loadNotifications = async () => {
     try {
       const db = await getDb();
-
-      // Get all notifications from the notifications table
+      const uid: string = userId || "";
       const rows = await db.getAllAsync<Notification>(
-        `SELECT * FROM notifications ORDER BY created_at DESC`,
+        `SELECT * FROM notifications WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC`,
+        [uid],
       );
 
       console.log("=== LOADED NOTIFICATIONS ===", rows.length);

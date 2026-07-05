@@ -81,6 +81,7 @@ export const createUser = async (req, res, next) => {
         pinHash,
         role,
         facilityId: assignedFacilityId,
+        mustChangePin: true,
       },
       select: {
         id: true,

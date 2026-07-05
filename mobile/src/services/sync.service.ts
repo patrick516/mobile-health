@@ -4,6 +4,7 @@ import { getPending, markSynced, incrementRetry } from "../db/sync-queue";
 
 import api from "./api";
 import { getDb } from "../db/schema";
+import { useAppStore } from "../store";
 import * as Crypto from "expo-crypto";
 
 const TABLE_BY_TYPE: Record<string, string> = {
@@ -191,14 +192,15 @@ const pullFromServer = async () => {
 
           await db.runAsync(
             `INSERT INTO notifications (
-              id, title, message, type, related_id, is_read, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+              id, title, message, type, related_id, user_id, is_read, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               notificationId,
               "Referral Feedback Received",
               message,
               "REFERRAL",
               r.id,
+              useAppStore.getState().user?.id || null,
               0,
               new Date().toISOString(),
             ],
@@ -292,18 +294,19 @@ const pullFromServer = async () => {
           if (req.status === "FULFILLED" || req.status === "REJECTED") {
             const notifId = Crypto.randomUUID();
             await db.runAsync(
-              `INSERT INTO notifications (id, title, message, type, related_id, is_read, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)`,
+              `INSERT INTO notifications (id, title, message, type, related_id, user_id, is_read, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
               [
                 notifId,
                 req.status === "FULFILLED"
-                  ? "✅ Stock Request Fulfilled"
-                  : "❌ Stock Request Rejected",
+                  ? " Stock Request Fulfilled"
+                  : " Stock Request Rejected",
                 req.status === "FULFILLED"
                   ? `Your request for ${req.quantityRequested} ${req.drug?.unit}s of ${req.drug?.nameEnglish} is ready.`
                   : `Your stock request for ${req.drug?.nameEnglish} was rejected.`,
                 "STOCK_REQUEST",
                 req.id,
+                useAppStore.getState().user?.id || null,
                 0,
                 new Date().toISOString(),
               ],

@@ -20,15 +20,14 @@ export const getVisits = async (req, res, next) => {
     const where = {
       ...(memberId ? { memberId } : {}),
       ...(chwId ? { chwId } : {}),
-      ...(from || to
-        ? {
-            visitedAt: {
-              ...(from ? { gte: new Date(from) } : {}),
-              ...(to ? { lte: new Date(to) } : {}),
-            },
-          }
-        : {}),
-      ...(hasScope ? { member: { household: { village: villageScope } } } : {}),
+      ...(visitType ? { visitType } : {}),
+      ...(memberId || chwId
+        ? {}
+        : hasScope
+          ? { member: { household: { village: villageScope } } }
+          : {}),
+      // CCW sees only visits they personally recorded
+      ...(req.user.role === "CCW" ? { chwId: req.user.id } : {}),
     };
 
     const [visits, total] = await Promise.all([
