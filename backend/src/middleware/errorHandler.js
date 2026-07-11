@@ -32,7 +32,6 @@ export const errorHandler = (err, req, res, next) => {
       message: "Invalid token.",
     });
   }
-
   if (err.name === "TokenExpiredError") {
     return res.status(401).json({
       success: false,
@@ -40,9 +39,21 @@ export const errorHandler = (err, req, res, next) => {
     });
   }
 
-  // Default
+  // Catch-all for any other Prisma errors (validation errors, connection
+  // errors, etc.) — never leak raw query/table details to the client.
+  if (err.name?.startsWith("Prisma")) {
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong. Please try again.",
+    });
+  }
+
+  // Default — for genuinely unknown errors, still avoid leaking internals
+  // unless we've explicitly marked them safe with err.status.
   res.status(err.status || 500).json({
     success: false,
-    message: err.message || "Internal server error.",
+    message: err.status
+      ? err.message
+      : "Something went wrong. Please try again.",
   });
 };

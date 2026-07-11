@@ -1,5 +1,10 @@
 import bcrypt from "bcryptjs";
 import prisma from "../../config/db.js";
+import {
+  sendSms,
+  APP_DOWNLOAD_LINK,
+  PORTAL_LINK,
+} from "../../utils/smsService.js";
 
 // ─── USERS
 export const getUsers = async (req, res, next) => {
@@ -93,6 +98,20 @@ export const createUser = async (req, res, next) => {
         facility: { select: { id: true, name: true, facilityType: true } },
       },
     });
+    // Notify the new account holder via SMS — never blocks account creation
+    try {
+      const link =
+        role === "CCW"
+          ? `Download the app: ${APP_DOWNLOAD_LINK}`
+          : `Login to the portal: ${PORTAL_LINK}`;
+
+      await sendSms(
+        user.phoneNumber,
+        `MobileHealth Malawi\n\nHello ${user.fullName}, your account has been created.\nRole: ${role}\nContact your admin (${req.user.phoneNumber}) for your PIN.\n\n${link}`,
+      );
+    } catch (smsErr) {
+      console.error("SMS notification failed:", smsErr.message);
+    }
     res.status(201).json({ success: true, data: user });
   } catch (err) {
     if (err.code === "P2002")

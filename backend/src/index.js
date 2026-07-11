@@ -1,4 +1,5 @@
 import "dotenv/config";
+console.log("DEBUG PORTAL_LINK:", process.env.PORTAL_LINK);
 import http from "http";
 import app from "./app.js";
 
