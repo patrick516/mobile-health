@@ -18,6 +18,10 @@ import Security from "./pages/admin/Security";
 import RelocatedHouseholds from "./pages/admin/RelocatedHouseholds";
 import FacilitySetup from "./pages/admin/FacilitySetup";
 import ChangePin from "./pages/auth/ChangePin";
+import PncTracker from "./pages/pnc/PncTracker";
+import TbTracker from "./pages/tb/TbTracker";
+import FpTracker from "./pages/fp/FpTracker";
+import SupervisorFeedback from "./pages/feedback/SupervisorFeedback";
 
 // function ProtectedRoute({ children }: { children: React.ReactNode }) {
 //   const token = useAuthStore((s) => s.token);
@@ -72,6 +76,10 @@ export default function App() {
           <Route path="analytics" element={<Trends />} />
           <Route path="export" element={<DHIS2Export />} />
           <Route path="reports" element={<Reports />} />
+          <Route path="pnc" element={<PncTracker />} />
+          <Route path="tb" element={<TbTracker />} />
+          <Route path="fp" element={<FpTracker />} />
+          <Route path="feedback" element={<SupervisorFeedback />} />
           <Route
             path="admin/security"
             element={

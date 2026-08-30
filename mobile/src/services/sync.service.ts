@@ -16,6 +16,9 @@ const TABLE_BY_TYPE: Record<string, string> = {
   DRUG_DISPENSE: "drug_dispenses",
   STOCK_REQUEST: "stock_requests",
   ANC_VISIT: "anc_visits",
+  PNC_VISIT: "pnc_visits",
+  TB_DOT_VISIT: "tb_dot_visits",
+  FP_VISIT: "fp_visits",
   // VILLAGE has no local "synced" column on the villages table — skip it
 };
 
@@ -322,6 +325,76 @@ const pullFromServer = async () => {
       );
     } catch (err: any) {
       console.log("[SYNC] Stock requests pull skipped:", err.message);
+    }
+    // 5. Pull supervisor feedback for CCW
+    try {
+      const fbRes = await api.get("/feedback/my");
+      const feedbackList = fbRes.data?.data || [];
+      for (const fb of feedbackList) {
+        await db.runAsync(
+          `INSERT OR REPLACE INTO supervisor_feedback
+           (id, ccw_id, supervisor_id, supervisor_name, period_month, period_year,
+            rating, comment, visits_count, is_read, created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+          [
+            fb.id,
+            fb.ccwId,
+            fb.supervisorId,
+            fb.supervisor?.fullName ?? null,
+            fb.periodMonth,
+            fb.periodYear,
+            fb.rating,
+            fb.comment,
+            fb.visitsCount ?? null,
+            fb.isRead ? 1 : 0,
+            fb.createdAt,
+          ],
+        );
+
+        // Create notification for new unread feedback
+        if (!fb.isRead) {
+          const months = [
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Oct",
+            "Nov",
+            "Dec",
+          ];
+          const period = `${months[fb.periodMonth - 1]} ${fb.periodYear}`;
+          const notifId = Crypto.randomUUID();
+          const existing = await db.getFirstAsync<{ id: string }>(
+            `SELECT id FROM notifications WHERE related_id = ?`,
+            [fb.id],
+          );
+          if (!existing) {
+            await db.runAsync(
+              `INSERT INTO notifications
+               (id, title, message, type, related_id, user_id, is_read, created_at)
+               VALUES (?,?,?,?,?,?,?,?)`,
+              [
+                notifId,
+                "Supervisor Feedback Received",
+                `${fb.supervisor?.fullName ?? "Your supervisor"} rated your performance ${fb.rating}/5 for ${period}: "${fb.comment.substring(0, 80)}${fb.comment.length > 80 ? "..." : ""}"`,
+                "FEEDBACK",
+                fb.id,
+                useAppStore.getState().user?.id || null,
+                0,
+                new Date().toISOString(),
+              ],
+            );
+          }
+        }
+      }
+      console.log(`[SYNC] Pulled ${feedbackList.length} feedback records`);
+    } catch (fbErr: any) {
+      console.log("[SYNC] Feedback pull skipped:", fbErr.message);
     }
 
     // Clear old test notifications if any

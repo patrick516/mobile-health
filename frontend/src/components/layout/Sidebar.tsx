@@ -15,6 +15,10 @@ import {
   ShieldAlert,
   Building2,
   MapPinOff,
+  Baby,
+  Pill,
+  HeartHandshake,
+  MessageSquare,
 } from "lucide-react";
 import { useAuthStore } from "../../store/auth.store";
 import clsx from "clsx";
@@ -32,10 +36,34 @@ const NAV = [
   { to: "/drugs", icon: FlaskConical, label: "Drug Stock", roles: ["ALL"] },
   { to: "/analytics", icon: TrendingUp, label: "Analytics", roles: ["ALL"] },
   {
-    to: "/export",
-    icon: Download,
-    label: "DHIS2 Export",
+    to: "/reports",
+    icon: FileBarChart,
+    label: "Reports",
     roles: ["DISTRICT_OFFICER", "ADMIN", "SUPER_ADMIN"],
+  },
+  {
+    to: "/pnc",
+    icon: Baby,
+    label: "PNC",
+    roles: ["ALL"],
+  },
+  {
+    to: "/tb",
+    icon: Pill,
+    label: "TB Follow-up",
+    roles: ["ALL"],
+  },
+  {
+    to: "/fp",
+    icon: HeartHandshake,
+    label: "Family Planning",
+    roles: ["ALL"],
+  },
+  {
+    to: "/feedback",
+    icon: MessageSquare,
+    label: "CHW Feedback",
+    roles: ["NURSE", "DISTRICT_OFFICER", "ADMIN", "SUPER_ADMIN"],
   },
   {
     to: "/reports",
