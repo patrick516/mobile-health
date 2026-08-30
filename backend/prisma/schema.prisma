@@ -143,6 +143,44 @@ enum AncStatus {
   OVERDUE
 }
 
+enum PncStatus {
+  SCHEDULED
+  ATTENDED
+  MISSED
+  OVERDUE
+}
+enum TbTreatmentCategory {
+  CAT_I
+  CAT_II
+  MDR_TB
+  PEDIATRIC
+}
+
+enum TbOutcome {
+  CURED
+  TREATMENT_COMPLETED
+  TREATMENT_FAILED
+  DIED
+  LOST_TO_FOLLOW_UP
+  NOT_EVALUATED
+}
+
+enum DotStatus {
+  OBSERVED
+  MISSED
+  SELF_ADMINISTERED
+}
+
+enum FpMethod {
+  CONDOM
+  ORAL_CONTRACEPTIVE
+  INJECTABLE
+  IMPLANT
+  IUD
+  STERILISATION
+  NATURAL_FAMILY_PLANNING
+  OTHER
+}
 enum StockRequestStatus {
   PENDING
   APPROVED
@@ -159,6 +197,7 @@ enum SyncRecordType {
   DRUG_DISPENSE
   STOCK_REQUEST
   ANC_VISIT
+  PNC_VISIT
 }
 
 enum FacilityType {
@@ -242,7 +281,8 @@ model Village {
   createdByUser User        @relation("VillageCreator", fields: [createdByUserId], references: [id])
   canonicalOf   Village?    @relation("VillageCanonical", fields: [canonicalVillageId], references: [id])
   aliases       Village[]   @relation("VillageCanonical")
-  households    Household[]
+  households      Household[]
+  outbreakAlerts  OutbreakAlert[]
 
   @@map("villages")
 }
@@ -279,9 +319,15 @@ model User {
   stockApprovals       StockRequest[]       @relation("StockApprover")
   auditLogs            AuditLog[]
   assignedMembers      HouseholdMember[]    @relation("AssignedCCW")
-
-  loginLockouts    LoginLockout[] @relation("LockoutUser")
-  unlockedLockouts LoginLockout[] @relation("UnlockedByAdmin")
+  pncVisits           PncVisit[]      @relation("PncVisitor")
+  tbCasesRegistered   TbCase[]        @relation("TbCaseRegistrar")
+  fpVisits              FpVisit[]          @relation("FpVisitor")
+  feedbackReceived      SupervisorFeedback[] @relation("FeedbackReceiver")
+  feedbackSent          SupervisorFeedback[] @relation("FeedbackSender")
+  tbDotVisits         TbDotVisit[]    @relation("TbDotVisitor")
+  resolvedOutbreaks   OutbreakAlert[] @relation("OutbreakResolver")
+  loginLockouts        LoginLockout[]       @relation("LockoutUser")
+  unlockedLockouts     LoginLockout[]       @relation("UnlockedByAdmin")
 
   @@map("users")
 }
@@ -393,6 +439,9 @@ model HouseholdMember {
   immunisations         Immunisation[]
   immunisationSchedules ImmunisationSchedule[]
   ancVisits             AncVisit[]
+  pncVisits             PncVisit[]
+  tbCases               TbCase[]
+  fpVisits              FpVisit[]
   drugDispenses         DrugDispense[]
 
   @@map("household_members")
@@ -412,6 +461,12 @@ model Visit {
   temperature    Float?
   muacMm         Int?        @map("muac_mm")
   muacStatus     MuacStatus? @map("muac_status")
+  weightKg       Float?      @map("weight_kg")
+  heightCm       Float?      @map("height_cm")
+  zScoreWfa      Float?      @map("z_score_wfa")
+  zScoreHfa      Float?      @map("z_score_hfa")
+  zScoreWfh      Float?      @map("z_score_wfh")
+  growthStatus   String?     @map("growth_status")
   dangerSigns    Json?       @map("danger_signs")
   referralNeeded Boolean     @default(false) @map("referral_needed")
   gpsLat         Float?      @map("gps_lat")
@@ -443,13 +498,14 @@ model Facility {
   createdAt    DateTime      @default(now()) @map("created_at")
 
   // ─── NEW: Parent District Hospital for TA Hospitals ───
-  parentDistrictHospitalId String?   @map("parent_district_hospital_id")
-  parentDistrictHospital   Facility? @relation("DistrictHospitalTA", fields: [parentDistrictHospitalId], references: [id])
+  parentDistrictHospitalId String?    @map("parent_district_hospital_id")
+  parentDistrictHospital   Facility?  @relation("DistrictHospitalTA", fields: [parentDistrictHospitalId], references: [id])
   childTAHospitals         Facility[] @relation("DistrictHospitalTA")
 
   district  District?             @relation(fields: [districtId], references: [id])
   ta        TraditionalAuthority? @relation(fields: [taId], references: [id])
   referrals Referral[]
+  tbCases   TbCase[]
   staff     User[]                @relation("FacilityStaff")
 
   @@map("facilities")
@@ -546,7 +602,48 @@ model AncVisit {
   @@map("anc_visits")
 }
 
-// ─── DRUGS 
+// ─── PNC
+
+model PncVisit {
+  id        String @id @default(uuid())
+  localId   String @unique @map("local_id")
+  memberId  String @map("member_id")
+  pncNumber Int    @map("pnc_number")
+
+  // scheduling
+  expectedDate DateTime  @map("expected_date")
+  status       PncStatus @default(SCHEDULED)
+  visitedDate  DateTime? @map("visited_date")
+  visitedById  String?   @map("visited_by_id")
+
+  // mother assessment
+  motherTemperature   Float?  @map("mother_temperature")
+  motherBloodPressure String? @map("mother_blood_pressure")
+  motherBreastStatus  String? @map("mother_breast_status")
+  motherUterusStatus  String? @map("mother_uterus_status")
+  motherDangerSigns   Json?   @map("mother_danger_signs")
+
+  // newborn assessment
+  newbornWeight      Float?  @map("newborn_weight")
+  newbornTemperature Float?  @map("newborn_temperature")
+  newbornCordStatus  String? @map("newborn_cord_status")
+  isBreastfeeding    Boolean @default(false) @map("is_breastfeeding")
+  newbornDangerSigns Json?   @map("newborn_danger_signs")
+
+  referralNeeded Boolean   @default(false) @map("referral_needed")
+  notes          String?
+  syncedAt       DateTime? @map("synced_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  member    HouseholdMember @relation(fields: [memberId], references: [id])
+  visitedBy User?           @relation("PncVisitor", fields: [visitedById], references: [id])
+
+  @@unique([memberId, pncNumber])
+  @@map("pnc_visits")
+}
+
+// ─── DRUGS
 
 model Drug {
   id               String   @id @default(uuid())
@@ -620,6 +717,124 @@ model StockRequest {
   approvedBy     User? @relation("StockApprover", fields: [approvedById], references: [id])
 
   @@map("stock_requests")
+}
+
+// ─── TB FOLLOW-UP
+
+model TbCase {
+  id                  String              @id @default(uuid())
+  memberId            String              @map("member_id")
+  registeredById      String              @map("registered_by_id")
+  treatmentStartDate  DateTime            @map("treatment_start_date")
+  treatmentCategory   TbTreatmentCategory @map("treatment_category")
+  facilityId          String?             @map("facility_id")
+  treatmentNumber     String?             @map("treatment_number")
+  isActive            Boolean             @default(true) @map("is_active")
+  outcome             TbOutcome?
+  outcomeDate         DateTime?           @map("outcome_date")
+  notes               String?
+  syncedAt            DateTime?           @map("synced_at")
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+
+  member       HouseholdMember @relation(fields: [memberId], references: [id])
+  registeredBy User            @relation("TbCaseRegistrar", fields: [registeredById], references: [id])
+  facility     Facility?       @relation(fields: [facilityId], references: [id])
+  dotVisits    TbDotVisit[]
+
+  @@map("tb_cases")
+}
+
+model TbDotVisit {
+  id            String    @id @default(uuid())
+  localId       String    @unique @map("local_id")
+  tbCaseId      String    @map("tb_case_id")
+  visitedById   String    @map("visited_by_id")
+  visitDate     DateTime  @map("visit_date")
+  status        DotStatus @default(OBSERVED)
+  drugsGiven    Json?     @map("drugs_given")
+  missedReason  String?   @map("missed_reason")
+  notes         String?
+  syncedAt      DateTime? @map("synced_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  tbCase    TbCase @relation(fields: [tbCaseId], references: [id])
+  visitedBy User   @relation("TbDotVisitor", fields: [visitedById], references: [id])
+
+  @@map("tb_dot_visits")
+}
+
+// ─── FAMILY PLANNING
+
+model FpVisit {
+  id               String   @id @default(uuid())
+  localId          String   @unique @map("local_id")
+  memberId         String   @map("member_id")
+  visitedById      String   @map("visited_by_id")
+  visitDate        DateTime @map("visit_date")
+  method           FpMethod
+  quantityGiven    Int?     @map("quantity_given")
+  nextFollowUpDate DateTime? @map("next_follow_up_date")
+  sideEffects      Json?    @map("side_effects")
+  referralNeeded   Boolean  @default(false) @map("referral_needed")
+  counsellingGiven Boolean  @default(true) @map("counselling_given")
+  notes            String?
+  syncedAt         DateTime? @map("synced_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  member    HouseholdMember @relation(fields: [memberId], references: [id])
+  visitedBy User            @relation("FpVisitor", fields: [visitedById], references: [id])
+
+  @@map("fp_visits")
+}
+// ─── SUPERVISOR FEEDBACK
+
+model SupervisorFeedback {
+  id           String   @id @default(uuid())
+  ccwId        String   @map("ccw_id")
+  supervisorId String   @map("supervisor_id")
+  periodMonth  Int      @map("period_month")
+  periodYear   Int      @map("period_year")
+  rating       Int      // 1–5
+  comment      String
+  visitsCount  Int?     @map("visits_count")
+  isRead       Boolean  @default(false) @map("is_read")
+  readAt       DateTime? @map("read_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  ccw        User @relation("FeedbackReceiver", fields: [ccwId], references: [id])
+  supervisor User @relation("FeedbackSender", fields: [supervisorId], references: [id])
+
+  @@map("supervisor_feedback")
+}
+// ─── OUTBREAK ALERTS
+
+enum OutbreakStatus {
+  ACTIVE
+  RESOLVED
+  DISMISSED
+}
+
+model OutbreakAlert {
+  id          String        @id @default(uuid())
+  villageId   String        @map("village_id")
+  symptom     String
+  caseCount   Int           @map("case_count")
+  windowStart DateTime      @map("window_start")
+  windowEnd   DateTime      @map("window_end")
+  status      OutbreakStatus @default(ACTIVE)
+  resolvedAt  DateTime?     @map("resolved_at")
+  resolvedById String?      @map("resolved_by_id")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  village    Village @relation(fields: [villageId], references: [id])
+  resolvedBy User?   @relation("OutbreakResolver", fields: [resolvedById], references: [id])
+
+  @@map("outbreak_alerts")
 }
 
 // ─── SYNC CONFLICTS 

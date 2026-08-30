@@ -11,6 +11,9 @@ export type SyncRecordType =
   | "DRUG_DISPENSE"
   | "STOCK_REQUEST"
   | "ANC_VISIT"
+  | "PNC_VISIT"
+  | "TB_DOT_VISIT"
+  | "FP_VISIT"
   | "VILLAGE";
 
 export interface SyncRecord {
@@ -81,6 +84,25 @@ const recordExists = async (
       case "ANC_VISIT":
         result = await db.getFirstAsync(
           `SELECT COUNT(*) as count FROM anc_visits WHERE local_id = ? OR id = ?`,
+          [localId, localId],
+        );
+        return (result?.count || 0) > 0;
+      case "FP_VISIT":
+        result = await db.getFirstAsync(
+          `SELECT COUNT(*) as count FROM fp_visits WHERE local_id = ? OR id = ?`,
+          [localId, localId],
+        );
+        return (result?.count || 0) > 0;
+      case "TB_DOT_VISIT":
+        result = await db.getFirstAsync(
+          `SELECT COUNT(*) as count FROM tb_dot_visits WHERE local_id = ? OR id = ?`,
+          [localId, localId],
+        );
+        return (result?.count || 0) > 0;
+
+      case "PNC_VISIT":
+        result = await db.getFirstAsync(
+          `SELECT COUNT(*) as count FROM pnc_visits WHERE local_id = ? OR id = ?`,
           [localId, localId],
         );
         return (result?.count || 0) > 0;
@@ -222,7 +244,10 @@ export const getPending = async (): Promise<SyncRecord[]> => {
          WHEN 'DRUG_DISPENSE' THEN 6
          WHEN 'STOCK_REQUEST' THEN 7
          WHEN 'ANC_VISIT' THEN 8
-         ELSE 9
+        WHEN 'PNC_VISIT' THEN 9
+        WHEN 'TB_DOT_VISIT' THEN 10
+         WHEN 'FP_VISIT' THEN 11
+         ELSE 12
        END,
        created_at ASC
      LIMIT 50`,

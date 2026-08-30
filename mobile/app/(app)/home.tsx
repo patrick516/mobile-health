@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -53,11 +53,33 @@ const NAV_BUTTONS = [
     color: "#DB2777",
   },
   {
+    label: "PNC",
+    labelNy: "PNC",
+    icon: "woman",
+    route: "/(app)/pnc/",
+    color: "#BE185D",
+  },
+  {
+    label: "TB Follow-up",
+    labelNy: "TB",
+    icon: "medkit",
+    route: "/(app)/tb/",
+    color: "#B45309",
+  },
+  {
+    label: "Family Planning",
+    labelNy: "Banja",
+    icon: "heart-circle",
+    route: "/(app)/fp/",
+    color: "#0891B2",
+  },
+  {
     label: "Notifications",
     labelNy: "Zindikirani",
     icon: "notifications",
     route: "/(app)/notifications/",
     color: "#0284C7",
+    badge: true,
   },
 ];
 
@@ -72,12 +94,26 @@ export default function HomeScreen() {
   const setIsSyncing = useAppStore((s) => s.setIsSyncing);
   const setLastSyncAt = useAppStore((s) => s.setLastSyncAt);
   const clearAuth = useAppStore((s) => s.clearAuth);
+  const [unreadFeedback, setUnreadFeedback] = useState(0);
 
   useEffect(() => {
     refreshPendingCount();
-    // Auto-sync on mount
+    loadUnreadFeedback();
     handleSync();
   }, []);
+
+  const loadUnreadFeedback = async () => {
+    try {
+      const { getDb } = await import("../../src/db/schema");
+      const db = await getDb();
+      const result = await db.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) as count FROM supervisor_feedback WHERE is_read = 0`,
+      );
+      setUnreadFeedback(result?.count ?? 0);
+    } catch (e) {
+      // Table may not exist on first install — safe to ignore
+    }
+  };
 
   const refreshPendingCount = async () => {
     const count = await getPendingCount();
@@ -178,6 +214,21 @@ export default function HomeScreen() {
           </Text>
         </TouchableOpacity>
 
+        {/* Unread feedback banner */}
+        {unreadFeedback > 0 && (
+          <TouchableOpacity
+            style={styles.feedbackBanner}
+            onPress={() => router.push("/(app)/notifications/" as any)}
+          >
+            <Ionicons name="chatbubble-ellipses" size={18} color="#1971C2" />
+            <Text style={styles.feedbackBannerText}>
+              You have {unreadFeedback} new feedback message
+              {unreadFeedback > 1 ? "s" : ""} from your supervisor
+            </Text>
+            <Ionicons name="chevron-forward" size={16} color="#1971C2" />
+          </TouchableOpacity>
+        )}
+
         {/* Nav grid */}
         <View style={styles.grid}>
           {NAV_BUTTONS.map((btn) => (
@@ -187,13 +238,24 @@ export default function HomeScreen() {
               onPress={() => router.push(btn.route as any)}
               activeOpacity={0.8}
             >
-              <View
-                style={[
-                  styles.iconCircle,
-                  { backgroundColor: btn.color + "18" },
-                ]}
-              >
-                <Ionicons name={btn.icon as any} size={30} color={btn.color} />
+              <View style={styles.iconCircleWrapper}>
+                <View
+                  style={[
+                    styles.iconCircle,
+                    { backgroundColor: btn.color + "18" },
+                  ]}
+                >
+                  <Ionicons
+                    name={btn.icon as any}
+                    size={30}
+                    color={btn.color}
+                  />
+                </View>
+                {(btn as any).badge && unreadFeedback > 0 && (
+                  <View style={styles.navBadge}>
+                    <Text style={styles.navBadgeText}>{unreadFeedback}</Text>
+                  </View>
+                )}
               </View>
               <Text style={styles.navLabel}>
                 {language === "en" ? btn.label : btn.labelNy}
@@ -340,4 +402,36 @@ const styles = StyleSheet.create({
     fontSize: SIZES.fontXs,
     marginTop: 2,
   },
+  feedbackBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#EFF6FF",
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    borderRadius: SIZES.radiusMd,
+    marginHorizontal: SIZES.lg,
+    marginTop: SIZES.md,
+    padding: SIZES.md,
+  },
+  feedbackBannerText: {
+    flex: 1,
+    fontSize: SIZES.fontSm,
+    color: "#1971C2",
+    fontWeight: "600",
+  },
+  iconCircleWrapper: { position: "relative" },
+  navBadge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    backgroundColor: COLORS.danger,
+    borderRadius: 999,
+    minWidth: 18,
+    height: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+  },
+  navBadgeText: { color: COLORS.white, fontSize: 10, fontWeight: "bold" },
 });

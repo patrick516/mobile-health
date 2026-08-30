@@ -9,6 +9,8 @@ import {
   Alert,
   Image,
   RefreshControl,
+  Modal,
+  ActivityIndicator,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -76,6 +78,11 @@ export default function HouseholdDetailScreen() {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [showRelocateModal, setShowRelocateModal] = useState(false);
   const [relocating, setRelocating] = useState(false);
+  const [showWashModal, setShowWashModal] = useState(false);
+  const [washSaving, setWashSaving] = useState(false);
+  const [washLatrine, setWashLatrine] = useState<string>("NO");
+  const [washHandwashing, setWashHandwashing] = useState<string>("NO");
+  const [washWaterSource, setWashWaterSource] = useState<string>("BOREHOLE");
 
   const load = useCallback(async () => {
     try {
@@ -192,6 +199,56 @@ export default function HouseholdDetailScreen() {
       month: "short",
       year: "numeric",
     });
+
+  const handleWashUpdate = async () => {
+    if (!household) return;
+    setWashSaving(true);
+    try {
+      const db = await getDb();
+      await db.runAsync(
+        `UPDATE households SET
+          latrine_present = ?,
+          handwashing_facility = ?,
+          water_source = ?,
+          synced = 0
+         WHERE id = ? OR local_id = ?`,
+        [
+          washLatrine !== "NO" ? 1 : 0,
+          washHandwashing === "YES" ? 1 : 0,
+          washWaterSource,
+          household.id,
+          household.local_id,
+        ],
+      );
+
+      const net = await NetInfo.fetch();
+      if (net.isConnected) {
+        try {
+          await api.patch(`/households/${household.id}`, {
+            latrinePresent: washLatrine !== "NO",
+            latrineType: washLatrine !== "NO" ? washLatrine : null,
+            handwashingFacility: washHandwashing === "YES",
+            waterSource: washWaterSource,
+          });
+          await db.runAsync(
+            "UPDATE households SET synced = 1 WHERE id = ? OR local_id = ?",
+            [household.id, household.local_id],
+          );
+        } catch (e) {
+          console.warn("[WASH] Sync failed, will retry:", e);
+        }
+      }
+
+      Alert.alert("WASH Updated", "Sanitation data updated successfully.");
+      setShowWashModal(false);
+      load();
+    } catch (err) {
+      console.error("[WASH] Update error:", err);
+      Alert.alert("Error", "Failed to update WASH data.");
+    } finally {
+      setWashSaving(false);
+    }
+  };
 
   const handleRelocateSameZone = async () => {
     if (!household) return;
@@ -518,6 +575,22 @@ export default function HouseholdDetailScreen() {
             </TouchableOpacity>
           ))}
         </View>
+        {/* WASH quick update */}
+        <TouchableOpacity
+          style={styles.washBtn}
+          onPress={() => {
+            setWashLatrine(
+              household.latrine_present ? "TRADITIONAL_PIT" : "NO",
+            );
+            setWashHandwashing(household.handwashing_facility ? "YES" : "NO");
+            setWashWaterSource(household.water_source || "BOREHOLE");
+            setShowWashModal(true);
+          }}
+        >
+          <Ionicons name="water-outline" size={18} color="#1971C2" />
+          <Text style={styles.washBtnText}>Update WASH / Sanitation</Text>
+          <Ionicons name="chevron-forward" size={16} color={COLORS.textMuted} />
+        </TouchableOpacity>
 
         {/* Tabs */}
         <View style={styles.tabs}>
@@ -826,6 +899,122 @@ export default function HouseholdDetailScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* WASH Update Modal */}
+      <Modal
+        visible={showWashModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowWashModal(false)}
+      >
+        <View style={styles.washModalOverlay}>
+          <View style={styles.washModalCard}>
+            <Text style={styles.washModalTitle}>Update WASH / Sanitation</Text>
+            <Text style={styles.washModalSub}>
+              {household?.household_number} — {household?.village_name}
+            </Text>
+
+            <Text style={styles.washLabel}>Latrine Status</Text>
+            {[
+              "NO",
+              "TRADITIONAL_PIT",
+              "IMPROVED_PIT",
+              "VIP",
+              "FLUSH_TOILET",
+            ].map((opt) => (
+              <TouchableOpacity
+                key={opt}
+                style={[
+                  styles.washOption,
+                  washLatrine === opt && styles.washOptionSelected,
+                ]}
+                onPress={() => setWashLatrine(opt)}
+              >
+                <Text
+                  style={[
+                    styles.washOptionText,
+                    washLatrine === opt && styles.washOptionTextSelected,
+                  ]}
+                >
+                  {opt === "NO" ? "No Latrine" : opt.replace(/_/g, " ")}
+                </Text>
+              </TouchableOpacity>
+            ))}
+
+            <Text style={styles.washLabel}>Handwashing Facility</Text>
+            {["YES", "NO"].map((opt) => (
+              <TouchableOpacity
+                key={opt}
+                style={[
+                  styles.washOption,
+                  washHandwashing === opt && styles.washOptionSelected,
+                ]}
+                onPress={() => setWashHandwashing(opt)}
+              >
+                <Text
+                  style={[
+                    styles.washOptionText,
+                    washHandwashing === opt && styles.washOptionTextSelected,
+                  ]}
+                >
+                  {opt === "YES"
+                    ? "Has handwashing facility"
+                    : "No handwashing facility"}
+                </Text>
+              </TouchableOpacity>
+            ))}
+
+            <Text style={styles.washLabel}>Water Source</Text>
+            {[
+              "BOREHOLE",
+              "PIPED",
+              "PROTECTED_WELL",
+              "UNPROTECTED_WELL",
+              "RIVER",
+              "RAIN_WATER",
+              "OTHER",
+            ].map((opt) => (
+              <TouchableOpacity
+                key={opt}
+                style={[
+                  styles.washOption,
+                  washWaterSource === opt && styles.washOptionSelected,
+                ]}
+                onPress={() => setWashWaterSource(opt)}
+              >
+                <Text
+                  style={[
+                    styles.washOptionText,
+                    washWaterSource === opt && styles.washOptionTextSelected,
+                  ]}
+                >
+                  {opt.replace(/_/g, " ")}
+                </Text>
+              </TouchableOpacity>
+            ))}
+
+            <View style={styles.washModalBtns}>
+              <TouchableOpacity
+                style={styles.washCancelBtn}
+                onPress={() => setShowWashModal(false)}
+              >
+                <Text style={styles.washCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.washSaveBtn, washSaving && { opacity: 0.6 }]}
+                onPress={handleWashUpdate}
+                disabled={washSaving}
+              >
+                {washSaving ? (
+                  <ActivityIndicator color={COLORS.white} size="small" />
+                ) : (
+                  <Text style={styles.washSaveText}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1080,4 +1269,88 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     marginTop: 2,
   },
+  washBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SIZES.md,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    borderRadius: SIZES.radiusMd,
+    padding: SIZES.md,
+    marginHorizontal: SIZES.lg,
+    marginBottom: SIZES.md,
+  },
+  washBtnText: {
+    flex: 1,
+    fontSize: SIZES.fontSm,
+    fontWeight: "600",
+    color: "#1971C2",
+  },
+  washModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  washModalCard: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: SIZES.xl,
+    maxHeight: "85%",
+  },
+  washModalTitle: {
+    fontSize: SIZES.fontLg,
+    fontWeight: "700",
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  washModalSub: {
+    fontSize: SIZES.fontXs,
+    color: COLORS.textMuted,
+    marginBottom: SIZES.lg,
+  },
+  washLabel: {
+    fontSize: SIZES.fontSm,
+    fontWeight: "600",
+    color: COLORS.text,
+    marginTop: SIZES.md,
+    marginBottom: 8,
+  },
+  washOption: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: SIZES.radiusSm,
+    padding: SIZES.sm,
+    marginBottom: 6,
+    backgroundColor: COLORS.white,
+  },
+  washOptionSelected: {
+    borderColor: "#1971C2",
+    backgroundColor: "#EFF6FF",
+  },
+  washOptionText: { fontSize: SIZES.fontSm, color: COLORS.text },
+  washOptionTextSelected: { color: "#1971C2", fontWeight: "600" },
+  washModalBtns: {
+    flexDirection: "row",
+    gap: SIZES.md,
+    marginTop: SIZES.xl,
+  },
+  washCancelBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: SIZES.radiusMd,
+    padding: SIZES.md,
+    alignItems: "center",
+  },
+  washCancelText: { color: COLORS.textSecondary, fontWeight: "600" },
+  washSaveBtn: {
+    flex: 1,
+    backgroundColor: "#1971C2",
+    borderRadius: SIZES.radiusMd,
+    padding: SIZES.md,
+    alignItems: "center",
+  },
+  washSaveText: { color: COLORS.white, fontWeight: "700" },
 });

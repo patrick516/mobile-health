@@ -87,6 +87,13 @@ export default function Overview() {
   });
   const unsynced = chwData?.filter((c) => c.status !== "ACTIVE") || [];
 
+  const { data: outbreakData } = useQuery({
+    queryKey: ["outbreak-alerts"],
+    queryFn: () => api.get("/visits/outbreak-alerts").then((r) => r.data.data),
+    refetchInterval: 60000,
+  });
+  const activeOutbreaks = outbreakData ?? [];
+
   const { data: securityData } = useQuery({
     queryKey: ["security-alerts"],
     queryFn: () => api.get("/admin/security/alerts").then((r) => r.data.data),
@@ -114,6 +121,37 @@ export default function Overview() {
               </option>
             ))}
           </select>
+        </div>
+      )}
+
+      {/* Outbreak alert banner */}
+      {activeOutbreaks.length > 0 && (
+        <div className="bg-red-100 border border-red-400 rounded-xl px-4 py-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={18} className="text-red-700 shrink-0" />
+            <p className="text-sm font-bold text-red-800">
+              🚨 {activeOutbreaks.length} Active Outbreak Alert
+              {activeOutbreaks.length > 1 ? "s" : ""}
+            </p>
+          </div>
+          <div className="space-y-1">
+            {activeOutbreaks.map((alert: any) => (
+              <div
+                key={alert.id}
+                className="flex items-center justify-between text-xs text-red-700 bg-white rounded-lg px-3 py-2 border border-red-200"
+              >
+                <span>
+                  <strong>{alert.symptom}</strong> — {alert.caseCount} cases in{" "}
+                  <strong>{alert.village?.name}</strong> (
+                  {alert.village?.zone?.ta?.name},{" "}
+                  {alert.village?.zone?.ta?.district?.name})
+                </span>
+                <span className="text-red-400 ml-2">
+                  {new Date(alert.createdAt).toLocaleDateString("en-GB")}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

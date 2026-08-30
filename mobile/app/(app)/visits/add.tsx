@@ -71,6 +71,8 @@ export default function AddVisitScreen() {
   const [gpsLng, setGpsLng] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [step, setStep] = useState(0);
+  const [weightKg, setWeightKg] = useState("");
+  const [heightCm, setHeightCm] = useState("");
 
   const STEPS = ["Patient", "Symptoms", "Measurements", "Drugs", "Review"];
 
@@ -83,6 +85,70 @@ export default function AddVisitScreen() {
         ? "MODERATE_MALNUTRITION"
         : "SEVERE_MALNUTRITION";
 
+  // ── Growth monitoring — only for children under 5 ──
+  const selectedMember = members.find(
+    (m) => m.local_id === selectedMemberId || m.id === selectedMemberId,
+  );
+  const ageMonths = (() => {
+    if (!selectedMember) return null;
+    if (selectedMember.date_of_birth) {
+      return Math.floor(
+        (Date.now() - new Date(selectedMember.date_of_birth).getTime()) /
+          (1000 * 60 * 60 * 24 * 30.44),
+      );
+    }
+    if (selectedMember.estimated_age) return selectedMember.estimated_age * 12;
+    return null;
+  })();
+  const isUnderFive = ageMonths !== null && ageMonths < 60;
+
+  // WHO simplified thresholds — weight-for-age Z-score approximation
+  const calcGrowthStatus = (): {
+    zWfa: number | null;
+    zHfa: number | null;
+    zWfh: number | null;
+    status: string | null;
+  } => {
+    if (!isUnderFive || !weightKg || !heightCm || ageMonths === null)
+      return { zWfa: null, zHfa: null, zWfh: null, status: null };
+
+    const w = parseFloat(weightKg);
+    const h = parseFloat(heightCm);
+    const ageM = ageMonths;
+    if (isNaN(w) || isNaN(h) || w <= 0 || h <= 0)
+      return { zWfa: null, zHfa: null, zWfh: null, status: null };
+
+    // WHO median weight-for-age (simplified linear approximation)
+    const medianWFA = ageM < 12 ? 3.3 + ageM * 0.55 : 9.0 + (ageM - 12) * 0.17;
+    const sdWFA = medianWFA * 0.15;
+    const zWfa = parseFloat(((w - medianWFA) / sdWFA).toFixed(2));
+
+    // WHO median height-for-age
+    const medianHFA = ageM < 12 ? 49.9 + ageM * 2.6 : 75.7 + (ageM - 12) * 1.0;
+    const sdHFA = medianHFA * 0.04;
+    const zHfa = parseFloat(((h - medianHFA) / sdHFA).toFixed(2));
+
+    // Weight-for-height
+    const expectedW = (h / 100) * (h / 100) * 16.5;
+    const zWfh = parseFloat(((w - expectedW) / (expectedW * 0.15)).toFixed(2));
+
+    let status = "NORMAL";
+    if (zWfa < -3 || zWfh < -3) status = "SEVERELY_WASTED";
+    else if (zWfa < -2 || zWfh < -2) status = "WASTED";
+    else if (zHfa < -3) status = "SEVERELY_STUNTED";
+    else if (zHfa < -2) status = "STUNTED";
+    else if (zWfa < -2) status = "UNDERWEIGHT";
+
+    return { zWfa, zHfa, zWfh, status };
+  };
+
+  const growth = calcGrowthStatus();
+  const growthColor =
+    growth.status === "NORMAL" || !growth.status
+      ? COLORS.success
+      : growth.status?.startsWith("SEVERE")
+        ? COLORS.danger
+        : COLORS.warning;
   const muacColor =
     muacStatus === "NORMAL"
       ? COLORS.success
@@ -116,6 +182,8 @@ export default function AddVisitScreen() {
       setReferralNeeded(draft.referralNeeded);
     if (draft.notes) setNotes(draft.notes);
     if (draft.dispensed) setDispensed(draft.dispensed);
+    if (draft.weightKg) setWeightKg(draft.weightKg);
+    if (draft.heightCm) setHeightCm(draft.heightCm);
     if (typeof draft.step === "number") setStep(draft.step);
     showInfo("Draft Restored", "Continuing your previous visit entry.");
   };
@@ -135,6 +203,8 @@ export default function AddVisitScreen() {
         notes,
         dispensed,
         step,
+        weightKg,
+        heightCm,
       });
     }, 800);
     return () => clearTimeout(timer);
@@ -226,8 +296,10 @@ export default function AddVisitScreen() {
         `INSERT INTO visits (
           id, local_id, member_id, household_id, visited_at, visit_type,
           symptoms, temperature, muac_mm, muac_status, danger_signs,
-          referral_needed, gps_lat, gps_lng, notes, synced
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`,
+          referral_needed, gps_lat, gps_lng, notes,
+          weight_kg, height_cm, z_score_wfa, z_score_hfa, z_score_wfh, growth_status,
+          synced
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`,
         [
           visitId,
           visitId,
@@ -244,6 +316,12 @@ export default function AddVisitScreen() {
           gpsLat,
           gpsLng,
           notes.trim() || null,
+          weightKg ? parseFloat(weightKg) : null,
+          heightCm ? parseFloat(heightCm) : null,
+          growth.zWfa ?? null,
+          growth.zHfa ?? null,
+          growth.zWfh ?? null,
+          growth.status ?? null,
         ],
       );
 
@@ -280,6 +358,12 @@ export default function AddVisitScreen() {
         gpsLat,
         gpsLng,
         notes: notes.trim() || null,
+        weightKg: weightKg ? parseFloat(weightKg) : null,
+        heightCm: heightCm ? parseFloat(heightCm) : null,
+        zScoreWfa: growth.zWfa ?? null,
+        zScoreHfa: growth.zHfa ?? null,
+        zScoreWfh: growth.zWfh ?? null,
+        growthStatus: growth.status ?? null,
       };
 
       // Only add dispenses if there are any
@@ -595,6 +679,73 @@ export default function AddVisitScreen() {
                 ⚠ Fever detected ({temperature}°C)
               </Text>
             )}
+            {/* ── GROWTH MONITORING (under 5 only) ── */}
+            {isUnderFive && (
+              <>
+                <Text style={[styles.sectionTitle, { marginTop: SIZES.xl }]}>
+                  Growth Monitoring
+                </Text>
+                <Text style={styles.sectionSub}>
+                  Weight and height for children under 5
+                </Text>
+
+                <Text style={styles.label}>Weight (kg)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={weightKg}
+                  onChangeText={setWeightKg}
+                  placeholder="e.g. 8.5"
+                  placeholderTextColor={COLORS.placeholder}
+                  keyboardType="decimal-pad"
+                />
+
+                <Text style={styles.label}>Height (cm)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={heightCm}
+                  onChangeText={setHeightCm}
+                  placeholder="e.g. 72"
+                  placeholderTextColor={COLORS.placeholder}
+                  keyboardType="decimal-pad"
+                />
+
+                {growth.status && (
+                  <View
+                    style={[
+                      styles.muacResult,
+                      {
+                        backgroundColor: growthColor + "18",
+                        borderColor: growthColor,
+                        marginBottom: SIZES.md,
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[styles.muacDot, { backgroundColor: growthColor }]}
+                    />
+                    <View>
+                      <Text style={[styles.muacStatus, { color: growthColor }]}>
+                        {growth.status === "NORMAL"
+                          ? "✓ Normal Growth"
+                          : growth.status === "WASTED"
+                            ? "⚠ Wasted"
+                            : growth.status === "SEVERELY_WASTED"
+                              ? "✗ SEVERELY WASTED"
+                              : growth.status === "STUNTED"
+                                ? "⚠ Stunted"
+                                : growth.status === "SEVERELY_STUNTED"
+                                  ? "✗ SEVERELY STUNTED"
+                                  : "⚠ Underweight"}
+                      </Text>
+                      <Text style={styles.muacRange}>
+                        WFA: {growth.zWfa ?? "—"} | HFA: {growth.zHfa ?? "—"} |
+                        WFH: {growth.zWfh ?? "—"}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+              </>
+            )}
 
             <Text style={styles.label}>MUAC (mm) — children under 5 only</Text>
             <TextInput
@@ -787,6 +938,16 @@ export default function AddVisitScreen() {
                     ? `${muacMm}mm — ${muacStatus?.replace("_", " ")}`
                     : "Not measured",
                 },
+                ...(isUnderFive
+                  ? [
+                      {
+                        k: "Growth",
+                        v: growth.status
+                          ? `${growth.status.replace(/_/g, " ")} (W:${weightKg}kg H:${heightCm}cm)`
+                          : "Not measured",
+                      },
+                    ]
+                  : []),
                 { k: "Referral", v: referralNeeded ? "YES — Required" : "No" },
                 {
                   k: "Drugs dispensed",

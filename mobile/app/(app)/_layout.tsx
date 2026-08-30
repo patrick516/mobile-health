@@ -135,6 +135,11 @@ export default function AppLayout() {
       <Tabs.Screen name="immunisations/record" options={{ href: null }} />
       <Tabs.Screen name="drugs/index" options={{ href: null }} />
       <Tabs.Screen name="anc/index" options={{ href: null }} />
+      <Tabs.Screen name="pnc/index" options={{ href: null }} />
+      <Tabs.Screen name="pnc/record" options={{ href: null }} />
+      <Tabs.Screen name="tb/index" options={{ href: null }} />
+      <Tabs.Screen name="tb/record" options={{ href: null }} />
+      <Tabs.Screen name="fp/index" options={{ href: null }} />
       <Tabs.Screen name="notifications/index" options={{ href: null }} />
     </Tabs>
   );

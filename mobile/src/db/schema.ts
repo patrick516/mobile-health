@@ -102,6 +102,13 @@ export const initDb = async (): Promise<void> => {
       "has_electricity",
       "INTEGER DEFAULT 0",
     );
+    await addColumnIfMissing("visits", "weight_kg", "REAL");
+    await addColumnIfMissing("visits", "height_cm", "REAL");
+    await addColumnIfMissing("visits", "z_score_wfa", "REAL");
+    await addColumnIfMissing("visits", "z_score_hfa", "REAL");
+    await addColumnIfMissing("visits", "z_score_wfh", "REAL");
+    await addColumnIfMissing("visits", "growth_status", "TEXT");
+    await addColumnIfMissing("tb_cases", "treatment_number", "TEXT");
     await database.execAsync(`
       CREATE TABLE IF NOT EXISTS sync_queue (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -179,6 +186,12 @@ export const initDb = async (): Promise<void> => {
         temperature REAL,
         muac_mm INTEGER,
         muac_status TEXT,
+        weight_kg REAL,
+        height_cm REAL,
+        z_score_wfa REAL,
+        z_score_hfa REAL,
+        z_score_wfh REAL,
+        growth_status TEXT,
         danger_signs TEXT,
         referral_needed INTEGER DEFAULT 0,
         gps_lat REAL,
@@ -313,6 +326,89 @@ export const initDb = async (): Promise<void> => {
         is_read INTEGER DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
+
+            CREATE TABLE IF NOT EXISTS supervisor_feedback (
+        id TEXT PRIMARY KEY,
+        ccw_id TEXT NOT NULL,
+        supervisor_id TEXT NOT NULL,
+        supervisor_name TEXT,
+        period_month INTEGER NOT NULL,
+        period_year INTEGER NOT NULL,
+        rating INTEGER NOT NULL,
+        comment TEXT NOT NULL,
+        visits_count INTEGER,
+        is_read INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+        CREATE TABLE IF NOT EXISTS fp_visits (
+        id TEXT PRIMARY KEY,
+        local_id TEXT NOT NULL UNIQUE,
+        member_id TEXT NOT NULL,
+        visited_by_id TEXT NOT NULL,
+        visit_date TEXT NOT NULL,
+        method TEXT NOT NULL,
+        quantity_given INTEGER,
+        next_follow_up_date TEXT,
+        side_effects TEXT,
+        referral_needed INTEGER DEFAULT 0,
+        counselling_given INTEGER DEFAULT 1,
+        notes TEXT,
+        synced INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+        CREATE TABLE IF NOT EXISTS tb_cases (
+        id TEXT PRIMARY KEY,
+        local_id TEXT NOT NULL UNIQUE,
+        member_id TEXT NOT NULL,
+        registered_by_id TEXT NOT NULL,
+        treatment_start_date TEXT NOT NULL,
+        treatment_category TEXT NOT NULL,
+        facility_id TEXT,
+        treatment_number TEXT,
+        is_active INTEGER DEFAULT 1,
+        outcome TEXT,
+        outcome_date TEXT,
+        notes TEXT,
+        synced INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS tb_dot_visits (
+        id TEXT PRIMARY KEY,
+        local_id TEXT NOT NULL UNIQUE,
+        tb_case_id TEXT NOT NULL,
+        visited_by_id TEXT NOT NULL,
+        visit_date TEXT NOT NULL,
+        status TEXT DEFAULT 'OBSERVED',
+        drugs_given TEXT,
+        missed_reason TEXT,
+        notes TEXT,
+        synced INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS pnc_visits (
+        id TEXT PRIMARY KEY,
+        local_id TEXT NOT NULL UNIQUE,
+        member_id TEXT NOT NULL,
+        pnc_number INTEGER NOT NULL,
+        expected_date TEXT NOT NULL,
+        status TEXT DEFAULT 'SCHEDULED',
+        visited_date TEXT,
+        visited_by_id TEXT,
+        mother_temperature REAL,
+        mother_blood_pressure TEXT,
+        mother_breast_status TEXT,
+        mother_uterus_status TEXT,
+        mother_danger_signs TEXT,
+        newborn_weight REAL,
+        newborn_temperature REAL,
+        newborn_cord_status TEXT,
+        is_breastfeeding INTEGER DEFAULT 0,
+        newborn_danger_signs TEXT,
+        referral_needed INTEGER DEFAULT 0,
+        notes TEXT,
+        synced INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
       CREATE TABLE IF NOT EXISTS stock_requests (
         id TEXT PRIMARY KEY,
         local_id TEXT NOT NULL UNIQUE,
@@ -348,6 +444,9 @@ export const backfillSyncedFlags = async (): Promise<void> => {
       DRUG_DISPENSE: "drug_dispenses",
       STOCK_REQUEST: "stock_requests",
       ANC_VISIT: "anc_visits",
+      PNC_VISIT: "pnc_visits",
+      TB_DOT_VISIT: "tb_dot_visits",
+      FP_VISIT: "fp_visits",
     };
 
     for (const [type, table] of Object.entries(tableByType)) {
@@ -393,6 +492,11 @@ export const resetDatabase = async (): Promise<void> => {
       DROP TABLE IF EXISTS login_attempts;
       DROP TABLE IF EXISTS login_lockouts;
       DROP TABLE IF EXISTS notifications;
+      DROP TABLE IF EXISTS supervisor_feedback;
+      DROP TABLE IF EXISTS fp_visits;
+      DROP TABLE IF EXISTS tb_dot_visits;
+      DROP TABLE IF EXISTS tb_cases;
+      DROP TABLE IF EXISTS pnc_visits;
       DROP TABLE IF EXISTS stock_requests;
     `);
 

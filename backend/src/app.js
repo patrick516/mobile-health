@@ -20,6 +20,10 @@ import adminRoutes from "./api/admin/admin.routes.js";
 import exportRoutes from "./api/export/export.routes.js";
 import reportsRoutes from "./api/reports/reports.routes.js";
 import ancRoutes from "./api/anc/anc.routes.js";
+import pncRoutes from "./api/pnc/pnc.routes.js";
+import tbRoutes from "./api/tb/tb.routes.js";
+import fpRoutes from "./api/fp/fp.routes.js";
+import feedbackRoutes from "./api/feedback/feedback.routes.js";
 
 const app = express();
 
@@ -57,6 +61,10 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/export", exportRoutes);
 app.use("/api/reports", reportsRoutes);
 app.use("/api/anc", ancRoutes);
+app.use("/api/pnc", pncRoutes);
+app.use("/api/tb", tbRoutes);
+app.use("/api/fp", fpRoutes);
+app.use("/api/feedback", feedbackRoutes);
 
 //  404
 app.use((req, res) => {
