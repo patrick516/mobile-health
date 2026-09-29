@@ -87,10 +87,12 @@ export default function Users() {
     enabled: !!form.districtId,
   });
 
+  // SUPER_ADMIN must pick a facility for NURSE, DISTRICT_OFFICER and CCW.
+  // ADMINs never see this picker — the backend auto-assigns their facility.
   const needsFacility =
-    ["NURSE", "DISTRICT_OFFICER"].includes(form.role) &&
+    ["CCW", "NURSE", "DISTRICT_OFFICER"].includes(form.role) &&
     user?.role === "SUPER_ADMIN";
-  const isMobileOnly = form.role === "CCW";
+  const isCcw = form.role === "CCW";
 
   const createMutation = useMutation({
     mutationFn: (data: object) => api.post("/admin/users", data),
@@ -275,11 +277,12 @@ export default function Users() {
                 }))}
               />
             </div>
-            {isMobileOnly && (
+            {isCcw && (
               <div className="col-span-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
                 <p className="text-sm text-amber-800 font-medium">
-                  📱 CCW users are mobile-only. They log in via the mobile app
-                  and are allocated to zones, not facilities.
+                  📱 CCW users log in via the mobile app and are allocated to
+                  zones for household visits. Assign a facility so their reports
+                  roll up correctly.
                 </p>
               </div>
             )}

@@ -23,7 +23,7 @@ interface Visit {
   symptoms: string;
   temperature: number;
   muac_mm: number;
-  muac_status: string;
+  muac_status: string
   danger_signs: string;
   referral_needed: number;
   gps_lat: number;

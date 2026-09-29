@@ -26,7 +26,7 @@ async function main() {
       pinHash,
       role: "SUPER_ADMIN",
       isActive: true,
-      mustChangePin: true, // force PIN change on first login since this is a real credential
+      mustChangePin: true, 
     },
   });
 

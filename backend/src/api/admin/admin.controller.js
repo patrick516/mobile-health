@@ -332,7 +332,6 @@ export const createZone = async (req, res, next) => {
 };
 
 // ─── ALLOCATIONS
-
 export const allocateUserToZone = async (req, res, next) => {
   try {
     const { userId, zoneId } = req.body;
@@ -341,7 +340,7 @@ export const allocateUserToZone = async (req, res, next) => {
         .status(400)
         .json({ success: false, message: "userId and zoneId are required." });
 
-    // Check if already allocated to this zone
+    // ── Guard: already allocated to this zone? ──
     const existing = await prisma.userZoneAllocation.findUnique({
       where: { userId_zoneId: { userId, zoneId } },
       include: { zone: true, user: true },
@@ -352,10 +351,63 @@ export const allocateUserToZone = async (req, res, next) => {
         message: `${existing.user.fullName} is already allocated to ${existing.zone.name}.`,
       });
 
+    // ── Guard: target must exist and be a CCW ──
+    const targetUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, fullName: true, role: true, facilityId: true },
+    });
+    if (!targetUser) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found." });
+    }
+    if (targetUser.role !== "CCW") {
+      return res.status(400).json({
+        success: false,
+        message: "Only CCW users can be allocated to a zone.",
+      });
+    }
+
+    // ── Create the allocation ──
     const allocation = await prisma.userZoneAllocation.create({
       data: { userId, zoneId, allocatedById: req.user.id },
     });
-    res.status(201).json({ success: true, data: allocation });
+
+    // ── Auto-assign facility ──
+    // If an ADMIN is allocating, the CCW inherits the ADMIN's facility.
+    // Backfills when missing, force-syncs when it differs (safe — an ADMIN
+    // only ever sees users from their own facility via getUsers scoping).
+    let facilityAssigned = false;
+    if (req.user.role === "ADMIN" && req.user.facilityId) {
+      if (targetUser.facilityId !== req.user.facilityId) {
+        await prisma.user.update({
+          where: { id: userId },
+          data: { facilityId: req.user.facilityId },
+        });
+        facilityAssigned = true;
+
+        await prisma.auditLog.create({
+          data: {
+            userId: req.user.id,
+            action: "FACILITY_AUTO_ASSIGNED",
+            recordType: "USER",
+            recordId: userId,
+            oldValue: { facilityId: targetUser.facilityId ?? null },
+            newValue: {
+              facilityId: req.user.facilityId,
+              reason: "Auto-assigned during zone allocation",
+              zoneId,
+            },
+          },
+        });
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      data: allocation,
+      facilityAssigned,
+    });
   } catch (err) {
     next(err);
   }
