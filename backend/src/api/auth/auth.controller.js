@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import prisma from "../../config/db.js";
 import { signToken } from "../../utils/jwt.js";
+import { normalizePhone } from "../../utils/phone.js";
 
 const MAX_ATTEMPTS = 3;
 const LOCKOUT_MINUTES = 5;
@@ -10,8 +11,10 @@ const MAX_LOCKOUTS_BEFORE_PERMANENT = 3;
 
 export const login = async (req, res, next) => {
   try {
-    const { phoneNumber, pin, deviceId } = req.body;
+    const { phoneNumber: rawPhone, pin, deviceId } = req.body;
     const ipAddress = req.ip || req.headers["x-forwarded-for"] || null;
+
+    const phoneNumber = normalizePhone(rawPhone);
 
     if (!phoneNumber || !pin) {
       return res.status(400).json({
@@ -70,12 +73,12 @@ export const login = async (req, res, next) => {
     });
 
     if (!user) {
-      // ── Step 1: Record attempt for unknown number ──
+      // ── Record attempt for unknown number ──
       await prisma.loginAttempt.create({
         data: { phoneNumber, ipAddress, deviceId, success: false },
       });
 
-      // ── Step 2: Track unknown numbers for admin visibility ──
+      // ── Track unknown numbers for admin visibility ──
       try {
         await prisma.unknownLoginAttempt.upsert({
           where: { phoneNumber },
@@ -93,24 +96,27 @@ export const login = async (req, res, next) => {
           },
         });
       } catch (error) {
-        // If table doesn't exist, just log it
         console.log("UnknownLoginAttempt table not ready:", error.message);
       }
 
-      // ── Step 3: Check if this number is locked out ──
-      const lockout = await prisma.loginLockout.findUnique({
+      // ── Check if this number is locked out ──
+      const lockout2 = await prisma.loginLockout.findUnique({
         where: { phoneNumber },
       });
 
-      if (lockout && lockout.lockedUntil && new Date() < lockout.lockedUntil) {
+      if (
+        lockout2 &&
+        lockout2.lockedUntil &&
+        new Date() < lockout2.lockedUntil
+      ) {
         const remaining = Math.ceil(
-          (lockout.lockedUntil.getTime() - Date.now()) / 60000,
+          (lockout2.lockedUntil.getTime() - Date.now()) / 60000,
         );
         return res.status(423).json({
           success: false,
           message: `Account locked. Try again in ${remaining} minute${remaining > 1 ? "s" : ""}.`,
-          lockedUntil: lockout.lockedUntil,
-          isPermanent: lockout.isPermanent || false,
+          lockedUntil: lockout2.lockedUntil,
+          isPermanent: lockout2.isPermanent || false,
         });
       }
 
@@ -153,12 +159,10 @@ export const login = async (req, res, next) => {
     const pinMatch = await bcrypt.compare(String(pin), user.pinHash);
 
     if (!pinMatch) {
-      // Record failed attempt
       await prisma.loginAttempt.create({
         data: { phoneNumber, ipAddress, deviceId, success: false },
       });
 
-      // Count recent failed attempts (last 10 minutes)
       const recentFails = await prisma.loginAttempt.count({
         where: {
           phoneNumber,
@@ -170,14 +174,11 @@ export const login = async (req, res, next) => {
       });
 
       if (recentFails >= MAX_ATTEMPTS) {
-        // Check existing lockout
         const existingLockout = await prisma.loginLockout.findUnique({
           where: { phoneNumber },
         });
 
         const lockoutCount = (existingLockout?.lockoutCount || 0) + 1;
-
-        // Count lockouts in last hour
         const recentLockouts = lockoutCount;
         const isPermanent = recentLockouts >= MAX_LOCKOUTS_BEFORE_PERMANENT;
         const lockedUntil = isPermanent
@@ -202,7 +203,6 @@ export const login = async (req, res, next) => {
           },
         });
 
-        // Write audit log
         await prisma.auditLog.create({
           data: {
             userId: user.id,
@@ -219,7 +219,6 @@ export const login = async (req, res, next) => {
           },
         });
 
-        // If permanent — deactivate account
         if (isPermanent) {
           await prisma.user.update({
             where: { id: user.id },
@@ -246,14 +245,12 @@ export const login = async (req, res, next) => {
       });
     }
 
-    // ── Step 4: Success — clear lockout, record success ──
+    // ── Step 4: Success — record success ──
     await prisma.loginAttempt.create({
       data: { phoneNumber, ipAddress, deviceId, success: true },
     });
 
-    // ── Step 4a: PIN was reset by an admin — force a new PIN before
-    // issuing a normal session. No token, no user data beyond what's
-    // needed to drive the "create new PIN" screen.
+    // ── Step 4a: PIN was reset by admin — force new PIN, no session ──
     if (user.mustChangePin) {
       return res.json({
         success: true,
@@ -267,7 +264,7 @@ export const login = async (req, res, next) => {
       });
     }
 
-    // ── Step 4b: Block CCW with no zone allocation (after PIN verified) ──
+    // ── Step 4b: Block CCW with no zone allocation ──
     if (user.role === "CCW" && user.zoneAllocations.length === 0) {
       return res.status(403).json({
         success: false,
@@ -276,6 +273,7 @@ export const login = async (req, res, next) => {
         code: "NO_ZONE_ALLOCATION",
       });
     }
+
     // Clear any existing lockout on successful login
     await prisma.loginLockout.deleteMany({ where: { phoneNumber } });
 
@@ -290,7 +288,6 @@ export const login = async (req, res, next) => {
     const token = signToken(user.id, user.role);
     const { pinHash, ...userSafe } = user;
 
-    // Compute scope so the frontend knows what dashboard view to render
     const userFacility = await prisma.user.findUnique({
       where: { id: user.id },
       select: {
@@ -336,7 +333,6 @@ export const login = async (req, res, next) => {
   }
 };
 
-// GET /api/auth/me
 // GET /api/auth/me
 export const getMe = async (req, res, next) => {
   try {
@@ -431,11 +427,6 @@ export const changePin = async (req, res, next) => {
 };
 
 // PATCH /api/auth/complete-pin-reset
-// No token required — this only runs immediately after login responds
-// with mustChangePin: true, using the temp PIN as proof of identity.
-// Mirrors changePin's verify-then-update pattern, but takes userId
-// directly instead of reading it off req.user, since there's no
-// session yet at this point in the flow.
 export const completePinReset = async (req, res, next) => {
   try {
     const { userId, tempPin, newPin } = req.body;
@@ -464,8 +455,6 @@ export const completePinReset = async (req, res, next) => {
     }
 
     if (!user.mustChangePin) {
-      // Nothing to reset — don't let this endpoint be used as a generic
-      // "change my PIN with no auth" backdoor outside the reset flow.
       return res.status(400).json({
         success: false,
         message: "No PIN reset is pending for this account.",
@@ -498,11 +487,11 @@ export const completePinReset = async (req, res, next) => {
 // POST /api/auth/flag-lockout
 export const flagLockout = async (req, res, next) => {
   try {
-    const { phoneNumber, reason, lockedUntil } = req.body;
+    const { phoneNumber: rawPhone, reason, lockedUntil } = req.body;
+    const phoneNumber = normalizePhone(rawPhone);
 
     console.log("📤 Flagging lockout for:", phoneNumber);
 
-    // ── Step 1: Find OR CREATE the user ──
     let user = await prisma.user.findUnique({
       where: { phoneNumber },
       select: { id: true, fullName: true, phoneNumber: true, isActive: true },
@@ -512,7 +501,6 @@ export const flagLockout = async (req, res, next) => {
       console.log("📝 Unknown phone number - creating shadow record...");
 
       try {
-        // Create a shadow user for tracking
         user = await prisma.user.create({
           data: {
             id: `shadow_${phoneNumber}`,
@@ -531,7 +519,6 @@ export const flagLockout = async (req, res, next) => {
         });
         console.log("✅ Shadow user created:", user.id);
       } catch (createError) {
-        // If user creation fails, try to find again (race condition)
         user = await prisma.user.findUnique({
           where: { phoneNumber },
           select: {
@@ -543,7 +530,6 @@ export const flagLockout = async (req, res, next) => {
         });
 
         if (!user) {
-          // If still no user, create with a different approach
           user = await prisma.user.create({
             data: {
               id: `shadow_${phoneNumber}_${Date.now()}`,
@@ -564,14 +550,11 @@ export const flagLockout = async (req, res, next) => {
       }
     }
 
-    // ── Step 2: Create/Update lockout record ──
     await prisma.loginLockout.upsert({
       where: { phoneNumber },
       update: {
         lockedUntil: new Date(lockedUntil),
-        lockoutCount: {
-          increment: 1,
-        },
+        lockoutCount: { increment: 1 },
         lastLockoutAt: new Date(),
         isPermanent: true,
         unlockedAt: null,
@@ -586,13 +569,11 @@ export const flagLockout = async (req, res, next) => {
       },
     });
 
-    // ── Step 3: Deactivate user ──
     await prisma.user.update({
       where: { phoneNumber },
       data: { isActive: false },
     });
 
-    // ── Step 4: Log to audit ──
     await prisma.auditLog.create({
       data: {
         userId: user.id,
@@ -609,11 +590,11 @@ export const flagLockout = async (req, res, next) => {
       },
     });
 
-    console.log(" Lockout flag saved for:", phoneNumber);
+    console.log("Lockout flag saved for:", phoneNumber);
 
     res.json({ success: true });
   } catch (err) {
-    console.error(" Error in flagLockout:", err);
+    console.error("Error in flagLockout:", err);
     next(err);
   }
 };
