@@ -6,12 +6,11 @@ import {
   Shield,
   FlaskConical,
   TrendingUp,
-  Download,
   FileBarChart,
+  Download,
   Users,
   Map,
   Network,
-  LogOut,
   ShieldAlert,
   Building2,
   MapPinOff,
@@ -35,30 +34,9 @@ const NAV = [
   },
   { to: "/drugs", icon: FlaskConical, label: "Drug Stock", roles: ["ALL"] },
   { to: "/analytics", icon: TrendingUp, label: "Analytics", roles: ["ALL"] },
-  {
-    to: "/reports",
-    icon: FileBarChart,
-    label: "Reports",
-    roles: ["DISTRICT_OFFICER", "ADMIN", "SUPER_ADMIN"],
-  },
-  {
-    to: "/pnc",
-    icon: Baby,
-    label: "PNC",
-    roles: ["ALL"],
-  },
-  {
-    to: "/tb",
-    icon: Pill,
-    label: "TB Follow-up",
-    roles: ["ALL"],
-  },
-  {
-    to: "/fp",
-    icon: HeartHandshake,
-    label: "Family Planning",
-    roles: ["ALL"],
-  },
+  { to: "/pnc", icon: Baby, label: "PNC", roles: ["ALL"] },
+  { to: "/tb", icon: Pill, label: "TB Follow-up", roles: ["ALL"] },
+  { to: "/fp", icon: HeartHandshake, label: "Family Planning", roles: ["ALL"] },
   {
     to: "/feedback",
     icon: MessageSquare,
@@ -69,6 +47,12 @@ const NAV = [
     to: "/reports",
     icon: FileBarChart,
     label: "Reports",
+    roles: ["DISTRICT_OFFICER", "ADMIN", "SUPER_ADMIN"],
+  },
+  {
+    to: "/export",
+    icon: Download,
+    label: "DHIS2 Export",
     roles: ["DISTRICT_OFFICER", "ADMIN", "SUPER_ADMIN"],
   },
   {
@@ -95,23 +79,22 @@ const NAV = [
     label: "Allocations",
     roles: ["ADMIN", "SUPER_ADMIN"],
   },
-
-  {
-    to: "/admin/security",
-    icon: ShieldAlert,
-    label: "Security",
-    roles: ["SUPER_ADMIN"],
-  },
   {
     to: "/admin/relocated-households",
     icon: MapPinOff,
     label: "Relocated Households",
     roles: ["ADMIN", "SUPER_ADMIN"],
   },
+  {
+    to: "/admin/security",
+    icon: ShieldAlert,
+    label: "Security",
+    roles: ["SUPER_ADMIN"],
+  },
 ];
 
 export default function Sidebar() {
-  const { user, clearAuth } = useAuthStore();
+  const { user } = useAuthStore();
 
   const visible = NAV.filter(
     (n) => n.roles.includes("ALL") || n.roles.includes(user?.role || ""),
@@ -119,32 +102,25 @@ export default function Sidebar() {
 
   return (
     <aside className="w-64 bg-teal-800 flex flex-col h-full">
-      {/* Logo */}
-      <div className="flex items-center gap-3 px-6 py-5 border-b border-teal-700">
-        <img
-          src="/images/logo.png"
-          alt="Logo"
-          className="w-9 h-9 rounded-lg object-cover"
-        />
-        <div>
-          <p className="text-white font-bold text-sm leading-tight">
-            MobileHealth
-          </p>
-          {user?.facility ? (
-            <p
-              className="text-teal-300 text-xs truncate max-w-[130px]"
-              title={user.facility.name}
-            >
-              {user.facility.name}
-            </p>
-          ) : (
-            <p className="text-teal-300 text-xs">Malawi</p>
-          )}
+      {/* ── Brand block: logo centered, wordmark below ── */}
+      <div className="flex flex-col items-center text-center px-4 py-6 border-b border-teal-700">
+        <div className="w-14 h-14 rounded-xl bg-white flex items-center justify-center shadow-md mb-3">
+          <img
+            src="/images/logo.png"
+            alt="MobileHealth Malawi"
+            className="w-10 h-10 object-contain rounded-lg"
+          />
         </div>
+        <p className="text-white font-bold text-sm leading-tight">
+          MobileHealth Malawi
+        </p>
+        <p className="text-teal-300 text-[10px] uppercase tracking-widest mt-1 px-2 truncate max-w-full">
+          {user?.facility?.name || "Health Portal"}
+        </p>
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 px-3 py-4 overflow-y-auto">
+      {/* ── Navigation ── */}
+      <nav className="flex-1 px-3 py-4 overflow-y-auto no-scrollbar">
         {visible.map((item) => (
           <NavLink
             key={item.to}
@@ -154,40 +130,16 @@ export default function Sidebar() {
               clsx(
                 "flex items-center gap-3 px-3 py-2.5 rounded-lg mb-0.5 text-sm font-medium transition-colors",
                 isActive
-                  ? "bg-teal-700 text-white"
+                  ? "bg-teal-700 text-white shadow-sm"
                   : "text-teal-200 hover:bg-teal-700/50 hover:text-white",
               )
             }
           >
-            <item.icon size={18} />
-            {item.label}
+            <item.icon size={18} className="shrink-0" />
+            <span className="truncate">{item.label}</span>
           </NavLink>
         ))}
       </nav>
-
-      {/* User */}
-      <div className="px-4 py-4 border-t border-teal-700">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="w-8 h-8 rounded-full bg-teal-600 flex items-center justify-center text-white text-sm font-bold">
-            {user?.fullName?.charAt(0) || "U"}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-white text-sm font-semibold truncate">
-              {user?.fullName}
-            </p>
-            <p className="text-teal-300 text-xs">
-              {user?.role?.replace("_", " ")}
-            </p>
-          </div>
-        </div>
-        <button
-          onClick={clearAuth}
-          className="flex items-center gap-2 text-teal-300 hover:text-white text-xs w-full transition-colors"
-        >
-          <LogOut size={14} />
-          Sign out
-        </button>
-      </div>
     </aside>
   );
 }

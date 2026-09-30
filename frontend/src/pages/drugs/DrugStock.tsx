@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import api from "../../services/api";
 import { useAuthStore } from "../../store/auth.store";
+import Select from "../../components/ui/Select";
 
 interface Drug {
   id: string;
@@ -288,25 +289,22 @@ export default function DrugStock() {
                   <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                     Select CCW *
                   </label>
-                  <select
-                    className="input"
+                  <Select
                     value={selectedCcwId}
-                    onChange={(e) => {
-                      setSelectedCcwId(e.target.value);
+                    onChange={(val) => {
+                      setSelectedCcwId(val);
                       const defaults: Record<string, number> = {};
                       drugs?.forEach((d) => {
                         defaults[d.id] = d.minimumThreshold * 2;
                       });
                       setKitQuantities(defaults);
                     }}
-                  >
-                    <option value="">Select a CCW...</option>
-                    {ccwUsers?.map((u: any) => (
-                      <option key={u.id} value={u.id}>
-                        {u.fullName} — {u.phoneNumber}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Select a CCW..."
+                    options={(ccwUsers || []).map((u: any) => ({
+                      value: u.id,
+                      label: `${u.fullName} — ${u.phoneNumber}`,
+                    }))}
+                  />
                 </div>
               </div>
 
@@ -548,28 +546,23 @@ export default function DrugStock() {
                   <label className="block text-xs font-semibold text-gray-700 mb-1">
                     Unit *
                   </label>
-                  <select
-                    className="input text-sm"
+                  <Select
                     value={drugForm.unit}
-                    onChange={(e) =>
-                      setDrugForm((p) => ({ ...p, unit: e.target.value }))
+                    onChange={(val) =>
+                      setDrugForm((p) => ({ ...p, unit: val }))
                     }
-                  >
-                    {[
-                      "tablet",
-                      "capsule",
-                      "sachet",
-                      "kit",
-                      "pack",
-                      "bottle",
-                      "vial",
-                      "ampoule",
-                    ].map((u) => (
-                      <option key={u} value={u}>
-                        {u}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Select unit..."
+                    options={[
+                      { value: "tablet", label: "tablet" },
+                      { value: "capsule", label: "capsule" },
+                      { value: "sachet", label: "sachet" },
+                      { value: "kit", label: "kit" },
+                      { value: "pack", label: "pack" },
+                      { value: "bottle", label: "bottle" },
+                      { value: "vial", label: "vial" },
+                      { value: "ampoule", label: "ampoule" },
+                    ]}
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">

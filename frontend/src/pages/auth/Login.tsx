@@ -3,10 +3,19 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "../../store/auth.store";
 import api from "../../services/api";
 
+// Extract only the 9 digits that follow +265.
+// Accepts: "0995049331" | "+265995049331" | "265995049331" | "995049331" | "995 049 331"
+const extractSuffix = (raw: string): string => {
+  let digits = String(raw).replace(/\D/g, "");
+  if (digits.startsWith("265")) digits = digits.slice(3);
+  if (digits.startsWith("0")) digits = digits.slice(1);
+  return digits.slice(0, 9);
+};
+
 export default function Login() {
   const navigate = useNavigate();
   const setAuth = useAuthStore((s) => s.setAuth);
-  const [phone, setPhone] = useState("");
+  const [phoneSuffix, setPhoneSuffix] = useState("");
   const [pin, setPin] = useState("");
   const [loading, setLoading] = useState(false);
   const location = useLocation();
@@ -15,16 +24,21 @@ export default function Login() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!phone || !pin) return setError("Phone number and PIN are required.");
+    if (!phoneSuffix || !pin)
+      return setError("Phone number and PIN are required.");
+    if (phoneSuffix.length !== 9)
+      return setError("Enter the full 9-digit mobile number after +265.");
+    if (!/^[89]/.test(phoneSuffix))
+      return setError("Malawi mobile numbers start with 8 or 9.");
     if (pin.length !== 4) return setError("PIN must be exactly 4 digits.");
+
     setLoading(true);
     setError("");
     try {
       const res = await api.post("/auth/login", {
-        phoneNumber: phone.trim(),
+        phoneNumber: `+265${phoneSuffix}`,
         pin: pin.trim(),
       });
-      // Check if PIN reset is required before issuing session
       if (res.data.mustChangePin) {
         navigate("/change-pin", { state: res.data.data });
         return;
@@ -42,27 +56,35 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-teal-800 flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-white shadow-lg mb-4">
+    <div
+      className="min-h-screen relative bg-cover bg-center bg-no-repeat flex items-center justify-center px-4 py-8"
+      style={{ backgroundImage: "url('/images/login-bg.png')" }}
+    >
+      <div className="absolute inset-0 bg-teal-950/70" />
+      <div className="absolute inset-0 bg-gradient-to-b from-teal-950/40 via-transparent to-teal-950/60" />
+
+      <div className="relative z-10 w-full max-w-sm">
+        {/* Brand header */}
+        <div className="text-center mb-6">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-white shadow-lg mb-3">
             <img
               src="/images/logo.png"
-              alt="Logo"
-              className="w-14 h-14 object-contain rounded-xl"
+              alt="MobileHealth Malawi"
+              className="w-11 h-11 object-contain rounded-lg"
             />
           </div>
-          <h1 className="text-2xl font-bold text-white">MobileHealth Malawi</h1>
-          <p className="text-teal-300 text-sm mt-1">
-            Health Portal — Staff & Administration
+          <h1 className="text-2xl font-bold text-white tracking-tight">
+            MobileHealth Malawi
+          </h1>
+          <p className="text-teal-200 text-sm mt-1">
+            Health Portal — Staff &amp; Administration
           </p>
         </div>
 
         {/* Card */}
-        <div className="bg-white rounded-2xl shadow-xl p-8">
-          <h2 className="text-xl font-bold text-gray-900 mb-1">Sign in</h2>
-          <p className="text-gray-500 text-sm mb-6">
+        <div className="bg-white rounded-2xl shadow-2xl p-7">
+          <h2 className="text-lg font-bold text-gray-900 mb-1">Sign in</h2>
+          <p className="text-gray-500 text-sm mb-5">
             Enter your phone number and PIN
           </p>
 
@@ -71,6 +93,7 @@ export default function Login() {
               {successMsg}
             </div>
           )}
+
           {error && (
             <div
               className={`border px-4 py-3 rounded-lg text-sm mb-4 ${
@@ -98,15 +121,41 @@ export default function Login() {
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                 Phone Number
               </label>
-              <input
-                className="input"
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="e.g. 0999000001"
-                autoComplete="tel"
-              />
+
+              {/* Hardcoded +265 prefix + digits-only input */}
+              <div className="flex items-stretch rounded-lg border border-gray-200 bg-white overflow-hidden focus-within:border-teal-600 focus-within:ring-2 focus-within:ring-teal-500/20 transition-colors">
+                <span className="flex items-center px-3 bg-gray-50 text-gray-500 font-mono text-sm border-r border-gray-200 select-none">
+                  +265
+                </span>
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  value={phoneSuffix}
+                  onChange={(e) =>
+                    setPhoneSuffix(extractSuffix(e.target.value))
+                  }
+                  placeholder="991234567"
+                  maxLength={9}
+                  autoComplete="tel-national"
+                  className="flex-1 px-3 py-2.5 text-sm font-mono text-gray-900 outline-none bg-white placeholder:text-gray-300"
+                />
+              </div>
+
+              {/* Live hint */}
+              <p className="text-xs text-gray-400 mt-1.5">
+                {phoneSuffix.length === 9 ? (
+                  <>
+                    Will sign in as{" "}
+                    <span className="font-mono text-gray-600">
+                      +265{phoneSuffix}
+                    </span>
+                  </>
+                ) : (
+                  <>Enter the 9 digits after +265 (e.g. 991234567)</>
+                )}
+              </p>
             </div>
+
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                 PIN
@@ -116,22 +165,23 @@ export default function Login() {
                 type="password"
                 value={pin}
                 onChange={(e) => setPin(e.target.value)}
-                placeholder=" PIN"
+                placeholder="••••"
                 maxLength={4}
                 autoComplete="current-password"
               />
             </div>
+
             <button
               type="submit"
               disabled={loading}
-              className="btn-primary w-full mt-2"
+              className="btn-primary w-full !mt-5"
             >
               {loading ? "Signing in..." : "Sign In"}
             </button>
           </form>
         </div>
 
-        <p className="text-center text-teal-400 text-xs mt-6">
+        <p className="text-center text-teal-300 text-xs mt-6">
           MobileHealth Malawi v1.0 — Web Portal
         </p>
       </div>

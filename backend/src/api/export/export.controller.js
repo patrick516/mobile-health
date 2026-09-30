@@ -2,7 +2,13 @@ import prisma from "../../config/db.js";
 
 export const exportDHIS2 = async (req, res, next) => {
   try {
-    const { from, to } = req.query;
+    const {
+      from,
+      to,
+      districtId: qDistrictId,
+      taId: qTaId,
+      zoneId: qZoneId,
+    } = req.query;
 
     if (!from || !to) {
       return res
@@ -10,8 +16,66 @@ export const exportDHIS2 = async (req, res, next) => {
         .json({ success: false, message: "from and to dates are required." });
     }
 
+    // ─── Base filter: date range ───
+    const visitWhere = {
+      visitedAt: { gte: new Date(from), lte: new Date(to) },
+    };
+
+    // ─── Role-based scoping ───
+    if (req.user.role === "SUPER_ADMIN") {
+      // Country-wide by default; narrowed if filters are provided.
+      // Precedence: zoneId > taId > districtId
+      if (qZoneId) {
+        visitWhere.member = {
+          household: { village: { zone: { id: qZoneId } } },
+        };
+      } else if (qTaId) {
+        visitWhere.member = {
+          household: { village: { zone: { taId: qTaId } } },
+        };
+      } else if (qDistrictId) {
+        visitWhere.member = {
+          household: {
+            village: { zone: { ta: { districtId: qDistrictId } } },
+          },
+        };
+      }
+    } else if (req.user.role === "ADMIN") {
+      // Auto-scope to the admin's facility via the CHW's facility assignment.
+      // Query params are IGNORED — an ADMIN cannot widen their scope.
+      if (!req.user.facilityId) {
+        return res.status(403).json({
+          success: false,
+          message: "Your account has no facility assigned.",
+        });
+      }
+      visitWhere.chw = { facilityId: req.user.facilityId };
+    } else if (req.user.role === "DISTRICT_OFFICER") {
+      // Prefer district scope if their facility is a District Hospital.
+      // Otherwise fall back to the TAs they're allocated to.
+      if (req.user.districtId) {
+        visitWhere.member = {
+          household: {
+            village: { zone: { ta: { districtId: req.user.districtId } } },
+          },
+        };
+      } else if (req.user.taIds && req.user.taIds.length > 0) {
+        visitWhere.member = {
+          household: {
+            village: { zone: { taId: { in: req.user.taIds } } },
+          },
+        };
+      } else {
+        // No scope — return nothing rather than leak everything.
+        return res.status(403).json({
+          success: false,
+          message: "Your account has no district or TA allocation.",
+        });
+      }
+    }
+
     const visits = await prisma.visit.findMany({
-      where: { visitedAt: { gte: new Date(from), lte: new Date(to) } },
+      where: visitWhere,
       include: {
         member: {
           include: {
@@ -26,7 +90,12 @@ export const exportDHIS2 = async (req, res, next) => {
             },
           },
         },
-        chw: { select: { fullName: true } },
+        chw: {
+          select: {
+            fullName: true,
+            facility: { select: { name: true, facilityType: true } },
+          },
+        },
         referrals: { select: { status: true, urgency: true } },
       },
     });
@@ -44,6 +113,7 @@ export const exportDHIS2 = async (req, res, next) => {
         v.member.household.village.name,
         v.member.household.householdNumber,
         v.chw.fullName,
+        v.chw.facility?.name || "",
         v.visitType,
         JSON.stringify(v.symptoms || []),
         v.temperature || "",
@@ -66,6 +136,7 @@ export const exportDHIS2 = async (req, res, next) => {
       "village",
       "household_number",
       "chw_name",
+      "facility",
       "visit_type",
       "symptoms",
       "temperature_c",
