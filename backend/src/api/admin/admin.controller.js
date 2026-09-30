@@ -75,7 +75,7 @@ export const createUser = async (req, res, next) => {
         assignedFacilityId = facilityId || null;
       }
     } else if (role === "ADMIN") {
-      // SUPER_ADMIN creating an ADMIN — facility assigned later via allocation
+      // SUPER_ADMIN creating an ADMIN — facility picked in the create form
       assignedFacilityId = facilityId || null;
     }
 
@@ -117,7 +117,7 @@ export const createUser = async (req, res, next) => {
     if (err.code === "P2002")
       return res.status(409).json({
         success: false,
-        message: `Phone number ${req.body.phoneNumber} is already registered.`,
+        message: `Phone number ${phoneNumber} is already registered.`,
       });
     next(err);
   }
@@ -598,7 +598,6 @@ export const createFacility = async (req, res, next) => {
       return res.status(201).json({ success: true, data: facility });
     }
 
-    // ─── CLINIC ──────────────────────────────────────────
     if (facilityType === "CLINIC") {
       if (!taId) {
         return res.status(400).json({
@@ -606,11 +605,24 @@ export const createFacility = async (req, res, next) => {
           message: "Traditional Authority is required for a Clinic.",
         });
       }
+
+      // Look up the TA's district and inherit it
+      const ta = await prisma.traditionalAuthority.findUnique({
+        where: { id: taId },
+        select: { districtId: true },
+      });
+      if (!ta) {
+        return res.status(404).json({
+          success: false,
+          message: "Traditional Authority not found.",
+        });
+      }
+
       const facility = await prisma.facility.create({
         data: {
           name,
           facilityType,
-          districtId: null,
+          districtId: ta.districtId, // ← inherit, don't null
           taId,
           gpsLat: gpsLat || null,
           gpsLng: gpsLng || null,
@@ -618,7 +630,6 @@ export const createFacility = async (req, res, next) => {
       });
       return res.status(201).json({ success: true, data: facility });
     }
-
     // Fallback (should never reach here)
     return res.status(400).json({
       success: false,

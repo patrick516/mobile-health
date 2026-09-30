@@ -22,8 +22,16 @@ interface User {
   isActive: boolean;
 }
 
-// SUPER_ADMIN is not creatable from UI — only via seed/DB
 const ROLES = ["CCW", "NURSE", "DISTRICT_OFFICER", "ADMIN"];
+
+// Extract the 9 digits that follow +265.
+// Handles: "0995049331" | "+265995049331" | "265995049331" | "995049331"
+const extractPhoneSuffix = (raw: string): string => {
+  let digits = String(raw).replace(/\D/g, "");
+  if (digits.startsWith("265")) digits = digits.slice(3);
+  if (digits.startsWith("0")) digits = digits.slice(1);
+  return digits.slice(0, 9);
+};
 
 export default function Users() {
   const queryClient = useQueryClient();
@@ -31,7 +39,7 @@ export default function Users() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
     fullName: "",
-    phoneNumber: "",
+    phoneSuffix: "",
     pin: "1234",
     role: "CCW",
     facilityId: "",
@@ -49,13 +57,10 @@ export default function Users() {
 
   const [error, setError] = useState("");
 
-  // Filters — Role, Facility, Status. All client-side since the full
-  // user list is already loaded in one call.
   const [roleFilter, setRoleFilter] = useState("");
   const [facilityFilter, setFacilityFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
 
-  // Pagination — client-side, fixed page size.
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 10;
 
@@ -87,31 +92,75 @@ export default function Users() {
     enabled: !!form.districtId,
   });
 
-  // SUPER_ADMIN must pick a facility for NURSE, DISTRICT_OFFICER and CCW.
-  // ADMINs never see this picker — the backend auto-assigns their facility.
   const needsFacility =
     ["CCW", "NURSE", "DISTRICT_OFFICER"].includes(form.role) &&
     user?.role === "SUPER_ADMIN";
   const isCcw = form.role === "CCW";
 
+  // ─── Client-side validation ───
+  const validate = (): string | null => {
+    if (!form.fullName.trim()) return "Full name is required.";
+    if (!form.phoneSuffix) return "Phone number is required.";
+    if (form.phoneSuffix.length !== 9)
+      return "Enter the full 9-digit mobile number after +265.";
+    if (!/^[89]/.test(form.phoneSuffix))
+      return "Malawi mobile numbers start with 8 or 9.";
+    if (!form.pin || form.pin.length !== 4)
+      return "PIN must be exactly 4 digits.";
+    if (!form.role) return "Role is required.";
+    if (needsFacility && !form.facilityId)
+      return "Facility is required for this role.";
+    return null;
+  };
+
+  const canSubmit =
+    form.fullName.trim().length > 0 &&
+    form.phoneSuffix.length === 9 &&
+    /^[89]/.test(form.phoneSuffix) &&
+    form.pin.length === 4 &&
+    form.role &&
+    (!needsFacility || !!form.facilityId);
+
+  const resetForm = () => {
+    setForm({
+      fullName: "",
+      phoneSuffix: "",
+      pin: "1234",
+      role: "CCW",
+      facilityId: "",
+      regionId: "",
+      districtId: "",
+    });
+    setError("");
+  };
+
   const createMutation = useMutation({
-    mutationFn: (data: object) => api.post("/admin/users", data),
+    mutationFn: (payload: object) => api.post("/admin/users", payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
       setShowForm(false);
-      setForm({
-        fullName: "",
-        phoneNumber: "",
-        pin: "",
-        role: "CCW",
-        facilityId: "",
-        regionId: "",
-        districtId: "",
-      });
+      resetForm();
     },
     onError: (err: any) =>
       setError(err.response?.data?.message || "Failed to create user."),
   });
+
+  const handleSubmit = () => {
+    const validationError = validate();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    setError("");
+    const payload = {
+      fullName: form.fullName.trim(),
+      phoneNumber: `+265${form.phoneSuffix}`,
+      pin: form.pin,
+      role: form.role,
+      ...(form.facilityId ? { facilityId: form.facilityId } : {}),
+    };
+    createMutation.mutate(payload);
+  };
 
   const deactivateMutation = useMutation({
     mutationFn: (id: string) => api.patch(`/admin/users/${id}/deactivate`),
@@ -147,8 +196,6 @@ export default function Users() {
     CCW: "badge-gray",
   };
 
-  // Reset to page 1 any time a filter changes, so narrowing the list
-  // never leaves you stranded on a now-empty page.
   const handleRoleFilter = (val: string) => {
     setRoleFilter(val);
     setPage(1);
@@ -162,8 +209,6 @@ export default function Users() {
     setPage(1);
   };
 
-  // Facility options derived from whatever's actually loaded — no extra
-  // API call. Sorted alphabetically, deduplicated by facility id.
   const facilityOptions = Array.from(
     new Map(
       (data || [])
@@ -192,7 +237,10 @@ export default function Users() {
     <div className="space-y-4">
       <div className="flex justify-end">
         <button
-          onClick={() => setShowForm(!showForm)}
+          onClick={() => {
+            setShowForm(!showForm);
+            if (showForm) resetForm();
+          }}
           className="btn-primary flex items-center gap-2"
         >
           <UserPlus size={16} />
@@ -220,20 +268,42 @@ export default function Users() {
                 onChange={(e) =>
                   setForm((p) => ({ ...p, fullName: e.target.value }))
                 }
+                placeholder="e.g. Chimwemwe Leno"
               />
             </div>
+
+            {/* Phone with hardcoded +265 prefix */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                 Phone Number
               </label>
-              <input
-                className="input"
-                value={form.phoneNumber}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, phoneNumber: e.target.value }))
-                }
-              />
+              <div className="flex items-stretch rounded-lg border border-gray-200 bg-white overflow-hidden focus-within:border-teal-600 focus-within:ring-2 focus-within:ring-teal-500/20 transition-colors">
+                <span className="flex items-center px-3 bg-gray-50 text-gray-500 font-mono text-sm border-r border-gray-200 select-none">
+                  +265
+                </span>
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  value={form.phoneSuffix}
+                  onChange={(e) =>
+                    setForm((p) => ({
+                      ...p,
+                      phoneSuffix: extractPhoneSuffix(e.target.value),
+                    }))
+                  }
+                  placeholder="991234567"
+                  maxLength={9}
+                  autoComplete="tel-national"
+                  className="flex-1 px-3 py-2.5 text-sm font-mono text-gray-900 outline-none bg-white placeholder:text-gray-300"
+                />
+              </div>
+              <p className="text-xs text-gray-400 mt-1">
+                {form.phoneSuffix.length === 9
+                  ? `Saved as +265${form.phoneSuffix}`
+                  : "9 digits after +265 (starts with 8 or 9)"}
+              </p>
             </div>
+
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                 PIN (4 digits)
@@ -243,9 +313,13 @@ export default function Users() {
                   className="input pr-10"
                   type={showPin ? "text" : "password"}
                   maxLength={4}
+                  inputMode="numeric"
                   value={form.pin}
                   onChange={(e) =>
-                    setForm((p) => ({ ...p, pin: e.target.value }))
+                    setForm((p) => ({
+                      ...p,
+                      pin: e.target.value.replace(/\D/g, "").slice(0, 4),
+                    }))
                   }
                 />
                 <button
@@ -257,6 +331,7 @@ export default function Users() {
                 </button>
               </div>
             </div>
+
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                 Role
@@ -264,11 +339,7 @@ export default function Users() {
               <Select
                 value={form.role}
                 onChange={(val) =>
-                  setForm((p) => ({
-                    ...p,
-                    role: val,
-                    facilityId: "",
-                  }))
+                  setForm((p) => ({ ...p, role: val, facilityId: "" }))
                 }
                 placeholder="Select role..."
                 options={ROLES.map((r) => ({
@@ -277,6 +348,7 @@ export default function Users() {
                 }))}
               />
             </div>
+
             {isCcw && (
               <div className="col-span-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
                 <p className="text-sm text-amber-800 font-medium">
@@ -366,17 +438,24 @@ export default function Users() {
               </>
             )}
           </div>
+
           <div className="flex gap-3">
             <button
               className="btn-primary"
-              onClick={() => createMutation.mutate(form)}
-              disabled={createMutation.isPending}
+              onClick={handleSubmit}
+              disabled={!canSubmit || createMutation.isPending}
+              title={
+                !canSubmit ? "Fill in all required fields to continue" : ""
+              }
             >
               {createMutation.isPending ? "Creating..." : "Create User"}
             </button>
             <button
               className="btn-secondary"
-              onClick={() => setShowForm(false)}
+              onClick={() => {
+                setShowForm(false);
+                resetForm();
+              }}
             >
               Cancel
             </button>
@@ -449,7 +528,7 @@ export default function Users() {
           </div>
         </div>
       )}
-      {/* Filters */}
+
       {/* Filters */}
       <div className="card p-4 flex flex-wrap items-end gap-4">
         <div className="w-48">
@@ -615,7 +694,6 @@ export default function Users() {
         </table>
       </div>
 
-      {/* Pagination */}
       {filteredUsers.length > PAGE_SIZE && (
         <div className="flex items-center justify-between px-2">
           <p className="text-sm text-gray-500">
