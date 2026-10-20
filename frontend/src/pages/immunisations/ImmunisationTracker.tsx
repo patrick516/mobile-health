@@ -4,6 +4,9 @@ import { Shield, AlertTriangle } from "lucide-react";
 import api from "../../services/api";
 import type { ImmunisationSchedule } from "../../types";
 
+const fullName = (p: any) =>
+  p ? `${p.firstName || ""} ${p.lastName || ""}`.trim() || "—" : "—";
+
 export default function ImmunisationTracker() {
   const [filter, setFilter] = useState<string>("ALL");
 
@@ -141,7 +144,7 @@ export default function ImmunisationTracker() {
                 className={`hover:bg-gray-50 ${s.status === "OVERDUE" ? "bg-red-50/30" : ""}`}
               >
                 <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                  {s.member.fullName}
+                  {fullName(s.member)}
                 </td>
                 <td className="px-4 py-3">
                   <p className="text-xs font-mono text-teal-700">
