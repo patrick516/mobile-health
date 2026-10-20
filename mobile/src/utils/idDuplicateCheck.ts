@@ -7,14 +7,9 @@ export interface IdDuplicateResult {
   householdNumber?: string;
 }
 
-// Checks whether a National ID number is already in use ANYWHERE in the
-// local SQLite database — as a household head OR as a household member.
-// A National ID belongs to exactly one real person, so it should never be
-// usable for two different household/member records, regardless of which
-// form it was scanned into.
 export async function checkNationalIdDuplicate(
   idNumber: string,
-  excludeLocalId?: string, // pass the current record's localId when editing, so it doesn't flag itself
+  excludeLocalId?: string,
 ): Promise<IdDuplicateResult> {
   if (!idNumber || idNumber.trim() === "") {
     return { isDuplicate: false };
@@ -23,7 +18,6 @@ export async function checkNationalIdDuplicate(
   const id = idNumber.trim();
   const db = await getDb();
 
-  // Check against household heads
   const householdMatch = await db.getFirstAsync<{
     local_id: string;
     household_number: string;
@@ -46,13 +40,14 @@ export async function checkNationalIdDuplicate(
     };
   }
 
-  // Check against household members
   const memberMatch = await db.getFirstAsync<{
     local_id: string;
-    full_name: string;
+    first_name: string;
+    last_name: string;
+    full_name: string | null;
     household_id: string;
   }>(
-    `SELECT local_id, full_name, household_id 
+    `SELECT local_id, first_name, last_name, full_name, household_id 
      FROM members 
      WHERE national_id = ? AND status = 'ACTIVE'
      ${excludeLocalId ? "AND local_id != ?" : ""}
@@ -61,16 +56,18 @@ export async function checkNationalIdDuplicate(
   );
 
   if (memberMatch) {
-    // Look up the household number for a clearer message
+    const fullName =
+      `${memberMatch.first_name || ""} ${memberMatch.last_name || ""}`.trim() ||
+      memberMatch.full_name ||
+      "Unknown";
     const hh = await db.getFirstAsync<{ household_number: string }>(
       `SELECT household_number FROM households WHERE id = ? OR local_id = ?`,
       [memberMatch.household_id, memberMatch.household_id],
     );
-
     return {
       isDuplicate: true,
       ownerType: "MEMBER",
-      ownerName: memberMatch.full_name,
+      ownerName: fullName,
       householdNumber: hh?.household_number,
     };
   }

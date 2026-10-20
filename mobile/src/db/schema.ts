@@ -4,7 +4,6 @@ let db: SQLite.SQLiteDatabase | null = null;
 let isInitializing = false;
 
 export const getDb = async (): Promise<SQLite.SQLiteDatabase> => {
-  // Wait if initialization is in progress
   while (isInitializing) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
@@ -28,15 +27,6 @@ export const getDb = async (): Promise<SQLite.SQLiteDatabase> => {
   return db;
 };
 
-// ─── Serialize concurrent statement execution ──────────────────────
-// expo-sqlite on Android has thrown native NullPointerExceptions in
-// prepareAsync when two callers issue statements on the same connection
-// at the same moment (e.g. background sync pull running while a screen
-// mounts and queries at the same time). This wraps the four async query
-// methods so every call — from any of the ~50 getDb() call sites across
-// the app — runs strictly one after another, in the order requested.
-// Nothing about the returned object's shape or usage changes; every
-// existing call site keeps working exactly as written.
 function wrapWithQueue(rawDb: SQLite.SQLiteDatabase): SQLite.SQLiteDatabase {
   let queue: Promise<any> = Promise.resolve();
   const serialize = <T extends (...args: any[]) => Promise<any>>(fn: T): T => {
@@ -60,7 +50,6 @@ export const initDb = async (): Promise<void> => {
   try {
     const database = await getDb();
 
-    // Migration — add new columns to existing tables (safe to run repeatedly)
     const addColumnIfMissing = async (
       table: string,
       column: string,
@@ -71,7 +60,6 @@ export const initDb = async (): Promise<void> => {
           `ALTER TABLE ${table} ADD COLUMN ${column} ${definition};`,
         );
       } catch (e: any) {
-        // Ignore "duplicate column" errors — means it already exists
         if (!e?.message?.includes("duplicate column")) {
           console.warn(
             `[DB] Migration warning on ${table}.${column}:`,
@@ -81,6 +69,14 @@ export const initDb = async (): Promise<void> => {
       }
     };
 
+    // ─── ALTER statements (safe — run every startup, ignored if column exists) ───
+    // ── Name split for members ──
+    await addColumnIfMissing("members", "first_name", "TEXT");
+    await addColumnIfMissing("members", "last_name", "TEXT");
+    // ── Name split for cached_users ──
+    await addColumnIfMissing("cached_users", "first_name", "TEXT");
+    await addColumnIfMissing("cached_users", "last_name", "TEXT");
+    // ── Existing other migrations ──
     await addColumnIfMissing("households", "head_national_id", "TEXT");
     await addColumnIfMissing(
       "households",
@@ -90,10 +86,8 @@ export const initDb = async (): Promise<void> => {
     await addColumnIfMissing("households", "consent_signature_url", "TEXT");
     await addColumnIfMissing("members", "national_id", "TEXT");
     await addColumnIfMissing("cached_users", "facility", "TEXT DEFAULT NULL");
-    // Needed for same-zone visibility + "Added by X" attribution label
     await addColumnIfMissing("notifications", "user_id", "TEXT");
     await addColumnIfMissing("households", "registered_by_name", "TEXT");
-    // New structure fields
     await addColumnIfMissing("households", "wall_material", "TEXT");
     await addColumnIfMissing("households", "roof_material", "TEXT");
     await addColumnIfMissing("households", "floor_type", "TEXT");
@@ -109,6 +103,8 @@ export const initDb = async (): Promise<void> => {
     await addColumnIfMissing("visits", "z_score_wfh", "REAL");
     await addColumnIfMissing("visits", "growth_status", "TEXT");
     await addColumnIfMissing("tb_cases", "treatment_number", "TEXT");
+
+    // ─── CREATE TABLE IF NOT EXISTS (for fresh installs) ───
     await database.execAsync(`
       CREATE TABLE IF NOT EXISTS sync_queue (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -157,7 +153,9 @@ export const initDb = async (): Promise<void> => {
         id TEXT PRIMARY KEY,
         local_id TEXT NOT NULL UNIQUE,
         household_id TEXT NOT NULL,
-        full_name TEXT NOT NULL,
+        first_name TEXT NOT NULL DEFAULT '',
+        last_name TEXT NOT NULL DEFAULT '',
+        full_name TEXT,
         date_of_birth TEXT,
         estimated_age INTEGER,
         sex TEXT NOT NULL,
@@ -282,11 +280,13 @@ export const initDb = async (): Promise<void> => {
         gps_lng REAL,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
-     CREATE TABLE IF NOT EXISTS cached_users (
+      CREATE TABLE IF NOT EXISTS cached_users (
         id TEXT PRIMARY KEY,
         phone_number TEXT NOT NULL UNIQUE,
         pin_hash TEXT NOT NULL,
         full_name TEXT NOT NULL,
+        first_name TEXT,
+        last_name TEXT,
         role TEXT NOT NULL,
         zone_allocations TEXT DEFAULT '[]',
         ta_allocations TEXT DEFAULT '[]',
@@ -326,8 +326,7 @@ export const initDb = async (): Promise<void> => {
         is_read INTEGER DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
-
-            CREATE TABLE IF NOT EXISTS supervisor_feedback (
+      CREATE TABLE IF NOT EXISTS supervisor_feedback (
         id TEXT PRIMARY KEY,
         ccw_id TEXT NOT NULL,
         supervisor_id TEXT NOT NULL,
@@ -340,7 +339,7 @@ export const initDb = async (): Promise<void> => {
         is_read INTEGER DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
-        CREATE TABLE IF NOT EXISTS fp_visits (
+      CREATE TABLE IF NOT EXISTS fp_visits (
         id TEXT PRIMARY KEY,
         local_id TEXT NOT NULL UNIQUE,
         member_id TEXT NOT NULL,
@@ -356,7 +355,7 @@ export const initDb = async (): Promise<void> => {
         synced INTEGER DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
-        CREATE TABLE IF NOT EXISTS tb_cases (
+      CREATE TABLE IF NOT EXISTS tb_cases (
         id TEXT PRIMARY KEY,
         local_id TEXT NOT NULL UNIQUE,
         member_id TEXT NOT NULL,
@@ -421,17 +420,60 @@ export const initDb = async (): Promise<void> => {
       );
     `);
 
+    // ─── BACKFILL: split existing full_name into first/last ───
+    try {
+      const membersToBackfill = await database.getAllAsync<{
+        id: string;
+        full_name: string;
+      }>(
+        "SELECT id, full_name FROM members WHERE full_name IS NOT NULL AND (first_name IS NULL OR first_name = '')",
+      );
+      for (const m of membersToBackfill) {
+        const parts = (m.full_name || "").trim().split(/\s+/);
+        const firstName = parts[0] || "";
+        const lastName = parts.slice(1).join(" ") || "";
+        await database.runAsync(
+          "UPDATE members SET first_name = ?, last_name = ? WHERE id = ?",
+          [firstName, lastName, m.id],
+        );
+      }
+      if (membersToBackfill.length > 0) {
+        console.log(`[DB] Backfilled ${membersToBackfill.length} member names`);
+      }
+    } catch (e) {
+      console.warn("[DB] Failed to backfill member names:", e);
+    }
+
+    try {
+      const usersToBackfill = await database.getAllAsync<{
+        id: string;
+        full_name: string;
+      }>(
+        "SELECT id, full_name FROM cached_users WHERE full_name IS NOT NULL AND (first_name IS NULL OR first_name = '')",
+      );
+      for (const u of usersToBackfill) {
+        const parts = (u.full_name || "").trim().split(/\s+/);
+        const firstName = parts[0] || "";
+        const lastName = parts.slice(1).join(" ") || "";
+        await database.runAsync(
+          "UPDATE cached_users SET first_name = ?, last_name = ? WHERE id = ?",
+          [firstName, lastName, u.id],
+        );
+      }
+      if (usersToBackfill.length > 0) {
+        console.log(`[DB] Backfilled ${usersToBackfill.length} user names`);
+      }
+    } catch (e) {
+      console.warn("[DB] Failed to backfill user names:", e);
+    }
+
     console.log("[DB] SQLite initialised successfully");
   } catch (err) {
     console.error("[DB] Init error:", err);
     throw err;
   }
 };
-// ─── ONE-TIME BACKFILL ──────────────────────────────────────────────
-// Before markRecordTablesSynced existed, confirmed sync_queue records
-// never propagated synced=1 onto their actual table (households,
-// members, etc). This catches anything stuck in that state. Safe to
-// run on every app start — it only touches rows that are still 0.
+
 export const backfillSyncedFlags = async (): Promise<void> => {
   try {
     const database = await getDb();
@@ -469,12 +511,11 @@ export const backfillSyncedFlags = async (): Promise<void> => {
     console.error("[DB] Backfill error:", err);
   }
 };
-// ─── RESET DATABASE ──────────────────────────────────────────────
+
 export const resetDatabase = async (): Promise<void> => {
   try {
     const database = await getDb();
 
-    // Drop all tables
     await database.execAsync(`
       DROP TABLE IF EXISTS sync_queue;
       DROP TABLE IF EXISTS households;
@@ -500,9 +541,7 @@ export const resetDatabase = async (): Promise<void> => {
       DROP TABLE IF EXISTS stock_requests;
     `);
 
-    console.log("[DB]  Database reset successfully");
-
-    // Reinitialize
+    console.log("[DB] Database reset successfully");
     await initDb();
     console.log("[DB] Database reinitialized after reset");
   } catch (error) {

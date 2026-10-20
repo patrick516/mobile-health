@@ -43,7 +43,8 @@ export default function AddMemberScreen() {
   const language = useAppStore((s) => s.language);
   const selectedHouseholdId = useAppStore((s) => s.selectedHouseholdId);
 
-  const [fullName, setFullName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [sex, setSex] = useState<"MALE" | "FEMALE" | "UNKNOWN" | "">("");
   const [relationship, setRelationship] = useState("");
   const [useDob, setUseDob] = useState(true);
@@ -68,7 +69,8 @@ export default function AddMemberScreen() {
     const draft = await loadDraft<any>(DRAFT_KEY);
     if (!draft) return;
     if (draft.householdId !== selectedHouseholdId) return;
-    if (draft.fullName) setFullName(draft.fullName);
+    if (draft.firstName) setFirstName(draft.firstName);
+    if (draft.lastName) setLastName(draft.lastName);
     if (draft.sex) setSex(draft.sex);
     if (draft.relationship) setRelationship(draft.relationship);
     if (typeof draft.useDob === "boolean") setUseDob(draft.useDob);
@@ -85,12 +87,12 @@ export default function AddMemberScreen() {
     showInfo("Draft Restored", "Continuing your previous member entry.");
   };
 
-  // Auto-save draft (debounced 800ms)
   useEffect(() => {
     const timer = setTimeout(() => {
       saveDraft(DRAFT_KEY, {
         householdId: selectedHouseholdId,
-        fullName,
+        firstName,
+        lastName,
         sex,
         relationship,
         useDob,
@@ -107,7 +109,8 @@ export default function AddMemberScreen() {
     }, 800);
     return () => clearTimeout(timer);
   }, [
-    fullName,
+    firstName,
+    lastName,
     sex,
     relationship,
     useDob,
@@ -168,8 +171,10 @@ export default function AddMemberScreen() {
   };
 
   const handleSave = async () => {
-    if (!fullName.trim())
-      return showError("Required", "Full name is required.");
+    if (!firstName.trim())
+      return showError("Required", "First name is required.");
+    if (!lastName.trim())
+      return showError("Required", "Last name is required.");
     if (!sex) return showError("Required", "Please select sex.");
     if (!relationship)
       return showError("Required", "Please select relationship to head.");
@@ -186,7 +191,6 @@ export default function AddMemberScreen() {
       const localId = Crypto.randomUUID();
       const db = await getDb();
 
-      // Calculate expected delivery date if pregnant
       let expectedDelivery: string | null = null;
       if (isPregnant) {
         const edd = new Date(lmpDate);
@@ -196,19 +200,23 @@ export default function AddMemberScreen() {
 
       const dobStr = useDob ? dob.toISOString() : null;
       const ageVal = !useDob ? parseInt(estimatedAge) : null;
+      const fullNameCombined = `${firstName.trim()} ${lastName.trim()}`.trim();
 
-      // Save to local SQLite
       await db.runAsync(
         `INSERT INTO members (
-          id, local_id, household_id, full_name, date_of_birth, estimated_age,
-          sex, relationship_to_head, is_pregnant, lmp_date, expected_delivery_date,
-          chronic_illnesses, has_disability, disability_type, national_id, phone, status, synced
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`,
+          id, local_id, household_id, first_name, last_name, full_name,
+          date_of_birth, estimated_age, sex, relationship_to_head,
+          is_pregnant, lmp_date, expected_delivery_date,
+          chronic_illnesses, has_disability, disability_type,
+          national_id, phone, status, synced
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`,
         [
           localId,
           localId,
           selectedHouseholdId,
-          fullName.trim(),
+          firstName.trim(),
+          lastName.trim(),
+          fullNameCombined,
           dobStr,
           ageVal,
           sex,
@@ -225,8 +233,6 @@ export default function AddMemberScreen() {
         ],
       );
 
-      // Try online create first if National ID is provided, so duplicates
-      // are caught immediately instead of silently failing during sync later
       let savedOnline = false;
       if (nationalId.trim() !== "") {
         const net = await NetInfo.fetch();
@@ -235,7 +241,8 @@ export default function AddMemberScreen() {
             const response = await api.post("/members", {
               localId,
               householdId: selectedHouseholdId,
-              fullName: fullName.trim(),
+              firstName: firstName.trim(),
+              lastName: lastName.trim(),
               dateOfBirth: dobStr,
               estimatedAge: ageVal,
               sex,
@@ -262,11 +269,14 @@ export default function AddMemberScreen() {
               err?.response?.data?.duplicate
             ) {
               const existing = err.response.data.existingMember;
+              const dupName = existing
+                ? `${existing.firstName || ""} ${existing.lastName || ""}`.trim()
+                : "";
               setSaving(false);
               Alert.alert(
                 "Duplicate National ID",
                 err.response.data.message ||
-                  `This National ID is already registered${existing ? ` to ${existing.fullName}` : ""}.`,
+                  `This National ID is already registered${dupName ? ` to ${dupName}` : ""}.`,
                 [
                   { text: "Edit", style: "cancel" },
                   {
@@ -278,17 +288,16 @@ export default function AddMemberScreen() {
               );
               return;
             }
-            // Other errors — fall through to offline queue below
           }
         }
       }
 
-      // If not saved online (offline, no ID provided, or non-duplicate error), queue for sync
       if (!savedOnline) {
         await enqueue("MEMBER", {
           localId,
           householdId: selectedHouseholdId,
-          fullName: fullName.trim(),
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
           dateOfBirth: dobStr,
           estimatedAge: ageVal,
           sex,
@@ -305,20 +314,18 @@ export default function AddMemberScreen() {
         });
       }
 
-      // If under 5 — note: vaccine schedule created server-side on sync
-      // If pregnant — ANC schedule created server-side on sync
-
       await clearDraft(DRAFT_KEY);
-      showSuccess("Member Added", `${fullName} has been added.`);
+      showSuccess("Member Added", `${firstName} ${lastName} has been added.`);
 
       Alert.alert(
         "Member Added ✓",
-        `${fullName} has been added.${isUnder5() ? "\n\nVaccination schedule will be set up on sync." : ""}${isPregnant ? "\n\nANC schedule will be set up on sync." : ""}`,
+        `${firstName} ${lastName} has been added.${isUnder5() ? "\n\nVaccination schedule will be set up on sync." : ""}${isPregnant ? "\n\nANC schedule will be set up on sync." : ""}`,
         [
           {
             text: "Add Another",
             onPress: () => {
-              setFullName("");
+              setFirstName("");
+              setLastName("");
               setSex("");
               setRelationship("");
               setIsPregnant(false);
@@ -353,7 +360,6 @@ export default function AddMemberScreen() {
   return (
     <View style={styles.container}>
       <StatusBar backgroundColor={COLORS.primary} barStyle="light-content" />
-
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color={COLORS.white} />
@@ -366,18 +372,26 @@ export default function AddMemberScreen() {
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
-          {/* Full Name */}
-          <Text style={styles.label}>Full Name *</Text>
+          <Text style={styles.label}>First Name *</Text>
           <TextInput
             style={styles.input}
-            value={fullName}
-            onChangeText={setFullName}
-            placeholder="Enter full name"
+            value={firstName}
+            onChangeText={setFirstName}
+            placeholder="e.g. Chimwemwe"
             placeholderTextColor={COLORS.placeholder}
             autoCapitalize="words"
           />
 
-          {/* Sex */}
+          <Text style={styles.label}>Last Name *</Text>
+          <TextInput
+            style={styles.input}
+            value={lastName}
+            onChangeText={setLastName}
+            placeholder="e.g. Leno"
+            placeholderTextColor={COLORS.placeholder}
+            autoCapitalize="words"
+          />
+
           <Text style={styles.label}>Sex *</Text>
           <View style={styles.sexRow}>
             {(["MALE", "FEMALE", "UNKNOWN"] as const).map((s) => (
@@ -425,7 +439,6 @@ export default function AddMemberScreen() {
             ))}
           </View>
 
-          {/* Date of birth */}
           <View style={styles.dobToggleRow}>
             <Text style={styles.label}>Date of Birth</Text>
             <TouchableOpacity
@@ -490,7 +503,6 @@ export default function AddMemberScreen() {
             </View>
           )}
 
-          {/* Under-5 indicator */}
           {isUnder5() && (
             <View style={styles.infoBox}>
               <Ionicons
@@ -505,7 +517,6 @@ export default function AddMemberScreen() {
             </View>
           )}
 
-          {/* Relationship */}
           <Text style={styles.label}>Relationship to Head *</Text>
           <View style={styles.optionGrid}>
             {RELATIONSHIP_OPTIONS.map((r) => (
@@ -518,7 +529,6 @@ export default function AddMemberScreen() {
             ))}
           </View>
 
-          {/* Pregnancy — only show for females 10-49 */}
           {showPregnancy && (
             <>
               <View style={styles.switchRow}>
@@ -593,7 +603,6 @@ export default function AddMemberScreen() {
             </>
           )}
 
-          {/* Chronic illness */}
           <Text style={styles.label}>Chronic Illness</Text>
           <View style={styles.optionGrid}>
             {CHRONIC_ILLNESSES.map((c) => (
@@ -606,7 +615,6 @@ export default function AddMemberScreen() {
             ))}
           </View>
 
-          {/* Disability */}
           <View style={styles.switchRow}>
             <View style={styles.switchInfo}>
               <Text style={styles.switchLabel}>Has Disability</Text>
@@ -657,7 +665,7 @@ export default function AddMemberScreen() {
             label="National ID"
             required={false}
           />
-          {/* Phone */}
+
           <Text style={styles.label}>Phone Number (optional)</Text>
           <TextInput
             style={styles.input}
@@ -668,7 +676,6 @@ export default function AddMemberScreen() {
             keyboardType="phone-pad"
           />
 
-          {/* Save button */}
           <TouchableOpacity
             style={[styles.saveBtn, saving && { opacity: 0.6 }]}
             onPress={handleSave}
@@ -688,7 +695,6 @@ export default function AddMemberScreen() {
             )}
           </TouchableOpacity>
         </View>
-
         <View style={{ height: 60 }} />
       </ScrollView>
     </View>

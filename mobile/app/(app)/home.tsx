@@ -110,9 +110,7 @@ export default function HomeScreen() {
         `SELECT COUNT(*) as count FROM supervisor_feedback WHERE is_read = 0`,
       );
       setUnreadFeedback(result?.count ?? 0);
-    } catch (e) {
-      // Table may not exist on first install — safe to ignore
-    }
+    } catch (e) {}
   };
 
   const refreshPendingCount = async () => {
@@ -155,17 +153,18 @@ export default function HomeScreen() {
     return language === "en" ? "Good evening" : "Madzulo abwino";
   };
 
+  const displayName = user?.firstName
+    ? `${user.firstName} ${user.lastName || ""}`.trim()
+    : (user as any)?.fullName || "Health Worker";
+
   return (
     <View style={styles.container}>
       <StatusBar backgroundColor={COLORS.primary} barStyle="light-content" />
 
-      {/* Header */}
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={styles.greeting}>{greeting()},</Text>
-          <Text style={styles.userName}>
-            {user?.fullName || "Health Worker"}
-          </Text>
+          <Text style={styles.userName}>{displayName}</Text>
           <Text style={styles.role}>{user?.role?.replace("_", " ")}</Text>
           {user?.facility && (
             <Text style={styles.facilityTag}>🏥 {user.facility.name}</Text>
@@ -189,7 +188,6 @@ export default function HomeScreen() {
       </View>
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* Sync status bar */}
         <TouchableOpacity
           style={[styles.syncBar, isSyncing && styles.syncBarActive]}
           onPress={handleSync}
@@ -214,7 +212,6 @@ export default function HomeScreen() {
           </Text>
         </TouchableOpacity>
 
-        {/* Unread feedback banner */}
         {unreadFeedback > 0 && (
           <TouchableOpacity
             style={styles.feedbackBanner}
@@ -229,7 +226,6 @@ export default function HomeScreen() {
           </TouchableOpacity>
         )}
 
-        {/* Nav grid */}
         <View style={styles.grid}>
           {NAV_BUTTONS.map((btn) => (
             <TouchableOpacity
@@ -264,7 +260,6 @@ export default function HomeScreen() {
           ))}
         </View>
 
-        {/* Quick stats */}
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
             <Text style={styles.statNum}>{pendingCount}</Text>

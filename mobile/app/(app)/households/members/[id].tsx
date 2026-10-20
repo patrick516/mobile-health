@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   StatusBar,
   RefreshControl,
-  Alert,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -19,7 +18,9 @@ interface Member {
   id: string;
   local_id: string;
   household_id: string;
-  full_name: string;
+  first_name: string;
+  last_name: string;
+  full_name: string | null;
   sex: string;
   date_of_birth: string;
   estimated_age: number;
@@ -53,6 +54,13 @@ interface ImmunisationSchedule {
   status: string;
   given_at: string;
 }
+
+const memberName = (m: Member | null) =>
+  m
+    ? `${m.first_name || ""} ${m.last_name || ""}`.trim() ||
+      m.full_name ||
+      "Unknown"
+    : "Unknown";
 
 export default function MemberDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -140,8 +148,7 @@ export default function MemberDetailScreen() {
   const chronicList = () => {
     if (!member?.chronic_illnesses) return "None";
     try {
-      const arr = JSON.parse(member.chronic_illnesses);
-      return arr.join(", ");
+      return JSON.parse(member.chronic_illnesses).join(", ");
     } catch {
       return member.chronic_illnesses;
     }
@@ -167,7 +174,6 @@ export default function MemberDetailScreen() {
         <Text style={{ color: COLORS.textMuted }}>Loading...</Text>
       </View>
     );
-
   if (!member)
     return (
       <View style={styles.center}>
@@ -192,7 +198,7 @@ export default function MemberDetailScreen() {
           <Ionicons name="arrow-back" size={24} color={COLORS.white} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          <Text style={styles.headerName}>{member.full_name}</Text>
+          <Text style={styles.headerName}>{memberName(member)}</Text>
           <Text style={styles.headerSub}>
             {getAge()} · {member.sex}
           </Text>
@@ -214,7 +220,6 @@ export default function MemberDetailScreen() {
         </View>
       </View>
 
-      {/* Alert badges */}
       {(member.is_pregnant === 1 || vaccinesDue > 0) && (
         <View style={styles.alertStrip}>
           {member.is_pregnant === 1 && (
@@ -253,7 +258,6 @@ export default function MemberDetailScreen() {
         </View>
       )}
 
-      {/* Quick actions */}
       <View style={styles.quickActions}>
         <TouchableOpacity
           style={styles.qAction}
@@ -275,7 +279,6 @@ export default function MemberDetailScreen() {
           onPress={() => {
             setSelectedHousehold(member.household_id);
             setSelectedMember(member.id);
-            // Small delay ensures Zustand state is set before screen mounts
             setTimeout(() => router.push("/(app)/referrals/add" as any), 50);
           }}
         >
@@ -310,7 +313,6 @@ export default function MemberDetailScreen() {
         )}
       </View>
 
-      {/* Tabs */}
       <View style={styles.tabs}>
         {(["overview", "visits", "vaccines"] as const).map((t) => (
           <TouchableOpacity
@@ -344,11 +346,11 @@ export default function MemberDetailScreen() {
           />
         }
       >
-        {/* Overview tab */}
         {activeTab === "overview" && (
           <View style={styles.tabContent}>
             {[
-              { k: "Full Name", v: member.full_name },
+              { k: "First Name", v: member.first_name || "-" },
+              { k: "Last Name", v: member.last_name || "-" },
               { k: "Sex", v: member.sex },
               { k: "Age", v: getAge() },
               {
@@ -387,7 +389,6 @@ export default function MemberDetailScreen() {
           </View>
         )}
 
-        {/* Visits tab */}
         {activeTab === "visits" && (
           <View style={styles.tabContent}>
             {visits.length === 0 ? (
@@ -400,7 +401,7 @@ export default function MemberDetailScreen() {
                 <Text style={styles.emptyText}>No visits recorded</Text>
               </View>
             ) : (
-              visits.map((v, i) => (
+              visits.map((v) => (
                 <TouchableOpacity
                   key={v.id}
                   style={styles.visitCard}
@@ -464,7 +465,6 @@ export default function MemberDetailScreen() {
           </View>
         )}
 
-        {/* Vaccines tab */}
         {activeTab === "vaccines" && (
           <View style={styles.tabContent}>
             {schedules.length === 0 ? (
@@ -481,7 +481,6 @@ export default function MemberDetailScreen() {
               </View>
             ) : (
               <>
-                {/* Summary */}
                 <View style={styles.vaccineSummary}>
                   <View style={styles.vaccineCount}>
                     <Text
@@ -514,7 +513,6 @@ export default function MemberDetailScreen() {
                     <Text style={styles.vaccineCountLabel}>Overdue</Text>
                   </View>
                 </View>
-
                 {schedules.map((s) => (
                   <View
                     key={s.id}
@@ -536,9 +534,7 @@ export default function MemberDetailScreen() {
                     <View
                       style={[
                         styles.badge,
-                        {
-                          backgroundColor: statusColor(s.status) + "18",
-                        },
+                        { backgroundColor: statusColor(s.status) + "18" },
                       ]}
                     >
                       <Text
@@ -556,7 +552,6 @@ export default function MemberDetailScreen() {
             )}
           </View>
         )}
-
         <View style={{ height: 40 }} />
       </ScrollView>
     </View>

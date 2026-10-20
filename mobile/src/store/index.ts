@@ -2,7 +2,9 @@ import { create } from "zustand";
 
 interface User {
   id: string;
-  fullName: string;
+  firstName: string;
+  lastName: string;
+  fullName?: string;
   phoneNumber: string;
   role: string;
   facility?: {
@@ -15,13 +17,11 @@ interface User {
 }
 
 interface AppState {
-  // Auth
   user: User | null;
   token: string | null;
   setAuth: (user: User, token: string) => void;
   clearAuth: () => void;
 
-  // Sync
   pendingCount: number;
   isSyncing: boolean;
   lastSyncAt: Date | null;
@@ -29,11 +29,9 @@ interface AppState {
   setIsSyncing: (val: boolean) => void;
   setLastSyncAt: (date: Date) => void;
 
-  // Language
   language: "en" | "ny";
   toggleLanguage: () => void;
 
-  // Selected context
   selectedHouseholdId: string | null;
   selectedMemberId: string | null;
   selectedVisitId: string | null;

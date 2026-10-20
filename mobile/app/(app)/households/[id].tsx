@@ -46,7 +46,9 @@ interface Household {
 interface Member {
   id: string;
   local_id: string;
-  full_name: string;
+  first_name: string;
+  last_name: string;
+  full_name: string | null;
   sex: string;
   date_of_birth: string;
   estimated_age: number;
@@ -63,6 +65,11 @@ interface Visit {
   referral_needed: number;
   muac_status: string;
 }
+
+const memberName = (m: Member) =>
+  `${m.first_name || ""} ${m.last_name || ""}`.trim() ||
+  m.full_name ||
+  "Unknown";
 
 export default function HouseholdDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -87,8 +94,6 @@ export default function HouseholdDetailScreen() {
   const load = useCallback(async () => {
     try {
       const db = await getDb();
-
-      // Load household — search by local_id or id
       const hh = await db.getFirstAsync<Household>(
         "SELECT * FROM households WHERE local_id = ? OR id = ?",
         [id, id],
@@ -96,21 +101,14 @@ export default function HouseholdDetailScreen() {
       if (!hh) return;
       setHousehold(hh);
 
-      // Load members using BOTH id and local_id to find matches
       const mems = await db.getAllAsync<Member>(
-        `SELECT * FROM members 
-       WHERE (household_id = ? OR household_id = ?) 
-       AND status = 'ACTIVE' 
-       ORDER BY full_name ASC`,
+        `SELECT * FROM members WHERE (household_id = ? OR household_id = ?) AND status = 'ACTIVE' ORDER BY first_name ASC`,
         [hh.id, hh.local_id],
       );
       setMembers(mems);
 
-      // Load visits using BOTH id and local_id
       const vis = await db.getAllAsync<Visit>(
-        `SELECT * FROM visits 
-       WHERE household_id = ? OR household_id = ?
-       ORDER BY visited_at DESC LIMIT 20`,
+        `SELECT * FROM visits WHERE household_id = ? OR household_id = ? ORDER BY visited_at DESC LIMIT 20`,
         [hh.id, hh.local_id],
       );
       setVisits(vis);
@@ -127,7 +125,6 @@ export default function HouseholdDetailScreen() {
     load();
   }, [load]);
 
-  // Health score
   const healthScore = household
     ? (() => {
         let score = 0;
@@ -141,7 +138,6 @@ export default function HouseholdDetailScreen() {
           score += 20;
         if (household.mosquito_nets === "Yes") score += 20;
         if (household.distance_to_facility === "UNDER_5KM") score += 10;
-        // Children vaccinated (simplified — full check needs immunisation table)
         const hasChildren = members.some((m) => {
           const age =
             m.estimated_age ||
@@ -171,7 +167,6 @@ export default function HouseholdDetailScreen() {
           (1000 * 60 * 60 * 24),
       )
     : null;
-
   const visitStatusColor =
     daysSinceLastVisit === null
       ? COLORS.textMuted
@@ -183,13 +178,8 @@ export default function HouseholdDetailScreen() {
 
   const getAge = (m: Member) => {
     if (m.estimated_age) return `${m.estimated_age}y`;
-    if (m.date_of_birth) {
-      const age = Math.floor(
-        (Date.now() - new Date(m.date_of_birth).getTime()) /
-          (1000 * 60 * 60 * 24 * 365),
-      );
-      return `${age}y`;
-    }
+    if (m.date_of_birth)
+      return `${Math.floor((Date.now() - new Date(m.date_of_birth).getTime()) / (1000 * 60 * 60 * 24 * 365))}y`;
     return "?";
   };
 
@@ -206,12 +196,7 @@ export default function HouseholdDetailScreen() {
     try {
       const db = await getDb();
       await db.runAsync(
-        `UPDATE households SET
-          latrine_present = ?,
-          handwashing_facility = ?,
-          water_source = ?,
-          synced = 0
-         WHERE id = ? OR local_id = ?`,
+        `UPDATE households SET latrine_present = ?, handwashing_facility = ?, water_source = ?, synced = 0 WHERE id = ? OR local_id = ?`,
         [
           washLatrine !== "NO" ? 1 : 0,
           washHandwashing === "YES" ? 1 : 0,
@@ -220,7 +205,6 @@ export default function HouseholdDetailScreen() {
           household.local_id,
         ],
       );
-
       const net = await NetInfo.fetch();
       if (net.isConnected) {
         try {
@@ -238,7 +222,6 @@ export default function HouseholdDetailScreen() {
           console.warn("[WASH] Sync failed, will retry:", e);
         }
       }
-
       Alert.alert("WASH Updated", "Sanitation data updated successfully.");
       setShowWashModal(false);
       load();
@@ -254,7 +237,7 @@ export default function HouseholdDetailScreen() {
     if (!household) return;
     Alert.alert(
       "Update Location",
-      "This will update the GPS coordinates for this household. Make sure you are standing at the new location.",
+      "This will update the GPS coordinates for this household.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -276,13 +259,11 @@ export default function HouseholdDetailScreen() {
               });
               const newLat = loc.coords.latitude;
               const newLng = loc.coords.longitude;
-
               const db = await getDb();
               await db.runAsync(
                 "UPDATE households SET gps_lat = ?, gps_lng = ?, synced = 0 WHERE id = ? OR local_id = ?",
                 [newLat, newLng, household.id, household.local_id],
               );
-
               const net = await NetInfo.fetch();
               if (net.isConnected) {
                 try {
@@ -299,10 +280,9 @@ export default function HouseholdDetailScreen() {
                     [household.id, household.local_id],
                   );
                 } catch (e) {
-                  console.warn("[RELOCATE] Sync failed, will retry later:", e);
+                  console.warn("[RELOCATE] Sync failed:", e);
                 }
               }
-
               Alert.alert(
                 "Location Updated",
                 "Household GPS has been updated successfully.",
@@ -325,7 +305,7 @@ export default function HouseholdDetailScreen() {
     if (!household) return;
     Alert.alert(
       "Mark Household as Relocated",
-      "This household will be marked as RELOCATED. Its history (visits, vaccines, referrals) stays preserved. You should re-register this family fresh if you find them in a new zone or district.",
+      "This household will be marked as RELOCATED.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -339,28 +319,24 @@ export default function HouseholdDetailScreen() {
                 "UPDATE households SET status = 'RELOCATED', synced = 0 WHERE id = ? OR local_id = ?",
                 [household.id, household.local_id],
               );
-
               const net = await NetInfo.fetch();
               if (net.isConnected) {
                 try {
                   await api.patch(
                     `/households/${household.id}/relocate-new-zone`,
-                    {
-                      reason: "Household moved to a different area",
-                    },
+                    { reason: "Household moved to a different area" },
                   );
                   await db.runAsync(
                     "UPDATE households SET synced = 1 WHERE id = ? OR local_id = ?",
                     [household.id, household.local_id],
                   );
                 } catch (e) {
-                  console.warn("[RELOCATE] Sync failed, will retry later:", e);
+                  console.warn("[RELOCATE] Sync failed:", e);
                 }
               }
-
               Alert.alert(
                 "Household Marked as Relocated",
-                "This household's history has been preserved. Re-register the family if found in a new area.",
+                "History preserved. Re-register family if found in new area.",
                 [{ text: "OK", onPress: () => router.back() }],
               );
             } catch (err) {
@@ -376,15 +352,13 @@ export default function HouseholdDetailScreen() {
     );
   };
 
-  if (loading) {
+  if (loading)
     return (
       <View style={styles.center}>
         <Text style={{ color: COLORS.textMuted }}>Loading...</Text>
       </View>
     );
-  }
-
-  if (!household) {
+  if (!household)
     return (
       <View style={styles.center}>
         <Ionicons name="home-outline" size={48} color={COLORS.border} />
@@ -396,13 +370,10 @@ export default function HouseholdDetailScreen() {
         </TouchableOpacity>
       </View>
     );
-  }
 
   return (
     <View style={styles.container}>
       <StatusBar backgroundColor={COLORS.primary} barStyle="light-content" />
-
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color={COLORS.white} />
@@ -442,7 +413,6 @@ export default function HouseholdDetailScreen() {
           />
         }
       >
-        {/* Summary card */}
         <View style={styles.summaryCard}>
           <View style={styles.summaryRow}>
             <View style={styles.summaryItem}>
@@ -466,8 +436,6 @@ export default function HouseholdDetailScreen() {
               </Text>
             </View>
           </View>
-
-          {/* Visit status */}
           <View
             style={[
               styles.visitStatusBar,
@@ -503,8 +471,6 @@ export default function HouseholdDetailScreen() {
               <Text style={styles.visitNowText}>Record Visit</Text>
             </TouchableOpacity>
           </View>
-
-          {/* Health score */}
           <View style={styles.scoreSection}>
             <View style={styles.scoreHeader}>
               <Text style={styles.scoreTitle}>Family Health Score</Text>
@@ -530,7 +496,6 @@ export default function HouseholdDetailScreen() {
           </View>
         </View>
 
-        {/* Quick actions */}
         <View style={styles.quickActions}>
           {[
             {
@@ -575,7 +540,7 @@ export default function HouseholdDetailScreen() {
             </TouchableOpacity>
           ))}
         </View>
-        {/* WASH quick update */}
+
         <TouchableOpacity
           style={styles.washBtn}
           onPress={() => {
@@ -592,7 +557,6 @@ export default function HouseholdDetailScreen() {
           <Ionicons name="chevron-forward" size={16} color={COLORS.textMuted} />
         </TouchableOpacity>
 
-        {/* Tabs */}
         <View style={styles.tabs}>
           {(["members", "visits", "details"] as const).map((t) => (
             <TouchableOpacity
@@ -614,7 +578,6 @@ export default function HouseholdDetailScreen() {
           ))}
         </View>
 
-        {/* Members tab */}
         {activeTab === "members" && (
           <View style={styles.tabContent}>
             <TouchableOpacity
@@ -631,7 +594,6 @@ export default function HouseholdDetailScreen() {
               />
               <Text style={styles.addMemberText}>Add Member</Text>
             </TouchableOpacity>
-
             {members.length === 0 ? (
               <View style={styles.emptyTab}>
                 <Ionicons
@@ -670,7 +632,7 @@ export default function HouseholdDetailScreen() {
                     />
                   </View>
                   <View style={styles.memberInfo}>
-                    <Text style={styles.memberName}>{m.full_name}</Text>
+                    <Text style={styles.memberName}>{memberName(m)}</Text>
                     <Text style={styles.memberSub}>
                       {m.relationship_to_head.replace("_", " ")} · {getAge(m)}
                     </Text>
@@ -714,7 +676,6 @@ export default function HouseholdDetailScreen() {
           </View>
         )}
 
-        {/* Visits tab */}
         {activeTab === "visits" && (
           <View style={styles.tabContent}>
             {visits.length === 0 ? (
@@ -782,7 +743,6 @@ export default function HouseholdDetailScreen() {
           </View>
         )}
 
-        {/* Details tab */}
         {activeTab === "details" && (
           <View style={styles.tabContent}>
             {[
@@ -836,7 +796,6 @@ export default function HouseholdDetailScreen() {
               </View>
             ))}
 
-            {/* Relocation Actions */}
             <View style={styles.relocateSection}>
               <Text style={styles.relocateSectionTitle}>
                 Household Relocation
@@ -845,7 +804,6 @@ export default function HouseholdDetailScreen() {
                 Use this if the household has physically moved from its
                 registered location.
               </Text>
-
               <TouchableOpacity
                 style={styles.relocateBtn}
                 onPress={handleRelocateSameZone}
@@ -870,7 +828,6 @@ export default function HouseholdDetailScreen() {
                   color={COLORS.textMuted}
                 />
               </TouchableOpacity>
-
               <TouchableOpacity
                 style={[styles.relocateBtn, styles.relocateBtnDanger]}
                 onPress={handleRelocateNewZone}
@@ -900,7 +857,6 @@ export default function HouseholdDetailScreen() {
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      {/* WASH Update Modal */}
       <Modal
         visible={showWashModal}
         animationType="slide"
@@ -913,7 +869,6 @@ export default function HouseholdDetailScreen() {
             <Text style={styles.washModalSub}>
               {household?.household_number} — {household?.village_name}
             </Text>
-
             <Text style={styles.washLabel}>Latrine Status</Text>
             {[
               "NO",
@@ -940,7 +895,6 @@ export default function HouseholdDetailScreen() {
                 </Text>
               </TouchableOpacity>
             ))}
-
             <Text style={styles.washLabel}>Handwashing Facility</Text>
             {["YES", "NO"].map((opt) => (
               <TouchableOpacity
@@ -963,7 +917,6 @@ export default function HouseholdDetailScreen() {
                 </Text>
               </TouchableOpacity>
             ))}
-
             <Text style={styles.washLabel}>Water Source</Text>
             {[
               "BOREHOLE",
@@ -992,7 +945,6 @@ export default function HouseholdDetailScreen() {
                 </Text>
               </TouchableOpacity>
             ))}
-
             <View style={styles.washModalBtns}>
               <TouchableOpacity
                 style={styles.washCancelBtn}
@@ -1018,6 +970,7 @@ export default function HouseholdDetailScreen() {
     </View>
   );
 }
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
@@ -1256,9 +1209,7 @@ const styles = StyleSheet.create({
     padding: SIZES.md,
     marginBottom: SIZES.sm,
   },
-  relocateBtnDanger: {
-    borderColor: COLORS.dangerLight,
-  },
+  relocateBtnDanger: { borderColor: COLORS.dangerLight },
   relocateBtnTitle: {
     fontSize: SIZES.fontSm,
     fontWeight: "600",
@@ -1325,17 +1276,10 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     backgroundColor: COLORS.white,
   },
-  washOptionSelected: {
-    borderColor: "#1971C2",
-    backgroundColor: "#EFF6FF",
-  },
+  washOptionSelected: { borderColor: "#1971C2", backgroundColor: "#EFF6FF" },
   washOptionText: { fontSize: SIZES.fontSm, color: COLORS.text },
   washOptionTextSelected: { color: "#1971C2", fontWeight: "600" },
-  washModalBtns: {
-    flexDirection: "row",
-    gap: SIZES.md,
-    marginTop: SIZES.xl,
-  },
+  washModalBtns: { flexDirection: "row", gap: SIZES.md, marginTop: SIZES.xl },
   washCancelBtn: {
     flex: 1,
     borderWidth: 1,
