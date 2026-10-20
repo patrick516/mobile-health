@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { CheckCircle } from "lucide-react";
 import api from "../../services/api";
 
 export default function SuperAdminSetup() {
@@ -13,6 +14,9 @@ export default function SuperAdminSetup() {
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Toast state
+  const [toast, setToast] = useState<{ message: string } | null>(null);
 
   useEffect(() => {
     // If a Super Admin already exists, kick them to the login page
@@ -31,11 +35,18 @@ export default function SuperAdminSetup() {
 
     try {
       await api.post("/auth/register-super-admin", form);
-      alert("Super Admin registered successfully. Please log in.");
-      navigate("/login");
+
+      // Show the Toast
+      setToast({
+        message: "Super Admin registered successfully. Redirecting...",
+      });
+
+      // Wait 2 seconds so the user can read the toast, then redirect
+      setTimeout(() => {
+        navigate("/login");
+      }, 2000);
     } catch (err: any) {
       setError(err.response?.data?.message || "Registration failed.");
-    } finally {
       setLoading(false);
     }
   };
@@ -45,6 +56,16 @@ export default function SuperAdminSetup() {
       className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat"
       style={{ backgroundImage: "url('/images/background.png')" }}
     >
+      {/* ── TOAST NOTIFICATION ── */}
+      {toast && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="bg-white border-l-4 border-green-500 shadow-2xl rounded-lg px-6 py-4 flex items-center gap-3">
+            <CheckCircle className="text-green-500 w-6 h-6 shrink-0" />
+            <p className="text-gray-800 font-medium">{toast.message}</p>
+          </div>
+        </div>
+      )}
+
       <div className="w-full max-w-md">
         {/* Logo Header */}
         <div className="text-center mb-8">
@@ -58,12 +79,16 @@ export default function SuperAdminSetup() {
               }}
             />
           </div>
-          <h1 className="text-2xl font-bold text-white">MobileHealth Malawi</h1>
-          <p className="text-teal-200 text-sm mt-1">System Initialization</p>
+          <h1 className="text-2xl font-bold text-white drop-shadow-md">
+            MobileHealth Malawi
+          </h1>
+          <p className="text-teal-100 text-sm mt-1 drop-shadow-sm">
+            System Initialization
+          </p>
         </div>
 
         {/* Setup Card */}
-        <div className="bg-white rounded-2xl shadow-xl p-8">
+        <div className="bg-white rounded-2xl shadow-2xl p-8 border border-gray-100">
           <h2 className="text-xl font-bold text-gray-900 mb-1">
             Create Super Admin
           </h2>
@@ -158,10 +183,12 @@ export default function SuperAdminSetup() {
 
             <button
               type="submit"
-              disabled={loading}
-              className="w-full bg-teal-700 hover:bg-teal-800 disabled:bg-teal-400 text-white font-semibold py-2.5 rounded-lg text-sm transition-colors mt-6"
+              disabled={loading || !!toast}
+              className="w-full bg-teal-700 hover:bg-teal-800 disabled:bg-teal-400 text-white font-semibold py-2.5 rounded-lg text-sm transition-colors mt-6 flex justify-center items-center"
             >
-              {loading ? "Creating System Setup..." : "Create Super Admin"}
+              {loading && !toast
+                ? "Creating System Setup..."
+                : "Create Super Admin"}
             </button>
           </form>
         </div>

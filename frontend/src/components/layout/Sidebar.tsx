@@ -25,53 +25,94 @@ import clsx from "clsx";
 
 const NAV = [
   { to: "/", icon: LayoutDashboard, label: "Overview", roles: ["ALL"] },
-  { to: "/households", icon: Home, label: "Households", roles: ["ALL"] },
-  { to: "/referrals", icon: Stethoscope, label: "Referrals", roles: ["ALL"] },
+
+  // ── CLINICAL (Hidden from SUPER_ADMIN and PHARMACIST) ──
+  {
+    to: "/households",
+    icon: Home,
+    label: "Households",
+    roles: ["ADMIN", "DISTRICT_OFFICER", "NURSE"],
+  },
+  {
+    to: "/referrals",
+    icon: Stethoscope,
+    label: "Referrals",
+    roles: ["ADMIN", "DISTRICT_OFFICER", "NURSE"],
+  },
   {
     to: "/immunisations",
     icon: Shield,
     label: "Immunisations",
-    roles: ["ALL"],
+    roles: ["ADMIN", "DISTRICT_OFFICER", "NURSE"],
   },
-  { to: "/drugs", icon: FlaskConical, label: "Drug Stock", roles: ["ALL"] },
-  { to: "/analytics", icon: TrendingUp, label: "Analytics", roles: ["ALL"] },
-  { to: "/pnc", icon: Baby, label: "PNC", roles: ["ALL"] },
-  { to: "/tb", icon: Pill, label: "TB Follow-up", roles: ["ALL"] },
-  { to: "/fp", icon: HeartHandshake, label: "Family Planning", roles: ["ALL"] },
+  {
+    to: "/drugs",
+    icon: FlaskConical,
+    label: "Drug Stock",
+    roles: ["ADMIN", "DISTRICT_OFFICER", "NURSE"],
+  },
+  {
+    to: "/pnc",
+    icon: Baby,
+    label: "PNC",
+    roles: ["ADMIN", "DISTRICT_OFFICER", "NURSE"],
+  },
+  {
+    to: "/tb",
+    icon: Pill,
+    label: "TB Follow-up",
+    roles: ["ADMIN", "DISTRICT_OFFICER", "NURSE"],
+  },
+  {
+    to: "/fp",
+    icon: HeartHandshake,
+    label: "Family Planning",
+    roles: ["ADMIN", "DISTRICT_OFFICER", "NURSE"],
+  },
+  {
+    to: "/analytics",
+    icon: TrendingUp,
+    label: "Clinical Analytics",
+    roles: ["ADMIN", "DISTRICT_OFFICER", "NURSE"],
+  },
   {
     to: "/feedback",
     icon: MessageSquare,
     label: "CHW Feedback",
-    roles: ["NURSE", "DISTRICT_OFFICER", "ADMIN", "SUPER_ADMIN"],
+    roles: ["ADMIN", "DISTRICT_OFFICER", "NURSE"],
   },
+
+  // ── PHARMACY (Dedicated Pharmacist + Clinical Staff) ──
   {
     to: "/pharmacy",
     icon: Tablets,
     label: "Pharmacy",
-    roles: ["NURSE", "PHARMACIST", "DISTRICT_OFFICER", "ADMIN", "SUPER_ADMIN"],
+    roles: ["PHARMACIST", "ADMIN", "DISTRICT_OFFICER", "NURSE"],
   },
+
+  // ── SYSTEM ADMINISTRATION (SUPER_ADMIN & ADMIN) ──
   {
     to: "/reports",
     icon: FileBarChart,
     label: "Reports",
-    roles: ["DISTRICT_OFFICER", "ADMIN", "SUPER_ADMIN"],
+    roles: ["ADMIN", "SUPER_ADMIN"],
   },
   {
     to: "/export",
     icon: Download,
     label: "DHIS2 Export",
-    roles: ["DISTRICT_OFFICER", "ADMIN", "SUPER_ADMIN"],
+    roles: ["ADMIN", "SUPER_ADMIN"],
   },
   {
     to: "/admin/users",
     icon: Users,
-    label: "Users",
+    label: "User Management",
     roles: ["ADMIN", "SUPER_ADMIN"],
   },
   {
     to: "/admin/geography",
     icon: Map,
-    label: "Geography",
+    label: "Geography Setup",
     roles: ["ADMIN", "SUPER_ADMIN"],
   },
   {
@@ -90,12 +131,14 @@ const NAV = [
     to: "/admin/relocated-households",
     icon: MapPinOff,
     label: "Relocated Households",
-    roles: ["ADMIN", "SUPER_ADMIN"],
+    roles: ["ADMIN", "DISTRICT_OFFICER"],
   },
+
+  // ── SUPER_ADMIN ONLY ──
   {
     to: "/admin/security",
     icon: ShieldAlert,
-    label: "Security",
+    label: "Security Center",
     roles: ["SUPER_ADMIN"],
   },
 ];
@@ -121,7 +164,7 @@ export default function Sidebar() {
           MobileHealth Malawi
         </p>
         <p className="text-teal-300 text-[10px] uppercase tracking-widest mt-1 px-2 truncate max-w-full">
-          {user?.facility?.name || "Health Portal"}
+          {user?.facility?.name || "System Administration"}
         </p>
       </div>
 

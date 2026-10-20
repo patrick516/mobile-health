@@ -12,6 +12,7 @@ import {
   Clock,
   ShieldAlert,
   MapPin,
+  Building2,
 } from "lucide-react";
 import api from "../../services/api";
 import { useAuthStore } from "../../store/auth.store";
@@ -26,22 +27,10 @@ const DOT_COLOR = {
   blue: "#2563eb",
 };
 
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  color,
-  to,
-}: {
-  icon: any;
-  label: string;
-  value: number;
-  color: string;
-  to: string;
-}) {
+function StatCard({ icon: Icon, label, value, color, to }: any) {
   return (
     <Link
-      to={to}
+      to={to || "#"}
       className="card p-5 flex items-center gap-4 hover:shadow-md hover:border-teal-200 transition-all cursor-pointer"
     >
       <div
@@ -58,24 +47,12 @@ function StatCard({
 }
 
 export default function Overview() {
+  const user = useAuthStore((s) => s.user);
   const scopeLevel = useAuthStore((s) => s.scopeLevel());
+  const isSuperAdmin = user?.role === "SUPER_ADMIN";
   const [taId, setTaId] = useState("");
 
-  const { data: myTAs } = useQuery({
-    queryKey: ["my-tas"],
-    queryFn: () => api.get("/geography/my-tas").then((r) => r.data.data),
-    enabled: scopeLevel === "DISTRICT",
-  });
-
-  const { data: stats } = useQuery<OverviewStats>({
-    queryKey: ["overview", taId],
-    queryFn: () =>
-      api
-        .get("/analytics/overview", { params: taId ? { taId } : {} })
-        .then((r) => r.data.data),
-    refetchInterval: 30000,
-  });
-
+  // ── SHARED QUERIES ──
   const { data: chwData } = useQuery<ChwActivity[]>({
     queryKey: ["chw-activity", taId],
     queryFn: () =>
@@ -84,22 +61,6 @@ export default function Overview() {
         .then((r) => r.data.data),
   });
 
-  const { data: mapData } = useQuery<MapEvent[]>({
-    queryKey: ["map-events", taId],
-    queryFn: () =>
-      api
-        .get("/map/events", { params: taId ? { taId } : {} })
-        .then((r) => r.data.data),
-  });
-  const unsynced = chwData?.filter((c) => c.status !== "ACTIVE") || [];
-
-  const { data: outbreakData } = useQuery({
-    queryKey: ["outbreak-alerts"],
-    queryFn: () => api.get("/visits/outbreak-alerts").then((r) => r.data.data),
-    refetchInterval: 60000,
-  });
-  const activeOutbreaks = outbreakData ?? [];
-
   const { data: securityData } = useQuery({
     queryKey: ["security-alerts"],
     queryFn: () => api.get("/admin/security/alerts").then((r) => r.data.data),
@@ -107,10 +68,181 @@ export default function Overview() {
   });
 
   const lockedUsers = securityData?.lockedUsers || [];
+  const unsynced = chwData?.filter((c) => c.status !== "ACTIVE") || [];
 
+  // ── SYSTEM QUERIES (SUPER ADMIN ONLY) ──
+  const { data: allUsers } = useQuery({
+    queryKey: ["admin-users"],
+    queryFn: () => api.get("/admin/users").then((r) => r.data.data),
+    enabled: isSuperAdmin,
+  });
+
+  const { data: facilities } = useQuery({
+    queryKey: ["admin-facilities"],
+    queryFn: () => api.get("/admin/facilities").then((r) => r.data.data),
+    enabled: isSuperAdmin,
+  });
+
+  // ── CLINICAL QUERIES (HIDDEN FROM SUPER ADMIN) ──
+  const { data: myTAs } = useQuery({
+    queryKey: ["my-tas"],
+    queryFn: () => api.get("/geography/my-tas").then((r) => r.data.data),
+    enabled: scopeLevel === "DISTRICT" && !isSuperAdmin,
+  });
+
+  const { data: stats } = useQuery<OverviewStats>({
+    queryKey: ["overview", taId],
+    queryFn: () =>
+      api
+        .get("/analytics/overview", { params: taId ? { taId } : {} })
+        .then((r) => r.data.data),
+    enabled: !isSuperAdmin,
+    refetchInterval: 30000,
+  });
+
+  const { data: mapData } = useQuery<MapEvent[]>({
+    queryKey: ["map-events", taId],
+    queryFn: () =>
+      api
+        .get("/map/events", { params: taId ? { taId } : {} })
+        .then((r) => r.data.data),
+    enabled: !isSuperAdmin,
+  });
+
+  const { data: outbreakData } = useQuery({
+    queryKey: ["outbreak-alerts"],
+    queryFn: () => api.get("/visits/outbreak-alerts").then((r) => r.data.data),
+    enabled: !isSuperAdmin,
+    refetchInterval: 60000,
+  });
+  const activeOutbreaks = outbreakData ?? [];
+
+  // ─────────────────────────────────────────────────────────
+  // ── RENDER: SUPER ADMIN DASHBOARD (SYSTEM LEVEL) ──
+  // ─────────────────────────────────────────────────────────
+  if (isSuperAdmin) {
+    const totalUsers = allUsers?.length || 0;
+    const totalCCWs =
+      allUsers?.filter((u: any) => u.role === "CCW").length || 0;
+    const totalFacilities = facilities?.length || 0;
+    const unsyncedCHWs =
+      chwData?.filter((c) => c.status !== "ACTIVE").length || 0;
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-teal-800 text-white p-6 rounded-xl shadow-md">
+          <h1 className="text-2xl font-bold mb-2">System Administration</h1>
+          <p className="text-teal-100">
+            Manage national users, facilities, and system security.
+          </p>
+        </div>
+
+        {lockedUsers.length > 0 && (
+          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <ShieldAlert size={18} className="text-red-600 shrink-0" />
+              <p className="text-sm text-red-800 font-medium">
+                {lockedUsers.length} account{lockedUsers.length > 1 ? "s" : ""}{" "}
+                suspended due to failed login attempts.
+              </p>
+            </div>
+            <Link
+              to="/admin/security"
+              className="text-xs text-red-700 font-semibold underline shrink-0"
+            >
+              View & Unlock
+            </Link>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard
+            icon={Users}
+            label="Total System Users"
+            value={totalUsers}
+            color="bg-blue-600"
+            to="/admin/users"
+          />
+          <StatCard
+            icon={MapPin}
+            label="Community Health Workers"
+            value={totalCCWs}
+            color="bg-teal-600"
+            to="/admin/users"
+          />
+          <StatCard
+            icon={Building2}
+            label="Registered Facilities"
+            value={totalFacilities}
+            color="bg-purple-600"
+            to="/admin/facilities"
+          />
+          <StatCard
+            icon={AlertTriangle}
+            label="Unsynced CHWs (48h+)"
+            value={unsyncedCHWs}
+            color="bg-orange-500"
+            to="/admin/users"
+          />
+        </div>
+
+        <div className="card mt-6">
+          <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center">
+            <h2 className="font-bold text-gray-900">
+              Recent CHW System Activity
+            </h2>
+            <Link
+              to="/admin/users"
+              className="text-xs text-teal-600 hover:underline"
+            >
+              Manage Users
+            </Link>
+          </div>
+          <div className="divide-y divide-gray-50 max-h-96 overflow-y-auto">
+            {chwData?.length === 0 && (
+              <p className="p-5 text-sm text-gray-400">No CHW data available</p>
+            )}
+            {chwData?.map((chw: any) => {
+              const chwName = chw.firstName
+                ? `${chw.firstName} ${chw.lastName}`
+                : chw.fullName;
+              return (
+                <div
+                  key={chw.id}
+                  className="px-5 py-3 flex items-center justify-between"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      {chwName}
+                    </p>
+                    <p className="text-xs text-gray-500">{chw.phoneNumber}</p>
+                  </div>
+                  <div className="text-right">
+                    <span
+                      className={`text-xs font-bold px-2 py-1 rounded-full ${
+                        chw.status === "ACTIVE"
+                          ? "bg-green-100 text-green-700"
+                          : "bg-yellow-100 text-yellow-700"
+                      }`}
+                    >
+                      {chw.status}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // ── RENDER: CLINICAL DASHBOARD (ADMIN / NURSE / DHO) ──
+  // ─────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
-      {/* District-wide TA filter — only for District Hospital users */}
+      {/* District-wide TA filter */}
       {scopeLevel === "DISTRICT" && (
         <div className="card p-4 flex items-center gap-3">
           <MapPin size={18} className="text-teal-700" />
@@ -130,13 +262,13 @@ export default function Overview() {
         </div>
       )}
 
-      {/* Outbreak alert banner */}
+      {/* Outbreak alerts */}
       {activeOutbreaks.length > 0 && (
         <div className="bg-red-100 border border-red-400 rounded-xl px-4 py-3 space-y-2">
           <div className="flex items-center gap-2">
             <AlertTriangle size={18} className="text-red-700 shrink-0" />
             <p className="text-sm font-bold text-red-800">
-              🚨 {activeOutbreaks.length} Active Outbreak Alert
+              {activeOutbreaks.length} Active Outbreak Alert
               {activeOutbreaks.length > 1 ? "s" : ""}
             </p>
           </div>
@@ -148,9 +280,7 @@ export default function Overview() {
               >
                 <span>
                   <strong>{alert.symptom}</strong> — {alert.caseCount} cases in{" "}
-                  <strong>{alert.village?.name}</strong> (
-                  {alert.village?.zone?.ta?.name},{" "}
-                  {alert.village?.zone?.ta?.district?.name})
+                  <strong>{alert.village?.name}</strong>
                 </span>
                 <span className="text-red-400 ml-2">
                   {new Date(alert.createdAt).toLocaleDateString("en-GB")}
@@ -161,31 +291,26 @@ export default function Overview() {
         </div>
       )}
 
-      {/* Security alert banner */}
+      {/* Security banner */}
       {lockedUsers.length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <ShieldAlert size={18} className="text-red-600 shrink-0" />
             <p className="text-sm text-red-800 font-medium">
-              🔴 {lockedUsers.length} account{lockedUsers.length > 1 ? "s" : ""}{" "}
-              suspended due to failed login attempts —{" "}
-              {lockedUsers
-                .map((u: any) =>
-                  u.firstName ? `${u.firstName} ${u.lastName}` : u.fullName,
-                )
-                .join(", ")}
+              {lockedUsers.length} account{lockedUsers.length > 1 ? "s" : ""}{" "}
+              suspended due to failed login attempts.
             </p>
           </div>
           <Link
             to="/admin/security"
             className="text-xs text-red-700 font-semibold underline shrink-0"
           >
-            View &amp; Unlock →
+            View & Unlock
           </Link>
         </div>
       )}
 
-      {/* Sync alert banner */}
+      {/* Sync alert */}
       {unsynced.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center gap-3">
           <AlertTriangle size={18} className="text-amber-600 shrink-0" />
@@ -196,7 +321,7 @@ export default function Overview() {
         </div>
       )}
 
-      {/* Metric cards — NOW CLICKABLE */}
+      {/* Clinical Metric Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <StatCard
           icon={TrendingUp}
@@ -242,39 +367,8 @@ export default function Overview() {
         />
       </div>
 
-      {/* Additional Stats Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="card p-5 flex items-center gap-4 bg-gradient-to-r from-blue-50 to-white">
-          <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-blue-600">
-            <Users size={22} className="text-white" />
-          </div>
-          <div>
-            <p className="text-2xl font-bold text-gray-900">
-              {chwData?.length ?? 0}
-            </p>
-            <p className="text-sm text-gray-500">Total CHWs</p>
-            <p className="text-xs text-gray-400 mt-1">
-              Community Health Workers
-            </p>
-          </div>
-        </div>
-        <div className="card p-5 flex items-center gap-4 bg-gradient-to-r from-teal-50 to-white">
-          <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-teal-600">
-            <Clock size={22} className="text-white" />
-          </div>
-          <div>
-            <p className="text-2xl font-bold text-gray-900">
-              {new Date().toLocaleTimeString()}
-            </p>
-            <p className="text-sm text-gray-500">Current Time</p>
-            <p className="text-xs text-gray-400 mt-1">Dashboard refreshed</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Map + CHW table */}
+      {/* Map + CHW Table */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {/* Map */}
         <div className="xl:col-span-2 card overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
             <h2 className="font-bold text-gray-900">Visit & Household Map</h2>
@@ -304,10 +398,7 @@ export default function Overview() {
               style={{ height: "100%", width: "100%" }}
               scrollWheelZoom={false}
             >
-              <TileLayer
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                attribution="© OpenStreetMap contributors"
-              />
+              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
               {mapData?.map((ev) => (
                 <CircleMarker
                   key={ev.id}
@@ -316,19 +407,12 @@ export default function Overview() {
                   pathOptions={{
                     fillColor: DOT_COLOR[ev.colour],
                     fillOpacity: 0.8,
-                    color: DOT_COLOR[ev.colour],
-                    weight: 1,
                   }}
                 >
                   <Popup>
                     <div className="text-xs">
                       <p className="font-semibold">{ev.label}</p>
                       <p className="text-gray-500 capitalize">{ev.type}</p>
-                      {ev.timestamp && (
-                        <p className="text-gray-400">
-                          {new Date(ev.timestamp).toLocaleDateString()}
-                        </p>
-                      )}
                     </div>
                   </Popup>
                 </CircleMarker>
@@ -337,7 +421,6 @@ export default function Overview() {
           </div>
         </div>
 
-        {/* CHW Activity */}
         <div className="card">
           <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center">
             <h2 className="font-bold text-gray-900">CHW Activity</h2>
@@ -365,13 +448,7 @@ export default function Overview() {
                 >
                   <div className="flex items-center gap-3">
                     <div
-                      className={`w-2 h-2 rounded-full ${
-                        chw.status === "ACTIVE"
-                          ? "bg-green-500"
-                          : chw.status === "UNSYNCED"
-                            ? "bg-yellow-400"
-                            : "bg-gray-300"
-                      }`}
+                      className={`w-2 h-2 rounded-full ${chw.status === "ACTIVE" ? "bg-green-500" : chw.status === "UNSYNCED" ? "bg-yellow-400" : "bg-gray-300"}`}
                     />
                     <div>
                       <p className="text-sm font-medium text-gray-900">
