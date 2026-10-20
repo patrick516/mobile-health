@@ -18,6 +18,7 @@ import {
   Pill,
   HeartHandshake,
   MessageSquare,
+  Tablets,
 } from "lucide-react";
 import { useAuthStore } from "../../store/auth.store";
 import clsx from "clsx";
@@ -41,6 +42,12 @@ const NAV = [
     to: "/feedback",
     icon: MessageSquare,
     label: "CHW Feedback",
+    roles: ["NURSE", "DISTRICT_OFFICER", "ADMIN", "SUPER_ADMIN"],
+  },
+  {
+    to: "/pharmacy",
+    icon: Tablets,
+    label: "Pharmacy",
     roles: ["NURSE", "DISTRICT_OFFICER", "ADMIN", "SUPER_ADMIN"],
   },
   {

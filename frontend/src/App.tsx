@@ -14,6 +14,13 @@ import Geography from "./pages/admin/Geography";
 import Allocations from "./pages/admin/Allocations";
 import Facilities from "./pages/admin/Facilities";
 import Reports from "./pages/reports/Reports";
+import PharmacyDashboard from "./pages/pharmacy/PharmacyDashboard";
+import StockReceiving from "./pages/pharmacy/StockReceiving";
+import DispensingWindow from "./pages/pharmacy/DispensingWindow";
+import PharmacyRequests from "./pages/pharmacy/PharmacyRequests";
+import ExpiryAlerts from "./pages/pharmacy/ExpiryAlerts";
+import TransactionLog from "./pages/pharmacy/TransactionLog";
+import Suppliers from "./pages/pharmacy/Suppliers";
 import Security from "./pages/admin/Security";
 import RelocatedHouseholds from "./pages/admin/RelocatedHouseholds";
 import FacilitySetup from "./pages/admin/FacilitySetup";
@@ -76,6 +83,13 @@ export default function App() {
           <Route path="analytics" element={<Trends />} />
           <Route path="export" element={<DHIS2Export />} />
           <Route path="reports" element={<Reports />} />
+          <Route path="pharmacy" element={<PharmacyDashboard />} />
+          <Route path="pharmacy/receiving" element={<StockReceiving />} />
+          <Route path="pharmacy/dispense" element={<DispensingWindow />} />
+          <Route path="pharmacy/requests" element={<PharmacyRequests />} />
+          <Route path="pharmacy/alerts" element={<ExpiryAlerts />} />
+          <Route path="pharmacy/transactions" element={<TransactionLog />} />
+          <Route path="pharmacy/suppliers" element={<Suppliers />} />
           <Route path="pnc" element={<PncTracker />} />
           <Route path="tb" element={<TbTracker />} />
           <Route path="fp" element={<FpTracker />} />
