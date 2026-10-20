@@ -9,7 +9,6 @@ import {
   Shield,
   Heart,
   TrendingUp,
-  Clock,
   ShieldAlert,
   MapPin,
   Building2,
