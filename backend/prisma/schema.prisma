@@ -149,6 +149,7 @@ enum PncStatus {
   MISSED
   OVERDUE
 }
+
 enum TbTreatmentCategory {
   CAT_I
   CAT_II
@@ -181,6 +182,7 @@ enum FpMethod {
   NATURAL_FAMILY_PLANNING
   OTHER
 }
+
 enum StockRequestStatus {
   PENDING
   APPROVED
@@ -204,6 +206,41 @@ enum FacilityType {
   DISTRICT_HOSPITAL
   TA_HOSPITAL
   CLINIC
+}
+
+enum DrugTransactionType {
+  IN
+  OUT
+  ADJUSTMENT
+}
+
+enum AdjustmentReason {
+  EXPIRED
+  DAMAGED
+  LOST
+  COUNT_CORRECTION
+  RETURNED
+}
+
+enum BatchStatus {
+  ACTIVE
+  DEPLETED
+  EXPIRED
+  QUARANTINED
+}
+
+enum PharmacyRequestStatus {
+  PENDING
+  FULFILLED
+  PARTIALLY_FULFILLED
+  REJECTED
+}
+
+enum SupplierType {
+  CMST
+  NGO
+  PRIVATE
+  DONATION
 }
 
 // ─── GEOGRAPHY 
@@ -277,12 +314,12 @@ model Village {
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt @map("updated_at")
 
-  zone          Zone        @relation(fields: [zoneId], references: [id])
-  createdByUser User        @relation("VillageCreator", fields: [createdByUserId], references: [id])
-  canonicalOf   Village?    @relation("VillageCanonical", fields: [canonicalVillageId], references: [id])
-  aliases       Village[]   @relation("VillageCanonical")
-  households      Household[]
-  outbreakAlerts  OutbreakAlert[]
+  zone           Zone            @relation(fields: [zoneId], references: [id])
+  createdByUser  User            @relation("VillageCreator", fields: [createdByUserId], references: [id])
+  canonicalOf    Village?        @relation("VillageCanonical", fields: [canonicalVillageId], references: [id])
+  aliases        Village[]       @relation("VillageCanonical")
+  households     Household[]
+  outbreakAlerts OutbreakAlert[]
 
   @@map("villages")
 }
@@ -300,34 +337,41 @@ model User {
   mustChangePin Boolean   @default(false) @map("must_change_pin")
   pinResetAt    DateTime? @map("pin_reset_at")
   pinResetById  String?   @map("pin_reset_by_id")
+  email         String?   @unique
+  passwordHash  String?   @map("password_hash")
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
-  facility             Facility?            @relation("FacilityStaff", fields: [facilityId], references: [id])
-  zoneAllocations      UserZoneAllocation[] @relation("AllocatedUser")
-  taAllocations        UserTaAllocation[]   @relation("AllocatedTaUser")
-  allocatedByZone      UserZoneAllocation[] @relation("ZoneAllocator")
-  allocatedByTa        UserTaAllocation[]   @relation("TaAllocator")
-  createdVillages      Village[]            @relation("VillageCreator")
-  registeredHouseholds Household[]          @relation("HouseholdRegistrar")
-  visits               Visit[]
-  referralsMade        Referral[]           @relation("ReferringUser")
-  immunisationsGiven   Immunisation[]
-  drugDispenses        DrugDispense[]
-  drugStock            DrugStock[]
-  stockRequests        StockRequest[]       @relation("StockRequester")
-  stockApprovals       StockRequest[]       @relation("StockApprover")
-  auditLogs            AuditLog[]
-  assignedMembers      HouseholdMember[]    @relation("AssignedCCW")
-  pncVisits           PncVisit[]      @relation("PncVisitor")
-  tbCasesRegistered   TbCase[]        @relation("TbCaseRegistrar")
-  fpVisits              FpVisit[]          @relation("FpVisitor")
+  facility              Facility?            @relation("FacilityStaff", fields: [facilityId], references: [id])
+  zoneAllocations       UserZoneAllocation[] @relation("AllocatedUser")
+  taAllocations         UserTaAllocation[]   @relation("AllocatedTaUser")
+  allocatedByZone       UserZoneAllocation[] @relation("ZoneAllocator")
+  allocatedByTa         UserTaAllocation[]   @relation("TaAllocator")
+  createdVillages       Village[]            @relation("VillageCreator")
+  registeredHouseholds  Household[]          @relation("HouseholdRegistrar")
+  visits                Visit[]
+  referralsMade         Referral[]           @relation("ReferringUser")
+  immunisationsGiven    Immunisation[]
+  drugDispenses         DrugDispense[]
+  drugStock             DrugStock[]
+  stockRequests         StockRequest[]       @relation("StockRequester")
+  stockApprovals        StockRequest[]       @relation("StockApprover")
+  auditLogs             AuditLog[]
+  assignedMembers       HouseholdMember[]    @relation("AssignedCCW")
+  pncVisits             PncVisit[]           @relation("PncVisitor")
+  tbCasesRegistered     TbCase[]             @relation("TbCaseRegistrar")
+  fpVisits              FpVisit[]            @relation("FpVisitor")
   feedbackReceived      SupervisorFeedback[] @relation("FeedbackReceiver")
   feedbackSent          SupervisorFeedback[] @relation("FeedbackSender")
-  tbDotVisits         TbDotVisit[]    @relation("TbDotVisitor")
-  resolvedOutbreaks   OutbreakAlert[] @relation("OutbreakResolver")
-  loginLockouts        LoginLockout[]       @relation("LockoutUser")
-  unlockedLockouts     LoginLockout[]       @relation("UnlockedByAdmin")
+  tbDotVisits           TbDotVisit[]         @relation("TbDotVisitor")
+  resolvedOutbreaks     OutbreakAlert[]      @relation("OutbreakResolver")
+  loginLockouts         LoginLockout[]       @relation("LockoutUser")
+  unlockedLockouts      LoginLockout[]       @relation("UnlockedByAdmin")
+  receivedBatches       DrugBatch[]          @relation("BatchReceiver")
+  performedTransactions DrugTransaction[]    @relation("TransactionPerformer")
+  approvedTransactions  DrugTransaction[]    @relation("TransactionApprover")
+  pharmacyRequests      PharmacyRequest[]    @relation("PharmacyRequester")
+  pharmacyFulfillments  PharmacyRequest[]    @relation("PharmacyFulfiller")
 
   @@map("users")
 }
@@ -485,28 +529,134 @@ model Visit {
   @@map("visits")
 }
 
+model DrugSupplier {
+  id          String       @id @default(uuid())
+  name        String
+  type        SupplierType
+  contactName String?      @map("contact_name")
+  phone       String?
+  email       String?
+  isActive    Boolean      @default(true) @map("is_active")
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  batches DrugBatch[]
+
+  @@map("drug_suppliers")
+}
+
+model DrugBatch {
+  id                String      @id @default(uuid())
+  drugName          String      @map("drug_name")
+  drugNameChichewa  String?     @map("drug_name_chichewa")
+  category          String
+  unit              String
+  batchNumber       String      @map("batch_number")
+  supplierId        String?     @map("supplier_id")
+  quantityReceived  Int         @map("quantity_received")
+  quantityRemaining Int         @map("quantity_remaining")
+  manufactureDate   DateTime?   @map("manufacture_date")
+  expiryDate        DateTime    @map("expiry_date")
+  receivedAt        DateTime    @default(now()) @map("received_at")
+  receivedById      String      @map("received_by_id")
+  facilityId        String      @map("facility_id")
+  status            BatchStatus @default(ACTIVE)
+  minimumStock      Int         @default(0) @map("minimum_stock")
+  reorderPoint      Int         @default(0) @map("reorder_point")
+  notes             String?
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
+
+  supplier     DrugSupplier?     @relation(fields: [supplierId], references: [id])
+  facility     Facility          @relation(fields: [facilityId], references: [id])
+  receivedBy   User              @relation("BatchReceiver", fields: [receivedById], references: [id])
+  transactions DrugTransaction[]
+
+  @@map("drug_batches")
+}
+
+model DrugTransaction {
+  id              String              @id @default(uuid())
+  batchId         String              @map("batch_id")
+  facilityId      String              @map("facility_id")
+  transactionType DrugTransactionType @map("transaction_type")
+  quantity        Int
+  quantityBefore  Int                 @map("quantity_before")
+  quantityAfter   Int                 @map("quantity_after")
+  reason          AdjustmentReason?
+  patientName     String?             @map("patient_name")
+  patientId       String?             @map("patient_id")
+  referralId      String?             @map("referral_id")
+  requestId       String?             @map("request_id")
+  performedById   String              @map("performed_by_id")
+  approvedById    String?             @map("approved_by_id")
+  notes           String?
+  createdAt       DateTime            @default(now()) @map("created_at")
+
+  batch       DrugBatch        @relation(fields: [batchId], references: [id])
+  facility    Facility         @relation(fields: [facilityId], references: [id])
+  performedBy User             @relation("TransactionPerformer", fields: [performedById], references: [id])
+  approvedBy  User?            @relation("TransactionApprover", fields: [approvedById], references: [id])
+  request     PharmacyRequest? @relation(fields: [requestId], references: [id])
+
+  @@map("drug_transactions")
+}
+
+model PharmacyRequest {
+  id            String                @id @default(uuid())
+  facilityId    String                @map("facility_id")
+  referralId    String?               @map("referral_id")
+  patientName   String                @map("patient_name")
+  patientAge    Int?                  @map("patient_age")
+  diagnosis     String?
+  requestedById String                @map("requested_by_id")
+  fulfilledById String?               @map("fulfilled_by_id")
+  status        PharmacyRequestStatus @default(PENDING)
+  notes         String?
+  fulfilledAt   DateTime?             @map("fulfilled_at")
+  createdAt     DateTime              @default(now()) @map("created_at")
+  updatedAt     DateTime              @updatedAt @map("updated_at")
+
+  facility     Facility              @relation(fields: [facilityId], references: [id])
+  requestedBy  User                  @relation("PharmacyRequester", fields: [requestedById], references: [id])
+  fulfilledBy  User?                 @relation("PharmacyFulfiller", fields: [fulfilledById], references: [id])
+  items        PharmacyRequestItem[]
+  transactions DrugTransaction[]
+
+  @@map("pharmacy_requests")
+}
+
+model PharmacyRequestItem {
+  id                String   @id @default(uuid())
+  requestId         String   @map("request_id")
+  drugName          String   @map("drug_name")
+  quantityRequested Int      @map("quantity_requested")
+  quantityFulfilled Int      @default(0) @map("quantity_fulfilled")
+  notes             String?
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  request PharmacyRequest @relation(fields: [requestId], references: [id])
+
+  @@map("pharmacy_request_items")
+}
+
 // ─── REFERRALS 
-
 model Facility {
-  id           String        @id @default(uuid())
-  name         String
-  facilityType FacilityType? @map("facility_type")
-  districtId   String?       @map("district_id")
-  taId         String?       @map("ta_id")
-  gpsLat       Float?        @map("gps_lat")
-  gpsLng       Float?        @map("gps_lng")
-  createdAt    DateTime      @default(now()) @map("created_at")
-
-  // ─── NEW: Parent District Hospital for TA Hospitals ───
-  parentDistrictHospitalId String?    @map("parent_district_hospital_id")
-  parentDistrictHospital   Facility?  @relation("DistrictHospitalTA", fields: [parentDistrictHospitalId], references: [id])
-  childTAHospitals         Facility[] @relation("DistrictHospitalTA")
-
-  district  District?             @relation(fields: [districtId], references: [id])
-  ta        TraditionalAuthority? @relation(fields: [taId], references: [id])
-  referrals Referral[]
-  tbCases   TbCase[]
-  staff     User[]                @relation("FacilityStaff")
+  id               String                @id @default(uuid())
+  name             String
+  facilityType     FacilityType?         @map("facility_type")
+  districtId       String?               @map("district_id")
+  taId             String?               @map("ta_id")
+  gpsLat           Float?                @map("gps_lat")
+  gpsLng           Float?                @map("gps_lng")
+  createdAt        DateTime              @default(now()) @map("created_at")
+  district         District?             @relation(fields: [districtId], references: [id])
+  ta               TraditionalAuthority? @relation(fields: [taId], references: [id])
+  referrals        Referral[]
+  staff            User[]                @relation("FacilityStaff")
+  drugBatches      DrugBatch[]
+  drugTransactions DrugTransaction[]
+  pharmacyRequests PharmacyRequest[]
+  tbCases          TbCase[]
 
   @@map("facilities")
 }
@@ -722,20 +872,20 @@ model StockRequest {
 // ─── TB FOLLOW-UP
 
 model TbCase {
-  id                  String              @id @default(uuid())
-  memberId            String              @map("member_id")
-  registeredById      String              @map("registered_by_id")
-  treatmentStartDate  DateTime            @map("treatment_start_date")
-  treatmentCategory   TbTreatmentCategory @map("treatment_category")
-  facilityId          String?             @map("facility_id")
-  treatmentNumber     String?             @map("treatment_number")
-  isActive            Boolean             @default(true) @map("is_active")
-  outcome             TbOutcome?
-  outcomeDate         DateTime?           @map("outcome_date")
-  notes               String?
-  syncedAt            DateTime?           @map("synced_at")
-  createdAt           DateTime            @default(now()) @map("created_at")
-  updatedAt           DateTime            @updatedAt @map("updated_at")
+  id                 String              @id @default(uuid())
+  memberId           String              @map("member_id")
+  registeredById     String              @map("registered_by_id")
+  treatmentStartDate DateTime            @map("treatment_start_date")
+  treatmentCategory  TbTreatmentCategory @map("treatment_category")
+  facilityId         String?             @map("facility_id")
+  treatmentNumber    String?             @map("treatment_number")
+  isActive           Boolean             @default(true) @map("is_active")
+  outcome            TbOutcome?
+  outcomeDate        DateTime?           @map("outcome_date")
+  notes              String?
+  syncedAt           DateTime?           @map("synced_at")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
 
   member       HouseholdMember @relation(fields: [memberId], references: [id])
   registeredBy User            @relation("TbCaseRegistrar", fields: [registeredById], references: [id])
@@ -746,18 +896,18 @@ model TbCase {
 }
 
 model TbDotVisit {
-  id            String    @id @default(uuid())
-  localId       String    @unique @map("local_id")
-  tbCaseId      String    @map("tb_case_id")
-  visitedById   String    @map("visited_by_id")
-  visitDate     DateTime  @map("visit_date")
-  status        DotStatus @default(OBSERVED)
-  drugsGiven    Json?     @map("drugs_given")
-  missedReason  String?   @map("missed_reason")
-  notes         String?
-  syncedAt      DateTime? @map("synced_at")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
+  id           String    @id @default(uuid())
+  localId      String    @unique @map("local_id")
+  tbCaseId     String    @map("tb_case_id")
+  visitedById  String    @map("visited_by_id")
+  visitDate    DateTime  @map("visit_date")
+  status       DotStatus @default(OBSERVED)
+  drugsGiven   Json?     @map("drugs_given")
+  missedReason String?   @map("missed_reason")
+  notes        String?
+  syncedAt     DateTime? @map("synced_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
 
   tbCase    TbCase @relation(fields: [tbCaseId], references: [id])
   visitedBy User   @relation("TbDotVisitor", fields: [visitedById], references: [id])
@@ -768,48 +918,50 @@ model TbDotVisit {
 // ─── FAMILY PLANNING
 
 model FpVisit {
-  id               String   @id @default(uuid())
-  localId          String   @unique @map("local_id")
-  memberId         String   @map("member_id")
-  visitedById      String   @map("visited_by_id")
-  visitDate        DateTime @map("visit_date")
+  id               String    @id @default(uuid())
+  localId          String    @unique @map("local_id")
+  memberId         String    @map("member_id")
+  visitedById      String    @map("visited_by_id")
+  visitDate        DateTime  @map("visit_date")
   method           FpMethod
-  quantityGiven    Int?     @map("quantity_given")
+  quantityGiven    Int?      @map("quantity_given")
   nextFollowUpDate DateTime? @map("next_follow_up_date")
-  sideEffects      Json?    @map("side_effects")
-  referralNeeded   Boolean  @default(false) @map("referral_needed")
-  counsellingGiven Boolean  @default(true) @map("counselling_given")
+  sideEffects      Json?     @map("side_effects")
+  referralNeeded   Boolean   @default(false) @map("referral_needed")
+  counsellingGiven Boolean   @default(true) @map("counselling_given")
   notes            String?
   syncedAt         DateTime? @map("synced_at")
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
 
   member    HouseholdMember @relation(fields: [memberId], references: [id])
   visitedBy User            @relation("FpVisitor", fields: [visitedById], references: [id])
 
   @@map("fp_visits")
 }
+
 // ─── SUPERVISOR FEEDBACK
 
 model SupervisorFeedback {
-  id           String   @id @default(uuid())
-  ccwId        String   @map("ccw_id")
-  supervisorId String   @map("supervisor_id")
-  periodMonth  Int      @map("period_month")
-  periodYear   Int      @map("period_year")
-  rating       Int      // 1–5
+  id           String    @id @default(uuid())
+  ccwId        String    @map("ccw_id")
+  supervisorId String    @map("supervisor_id")
+  periodMonth  Int       @map("period_month")
+  periodYear   Int       @map("period_year")
+  rating       Int // 1–5
   comment      String
-  visitsCount  Int?     @map("visits_count")
-  isRead       Boolean  @default(false) @map("is_read")
+  visitsCount  Int?      @map("visits_count")
+  isRead       Boolean   @default(false) @map("is_read")
   readAt       DateTime? @map("read_at")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
 
   ccw        User @relation("FeedbackReceiver", fields: [ccwId], references: [id])
   supervisor User @relation("FeedbackSender", fields: [supervisorId], references: [id])
 
   @@map("supervisor_feedback")
 }
+
 // ─── OUTBREAK ALERTS
 
 enum OutbreakStatus {
@@ -819,17 +971,17 @@ enum OutbreakStatus {
 }
 
 model OutbreakAlert {
-  id          String        @id @default(uuid())
-  villageId   String        @map("village_id")
-  symptom     String
-  caseCount   Int           @map("case_count")
-  windowStart DateTime      @map("window_start")
-  windowEnd   DateTime      @map("window_end")
-  status      OutbreakStatus @default(ACTIVE)
-  resolvedAt  DateTime?     @map("resolved_at")
-  resolvedById String?      @map("resolved_by_id")
-  createdAt   DateTime      @default(now()) @map("created_at")
-  updatedAt   DateTime      @updatedAt @map("updated_at")
+  id           String         @id @default(uuid())
+  villageId    String         @map("village_id")
+  symptom      String
+  caseCount    Int            @map("case_count")
+  windowStart  DateTime       @map("window_start")
+  windowEnd    DateTime       @map("window_end")
+  status       OutbreakStatus @default(ACTIVE)
+  resolvedAt   DateTime?      @map("resolved_at")
+  resolvedById String?        @map("resolved_by_id")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
 
   village    Village @relation(fields: [villageId], references: [id])
   resolvedBy User?   @relation("OutbreakResolver", fields: [resolvedById], references: [id])
