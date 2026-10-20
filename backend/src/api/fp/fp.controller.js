@@ -78,9 +78,15 @@ export const getFpVisits = async (req, res, next) => {
       where,
       include: {
         member: {
-          select: { id: true, fullName: true, sex: true, dateOfBirth: true },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            sex: true,
+            dateOfBirth: true,
+          },
         },
-        visitedBy: { select: { id: true, fullName: true } },
+        visitedBy: { select: { id: true, firstName: true, lastName: true } },
       },
       orderBy: { visitDate: "desc" },
       take: 200,
@@ -118,7 +124,8 @@ export const getFpFollowUps = async (req, res, next) => {
         member: {
           select: {
             id: true,
-            fullName: true,
+            firstName: true,
+            lastName: true,
             sex: true,
             household: {
               select: {
@@ -144,7 +151,7 @@ export const getMemberFpHistory = async (req, res, next) => {
     const visits = await prisma.fpVisit.findMany({
       where: { memberId: req.params.memberId },
       include: {
-        visitedBy: { select: { id: true, fullName: true } },
+        visitedBy: { select: { id: true, firstName: true, lastName: true } },
       },
       orderBy: { visitDate: "desc" },
     });

@@ -44,7 +44,8 @@ export const getHouseholds = async (req, res, next) => {
             where: { status: "ACTIVE" },
             select: {
               id: true,
-              fullName: true,
+              firstName: true,
+              lastName: true,
               sex: true,
               dateOfBirth: true,
               estimatedAge: true,

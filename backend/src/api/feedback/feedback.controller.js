@@ -81,7 +81,9 @@ export const getMyFeedback = async (req, res, next) => {
     const feedback = await prisma.supervisorFeedback.findMany({
       where: { ccwId: req.user.id },
       include: {
-        supervisor: { select: { id: true, fullName: true, role: true } },
+        supervisor: {
+          select: { id: true, firstName: true, lastName: true, role: true },
+        },
       },
       orderBy: [{ periodYear: "desc" }, { periodMonth: "desc" }],
     });
@@ -130,7 +132,8 @@ export const getCcwsForFeedback = async (req, res, next) => {
       where: { role: "CCW", isActive: true },
       select: {
         id: true,
-        fullName: true,
+        firstName: true,
+        lastName: true,
         phoneNumber: true,
         zoneAllocations: {
           select: {
@@ -150,12 +153,13 @@ export const getCcwsForFeedback = async (req, res, next) => {
           select: { id: true, rating: true },
         },
       },
-      orderBy: { fullName: "asc" },
+      orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
     });
 
     const enriched = ccws.map((c) => ({
       id: c.id,
-      fullName: c.fullName,
+      firstName: c.firstName,
+      lastName: c.lastName,
       phoneNumber: c.phoneNumber,
       zones: c.zoneAllocations.map((z) => z.zone.name),
       ta: c.zoneAllocations[0]?.zone.ta?.name ?? null,
@@ -176,7 +180,14 @@ export const getSentFeedback = async (req, res, next) => {
     const feedback = await prisma.supervisorFeedback.findMany({
       where: { supervisorId: req.user.id },
       include: {
-        ccw: { select: { id: true, fullName: true, phoneNumber: true } },
+        ccw: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phoneNumber: true,
+          },
+        },
       },
       orderBy: [{ periodYear: "desc" }, { periodMonth: "desc" }],
       take: 100,

@@ -14,6 +14,9 @@ const router = Router();
 
 router.post("/login", login);
 router.post("/login-web", loginWeb);
+router.get("/setup-status", setupStatus);
+router.post("/register-super-admin", registerSuperAdmin);
+router.patch("/complete-password-reset", authenticate, completePasswordReset);
 router.get("/me", authenticate, getMe);
 router.patch("/change-pin", authenticate, changePin);
 router.patch("/complete-pin-reset", completePinReset);

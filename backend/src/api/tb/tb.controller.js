@@ -57,7 +57,7 @@ export const registerTbCase = async (req, res, next) => {
         syncedAt: new Date(),
       },
       include: {
-        member: { select: { id: true, fullName: true } },
+        member: { select: { id: true, firstName: true, lastName: true } },
       },
     });
 
@@ -103,9 +103,15 @@ export const getTbCases = async (req, res, next) => {
       where,
       include: {
         member: {
-          select: { id: true, fullName: true, sex: true, dateOfBirth: true },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            sex: true,
+            dateOfBirth: true,
+          },
         },
-        registeredBy: { select: { id: true, fullName: true } },
+        registeredBy: { select: { id: true, firstName: true, lastName: true } },
         facility: { select: { id: true, name: true } },
         dotVisits: {
           orderBy: { visitDate: "desc" },
@@ -144,12 +150,14 @@ export const getTbCase = async (req, res, next) => {
             household: { include: { village: true } },
           },
         },
-        registeredBy: { select: { id: true, fullName: true } },
+        registeredBy: { select: { id: true, firstName: true, lastName: true } },
         facility: { select: { id: true, name: true } },
         dotVisits: {
           orderBy: { visitDate: "desc" },
           include: {
-            visitedBy: { select: { id: true, fullName: true } },
+            visitedBy: {
+              select: { id: true, firstName: true, lastName: true },
+            },
           },
         },
       },

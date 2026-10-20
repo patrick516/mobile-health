@@ -9,6 +9,11 @@ const TYPE_ICONS: Record<string, any> = {
   ADJUSTMENT: { icon: RefreshCw, color: "text-blue-600" },
 };
 
+const fullName = (p: any) =>
+  p
+    ? `${p.firstName || ""} ${p.lastName || ""}`.trim() || p.fullName || "—"
+    : "—";
+
 export default function TransactionLog() {
   const today = new Date().toISOString().split("T")[0];
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
@@ -39,7 +44,6 @@ export default function TransactionLog() {
     <div className="space-y-5">
       <h1 className="text-xl font-bold text-gray-900">Transaction Log</h1>
 
-      {/* Filters */}
       <div className="card p-4 flex flex-wrap gap-3 items-end">
         <div>
           <label className="block text-xs font-semibold text-gray-600 mb-1">
@@ -91,7 +95,6 @@ export default function TransactionLog() {
         </div>
       </div>
 
-      {/* Table */}
       <div className="card p-5">
         {isLoading && (
           <p className="text-sm text-gray-400 text-center py-8">Loading...</p>
@@ -147,7 +150,7 @@ export default function TransactionLog() {
                       {t.patientName || "—"}
                     </td>
                     <td className="px-3 py-2 text-gray-600">
-                      {t.performedBy?.fullName}
+                      {fullName(t.performedBy)}
                     </td>
                     <td className="px-3 py-2 text-gray-500 text-xs">
                       {new Date(t.createdAt).toLocaleString()}

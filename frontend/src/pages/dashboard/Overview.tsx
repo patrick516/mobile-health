@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import {
   Users,
   AlertTriangle,
@@ -30,16 +31,21 @@ function StatCard({
   label,
   value,
   color,
+  to,
 }: {
   icon: any;
   label: string;
   value: number;
   color: string;
+  to: string;
 }) {
   return (
-    <div className="card p-5 flex items-center gap-4">
+    <Link
+      to={to}
+      className="card p-5 flex items-center gap-4 hover:shadow-md hover:border-teal-200 transition-all cursor-pointer"
+    >
       <div
-        className={`w-12 h-12 rounded-xl flex items-center justify-center ${color}`}
+        className={`w-12 h-12 rounded-xl flex items-center justify-center ${color} shrink-0`}
       >
         <Icon size={22} className="text-white" />
       </div>
@@ -47,7 +53,7 @@ function StatCard({
         <p className="text-2xl font-bold text-gray-900">{value}</p>
         <p className="text-sm text-gray-500">{label}</p>
       </div>
-    </div>
+    </Link>
   );
 }
 
@@ -155,7 +161,6 @@ export default function Overview() {
         </div>
       )}
 
-      {/* Alert banner */}
       {/* Security alert banner */}
       {lockedUsers.length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
@@ -164,15 +169,19 @@ export default function Overview() {
             <p className="text-sm text-red-800 font-medium">
               🔴 {lockedUsers.length} account{lockedUsers.length > 1 ? "s" : ""}{" "}
               suspended due to failed login attempts —{" "}
-              {lockedUsers.map((u: any) => u.fullName).join(", ")}
+              {lockedUsers
+                .map((u: any) =>
+                  u.firstName ? `${u.firstName} ${u.lastName}` : u.fullName,
+                )
+                .join(", ")}
             </p>
           </div>
-          <a
-            href="/admin/security"
+          <Link
+            to="/admin/security"
             className="text-xs text-red-700 font-semibold underline shrink-0"
           >
             View &amp; Unlock →
-          </a>
+          </Link>
         </div>
       )}
 
@@ -187,47 +196,53 @@ export default function Overview() {
         </div>
       )}
 
-      {/* Metric cards */}
+      {/* Metric cards — NOW CLICKABLE */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <StatCard
           icon={TrendingUp}
           label="Visits This Week"
           value={stats?.totalVisitsWeek ?? 0}
           color="bg-teal-700"
+          to="/analytics"
         />
         <StatCard
           icon={AlertTriangle}
           label="Active Referrals"
           value={stats?.activeReferrals ?? 0}
           color="bg-yellow-500"
+          to="/referrals"
         />
         <StatCard
           icon={CheckCircle}
           label="Missed Referrals"
           value={stats?.missedReferrals ?? 0}
           color="bg-red-500"
+          to="/referrals"
         />
         <StatCard
           icon={FlaskConical}
           label="Low Drug Stock"
           value={stats?.drugsLowStock ?? 0}
           color="bg-orange-500"
+          to="/pharmacy"
         />
         <StatCard
           icon={Shield}
           label="Vaccines Due"
           value={stats?.vaccinesDue ?? 0}
           color="bg-purple-600"
+          to="/immunisations"
         />
         <StatCard
           icon={Heart}
           label="ANC Overdue"
           value={stats?.ancOverdue ?? 0}
           color="bg-pink-600"
+          to="/pnc"
         />
       </div>
 
-      {/* Additional Stats Row - Using Users and Clock */}
+      {/* Additional Stats Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="card p-5 flex items-center gap-4 bg-gradient-to-r from-blue-50 to-white">
           <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-blue-600">
@@ -256,6 +271,7 @@ export default function Overview() {
           </div>
         </div>
       </div>
+
       {/* Map + CHW table */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Map */}
@@ -323,8 +339,14 @@ export default function Overview() {
 
         {/* CHW Activity */}
         <div className="card">
-          <div className="px-5 py-4 border-b border-gray-100">
+          <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center">
             <h2 className="font-bold text-gray-900">CHW Activity</h2>
+            <Link
+              to="/admin/users"
+              className="text-xs text-teal-600 hover:underline"
+            >
+              View all
+            </Link>
           </div>
           <div className="divide-y divide-gray-50 overflow-y-auto max-h-96">
             {chwData?.length === 0 && (
@@ -332,38 +354,43 @@ export default function Overview() {
                 No CHW data
               </p>
             )}
-            {chwData?.map((chw) => (
-              <div
-                key={chw.id}
-                className="px-5 py-3 flex items-center justify-between"
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`w-2 h-2 rounded-full ${
-                      chw.status === "ACTIVE"
-                        ? "bg-green-500"
-                        : chw.status === "UNSYNCED"
-                          ? "bg-yellow-400"
-                          : "bg-gray-300"
-                    }`}
-                  />
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">
-                      {chw.fullName}
+            {chwData?.map((chw: any) => {
+              const chwName = chw.firstName
+                ? `${chw.firstName} ${chw.lastName}`
+                : chw.fullName;
+              return (
+                <div
+                  key={chw.id}
+                  className="px-5 py-3 flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`w-2 h-2 rounded-full ${
+                        chw.status === "ACTIVE"
+                          ? "bg-green-500"
+                          : chw.status === "UNSYNCED"
+                            ? "bg-yellow-400"
+                            : "bg-gray-300"
+                      }`}
+                    />
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">
+                        {chwName}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        {chw.zones.join(", ")}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-semibold text-teal-700">
+                      {chw.visitsThisWeek}
                     </p>
-                    <p className="text-xs text-gray-400">
-                      {chw.zones.join(", ")}
-                    </p>
+                    <p className="text-xs text-gray-400">visits</p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-semibold text-teal-700">
-                    {chw.visitsThisWeek}
-                  </p>
-                  <p className="text-xs text-gray-400">visits</p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

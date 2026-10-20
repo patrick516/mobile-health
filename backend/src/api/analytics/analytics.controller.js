@@ -146,7 +146,8 @@ export const getChwActivity = async (req, res, next) => {
       },
       select: {
         id: true,
-        fullName: true,
+        firstName: true,
+        lastName: true,
         phoneNumber: true,
         visits: {
           where: { visitedAt: { gte: weekAgo } },
@@ -172,7 +173,8 @@ export const getChwActivity = async (req, res, next) => {
 
       return {
         id: chw.id,
-        fullName: chw.fullName,
+        firstName: chw.firstName,
+        lastName: chw.lastName,
         phoneNumber: chw.phoneNumber,
         zones: chw.zoneAllocations.map((z) => z.zone.name),
         visitsThisWeek: chw.visits.length,

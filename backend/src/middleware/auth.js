@@ -19,7 +19,8 @@ export const authenticate = async (req, res, next) => {
       where: { id: decoded.userId },
       select: {
         id: true,
-        fullName: true,
+        firstName: true,
+        lastName: true,
         phoneNumber: true,
         role: true,
         isActive: true,
@@ -86,6 +87,8 @@ export const authenticate = async (req, res, next) => {
 
     req.user = {
       ...user,
+      // Backward compat for anything still looking for fullName
+      fullName: `${user.firstName} ${user.lastName}`,
       scopeLevel,
       districtId,
       taIds,

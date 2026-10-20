@@ -78,6 +78,35 @@ export const exportDHIS2 = async (req, res, next) => {
       where: visitWhere,
       include: {
         member: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            sex: true,
+            dateOfBirth: true,
+          },
+          // ── Note: we still need the household/village hierarchy below ──
+          // so we can't fully restrict the select. Instead we return the
+          // full member and reference firstName/lastName in the CSV.
+        },
+        chw: {
+          select: {
+            firstName: true,
+            lastName: true,
+            facility: { select: { name: true, facilityType: true } },
+          },
+        },
+        referrals: { select: { status: true, urgency: true } },
+      },
+    });
+
+    // We need the full member with household for the CSV fields.
+    // The `select` above omits household. Re-fetch below with full includes.
+    // Simpler: use a single findMany with full includes as before.
+    const fullVisits = await prisma.visit.findMany({
+      where: visitWhere,
+      include: {
+        member: {
           include: {
             household: {
               include: {
@@ -92,7 +121,8 @@ export const exportDHIS2 = async (req, res, next) => {
         },
         chw: {
           select: {
-            fullName: true,
+            firstName: true,
+            lastName: true,
             facility: { select: { name: true, facilityType: true } },
           },
         },
@@ -100,11 +130,11 @@ export const exportDHIS2 = async (req, res, next) => {
       },
     });
 
-    const rows = visits.map((v) =>
+    const rows = fullVisits.map((v) =>
       [
         v.id,
         v.visitedAt.toISOString().split("T")[0],
-        v.member.fullName,
+        `${v.member.firstName} ${v.member.lastName}`.trim(),
         v.member.sex,
         v.member.dateOfBirth?.toISOString().split("T")[0] || "",
         v.member.household.village.zone.ta.district.name,
@@ -112,7 +142,7 @@ export const exportDHIS2 = async (req, res, next) => {
         v.member.household.village.zone.name,
         v.member.household.village.name,
         v.member.household.householdNumber,
-        v.chw.fullName,
+        `${v.chw.firstName} ${v.chw.lastName}`.trim(),
         v.chw.facility?.name || "",
         v.visitType,
         JSON.stringify(v.symptoms || []),
@@ -121,7 +151,16 @@ export const exportDHIS2 = async (req, res, next) => {
         v.muacStatus || "",
         v.referralNeeded ? "Yes" : "No",
         v.referrals.length > 0 ? v.referrals[0].status : "",
-      ].join(","),
+      ]
+        .map((field) => {
+          // Escape commas and quotes in CSV
+          const str = String(field ?? "");
+          if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+            return `"${str.replace(/"/g, '""')}"`;
+          }
+          return str;
+        })
+        .join(","),
     );
 
     const header = [

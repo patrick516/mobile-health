@@ -42,14 +42,20 @@ export const getReferrals = async (req, res, next) => {
           member: {
             select: {
               id: true,
-              fullName: true,
+              firstName: true,
+              lastName: true,
               sex: true,
               dateOfBirth: true,
               estimatedAge: true,
             },
           },
           referringUser: {
-            select: { id: true, fullName: true, phoneNumber: true },
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              phoneNumber: true,
+            },
           },
           destinationFacility: true,
           visit: {
@@ -91,7 +97,12 @@ export const getReferral = async (req, res, next) => {
       include: {
         member: true,
         referringUser: {
-          select: { id: true, fullName: true, phoneNumber: true },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phoneNumber: true,
+          },
         },
         destinationFacility: true,
         visit: true,
@@ -122,6 +133,7 @@ export const getReferral = async (req, res, next) => {
     next(err);
   }
 };
+
 // POST /api/referrals
 export const createReferral = async (req, res, next) => {
   try {
@@ -170,9 +182,11 @@ export const createReferral = async (req, res, next) => {
       if (household?.headPhone) {
         const facility =
           referral.destinationFacility?.name || "the nearest health facility";
+        const patientName =
+          `${referral.member.firstName} ${referral.member.lastName}`.trim();
         await sendSms(
           household.headPhone,
-          `MobileHealth Alert: ${referral.member.fullName} has been referred to ${facility}. Please go as soon as possible.`,
+          `MobileHealth Alert: ${patientName} has been referred to ${facility}. Please go as soon as possible.`,
         );
       }
     }
@@ -214,7 +228,9 @@ export const updateReferral = async (req, res, next) => {
       data,
       include: {
         member: true,
-        referringUser: { select: { phoneNumber: true, fullName: true } },
+        referringUser: {
+          select: { phoneNumber: true, firstName: true, lastName: true },
+        },
       },
     });
 

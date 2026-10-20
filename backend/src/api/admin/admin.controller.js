@@ -5,6 +5,7 @@ import {
   APP_DOWNLOAD_LINK,
   PORTAL_LINK,
 } from "../../utils/smsService.js";
+import { sendEmail } from "../../utils/emailService.js";
 
 // ─── USERS
 export const getUsers = async (req, res, next) => {
@@ -25,8 +26,11 @@ export const getUsers = async (req, res, next) => {
       },
       select: {
         id: true,
-        fullName: true,
+        firstName: true,
+        lastName: true,
         phoneNumber: true,
+        phone: true,
+        email: true,
         role: true,
         isActive: true,
         createdAt: true,
@@ -42,101 +46,144 @@ export const getUsers = async (req, res, next) => {
         zoneAllocations: { select: { zone: { include: { ta: true } } } },
         taAllocations: { select: { ta: true } },
       },
-      orderBy: { fullName: "asc" },
+      orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
     });
     res.json({ success: true, data: users });
   } catch (err) {
     next(err);
   }
 };
+
 export const createUser = async (req, res, next) => {
   try {
-    const { fullName, phoneNumber, pin, role, facilityId } = req.body;
-    if (!fullName || !phoneNumber || !pin || !role) {
+    const {
+      firstName,
+      lastName,
+      phoneNumber,
+      email,
+      phone,
+      role,
+      facilityId,
+      pin,
+    } = req.body;
+
+    if (!firstName || !lastName || !phoneNumber || !role) {
       return res.status(400).json({
         success: false,
-        message: "fullName, phoneNumber, pin and role are required.",
+        message: "Names, phone, and role are required.",
       });
     }
-    if (String(pin).length !== 4) {
-      return res
-        .status(400)
-        .json({ success: false, message: "PIN must be 4 digits." });
-    }
-    const pinHash = await bcrypt.hash(String(pin), 12);
 
-    // ADMIN creating users — auto-assign their facility to the new user
-    // unless SUPER_ADMIN explicitly provides a facilityId
+    const isWebUser = [
+      "NURSE",
+      "DISTRICT_OFFICER",
+      "PHARMACIST",
+      "ADMIN",
+      "SUPER_ADMIN",
+    ].includes(role);
+    let tempPassword = null;
+    let passwordHash = null;
+
+    if (isWebUser) {
+      if (!email)
+        return res.status(400).json({
+          success: false,
+          message: "Email is required for web portal users.",
+        });
+      tempPassword = Math.random().toString(36).slice(-8); // Generate 8-char temp password
+      passwordHash = await bcrypt.hash(tempPassword, 12);
+    }
+
+    const pinHash = await bcrypt.hash(String(pin || "1234"), 12);
+
     let assignedFacilityId = null;
-    if (["NURSE", "DISTRICT_OFFICER", "CCW"].includes(role)) {
+    if (["NURSE", "DISTRICT_OFFICER", "PHARMACIST", "CCW"].includes(role)) {
       if (req.user.role === "ADMIN" && req.user.facilityId) {
         assignedFacilityId = req.user.facilityId;
       } else if (req.user.role === "SUPER_ADMIN") {
         assignedFacilityId = facilityId || null;
       }
     } else if (role === "ADMIN") {
-      // SUPER_ADMIN creating an ADMIN — facility picked in the create form
       assignedFacilityId = facilityId || null;
     }
 
     const user = await prisma.user.create({
       data: {
-        fullName,
+        firstName,
+        lastName,
         phoneNumber,
+        phone: phone || null,
+        email: email ? email.toLowerCase().trim() : null,
+        passwordHash,
         pinHash,
         role,
         facilityId: assignedFacilityId,
-        mustChangePin: true,
-      },
-      select: {
-        id: true,
-        fullName: true,
-        phoneNumber: true,
-        role: true,
-        isActive: true,
-        createdAt: true,
-        facility: { select: { id: true, name: true, facilityType: true } },
+        mustChangePin: true, // Forces change for both PIN (CCW) and Password (Web)
       },
     });
-    // Notify the new account holder via SMS — never blocks account creation
-    try {
-      const link =
-        role === "CCW"
-          ? `Download the app: ${APP_DOWNLOAD_LINK}`
-          : `Login to the portal: ${PORTAL_LINK}`;
 
-      await sendSms(
-        user.phoneNumber,
-        `MobileHealth Malawi\n\nHello ${user.fullName}, your account has been created.\nRole: ${role}\nContact your admin (${req.user.phoneNumber}) for your PIN.\n\n${link}`,
-      );
-    } catch (smsErr) {
-      console.error("SMS notification failed:", smsErr.message);
+    // Notify User
+    try {
+      if (isWebUser) {
+        await sendEmail(
+          user.email,
+          "Welcome to MobileHealth Malawi - Your Account Details",
+          `<h3>Hello ${firstName},</h3>
+           <p>Your account has been created. Use the credentials below to log in:</p>
+           <p><strong>Email:</strong> ${email}</p>
+           <p><strong>Temporary Password:</strong> ${tempPassword}</p>
+           <p>You will be asked to change this password on your first login.</p>
+           <p><a href="${process.env.PORTAL_LINK || "http://localhost:5173"}">Go to Portal</a></p>`,
+        );
+      } else {
+        await sendSms(
+          user.phoneNumber,
+          `MobileHealth Malawi\n\nHello ${firstName}, your account has been created.\nRole: ${role}\nContact your admin for your PIN.`,
+        );
+      }
+    } catch (notifyErr) {
+      console.error("Notification failed:", notifyErr.message);
     }
-    res.status(201).json({ success: true, data: user });
+
+    res.status(201).json({
+      success: true,
+      data: { id: user.id, firstName, lastName, role },
+    });
   } catch (err) {
-    if (err.code === "P2002")
+    if (err.code === "P2002") {
       return res.status(409).json({
         success: false,
-        message: `Phone number ${phoneNumber} is already registered.`,
+        message: "Phone number or Email is already registered.",
       });
+    }
     next(err);
   }
 };
+
 export const updateUser = async (req, res, next) => {
   try {
-    const { fullName, phoneNumber, role, facilityId } = req.body;
+    const { firstName, lastName, phoneNumber, phone, email, role, facilityId } =
+      req.body;
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: {
-        ...(fullName ? { fullName } : {}),
+        ...(firstName ? { firstName } : {}),
+        ...(lastName ? { lastName } : {}),
         ...(phoneNumber ? { phoneNumber } : {}),
+        ...(phone !== undefined ? { phone } : {}),
+        ...(email !== undefined
+          ? { email: email ? email.toLowerCase().trim() : null }
+          : {}),
         ...(role ? { role } : {}),
         ...(facilityId !== undefined ? { facilityId: facilityId || null } : {}),
       },
       select: {
         id: true,
-        fullName: true,
+        firstName: true,
+        lastName: true,
         phoneNumber: true,
+        phone: true,
+        email: true,
         role: true,
         isActive: true,
         facility: { select: { id: true, name: true, facilityType: true } },
@@ -153,7 +200,7 @@ export const deactivateUser = async (req, res, next) => {
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: { isActive: false },
-      select: { id: true, fullName: true, isActive: true },
+      select: { id: true, firstName: true, lastName: true, isActive: true },
     });
     res.json({ success: true, data: user });
   } catch (err) {
@@ -166,7 +213,7 @@ export const reactivateUser = async (req, res, next) => {
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: { isActive: true },
-      select: { id: true, fullName: true, isActive: true },
+      select: { id: true, firstName: true, lastName: true, isActive: true },
     });
     res.json({ success: true, data: user });
   } catch (err) {
@@ -175,15 +222,17 @@ export const reactivateUser = async (req, res, next) => {
 };
 
 // PATCH /api/admin/users/:id/reset-pin
-// Generates a random temp PIN, hashes and saves it, flags the account so
-// the next login forces a new PIN. Returns the plaintext temp PIN ONCE —
-// it is never stored or logged anywhere, only shown to the admin so they
-// can relay it by phone/SMS manually.
 export const resetUserPin = async (req, res, next) => {
   try {
     const targetUser = await prisma.user.findUnique({
       where: { id: req.params.id },
-      select: { id: true, fullName: true, role: true, facilityId: true },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+        facilityId: true,
+      },
     });
 
     if (!targetUser) {
@@ -193,10 +242,8 @@ export const resetUserPin = async (req, res, next) => {
     }
 
     // ── Role scoping ──
-    // ADMIN may only reset CCW / NURSE / DISTRICT_OFFICER within their
-    // own facility. SUPER_ADMIN may reset anyone, including ADMINs.
     if (req.user.role === "ADMIN") {
-      const allowedRoles = ["CCW", "NURSE", "DISTRICT_OFFICER"];
+      const allowedRoles = ["CCW", "NURSE", "DISTRICT_OFFICER", "PHARMACIST"];
       if (!allowedRoles.includes(targetUser.role)) {
         return res.status(403).json({
           success: false,
@@ -219,7 +266,7 @@ export const resetUserPin = async (req, res, next) => {
       });
     }
 
-    // Generate a random 4-digit temp PIN, e.g. "0294"
+    // Generate a random 4-digit temp PIN
     const tempPin = String(Math.floor(1000 + Math.random() * 9000));
     const pinHash = await bcrypt.hash(tempPin, 12);
 
@@ -245,13 +292,14 @@ export const resetUserPin = async (req, res, next) => {
 
     res.json({
       success: true,
-      message: `Temporary PIN generated for ${targetUser.fullName}. Relay it to them now — it will not be shown again.`,
+      message: `Temporary PIN generated for ${targetUser.firstName} ${targetUser.lastName}. Relay it to them now — it will not be shown again.`,
       data: { tempPin },
     });
   } catch (err) {
     next(err);
   }
 };
+
 // ─── GEOGRAPHY
 export const createRegion = async (req, res, next) => {
   try {
@@ -340,7 +388,6 @@ export const allocateUserToZone = async (req, res, next) => {
         .status(400)
         .json({ success: false, message: "userId and zoneId are required." });
 
-    // ── Guard: already allocated to this zone? ──
     const existing = await prisma.userZoneAllocation.findUnique({
       where: { userId_zoneId: { userId, zoneId } },
       include: { zone: true, user: true },
@@ -348,13 +395,18 @@ export const allocateUserToZone = async (req, res, next) => {
     if (existing)
       return res.status(409).json({
         success: false,
-        message: `${existing.user.fullName} is already allocated to ${existing.zone.name}.`,
+        message: `${existing.user.firstName} ${existing.user.lastName} is already allocated to ${existing.zone.name}.`,
       });
 
-    // ── Guard: target must exist and be a CCW ──
     const targetUser = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, fullName: true, role: true, facilityId: true },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+        facilityId: true,
+      },
     });
     if (!targetUser) {
       return res
@@ -368,15 +420,10 @@ export const allocateUserToZone = async (req, res, next) => {
       });
     }
 
-    // ── Create the allocation ──
     const allocation = await prisma.userZoneAllocation.create({
       data: { userId, zoneId, allocatedById: req.user.id },
     });
 
-    // ── Auto-assign facility ──
-    // If an ADMIN is allocating, the CCW inherits the ADMIN's facility.
-    // Backfills when missing, force-syncs when it differs (safe — an ADMIN
-    // only ever sees users from their own facility via getUsers scoping).
     let facilityAssigned = false;
     if (req.user.role === "ADMIN" && req.user.facilityId) {
       if (targetUser.facilityId !== req.user.facilityId) {
@@ -421,7 +468,6 @@ export const allocateUserToTA = async (req, res, next) => {
         .status(400)
         .json({ success: false, message: "userId and taId are required." });
 
-    // Check if already allocated to this TA
     const existing = await prisma.userTaAllocation.findUnique({
       where: { userId_taId: { userId, taId } },
       include: { ta: true, user: true },
@@ -429,7 +475,7 @@ export const allocateUserToTA = async (req, res, next) => {
     if (existing)
       return res.status(409).json({
         success: false,
-        message: `${existing.user.fullName} is already allocated to ${existing.ta.name}.`,
+        message: `${existing.user.firstName} ${existing.user.lastName} is already allocated to ${existing.ta.name}.`,
       });
 
     const allocation = await prisma.userTaAllocation.create({
@@ -445,7 +491,6 @@ export const getFacilities = async (req, res, next) => {
   try {
     const { facilityType, districtId, taId } = req.query;
 
-    // ─── SCOPE FOR ADMIN ───
     let scopeFilter = {};
     if (req.user.role === "ADMIN" && req.user.facilityId) {
       const adminFacility = await prisma.facility.findUnique({
@@ -455,7 +500,6 @@ export const getFacilities = async (req, res, next) => {
       if (adminFacility?.districtId) {
         scopeFilter = { districtId: adminFacility.districtId };
       } else if (adminFacility?.taId) {
-        // If facility is at TA level, get the district from the TA
         const ta = await prisma.traditionalAuthority.findUnique({
           where: { id: adminFacility.taId },
           select: { districtId: true },
@@ -497,7 +541,7 @@ export const createFacility = async (req, res, next) => {
       taId,
       gpsLat,
       gpsLng,
-      parentDistrictHospitalId, // new field
+      parentDistrictHospitalId,
     } = req.body;
 
     if (!name || !facilityType) {
@@ -507,7 +551,6 @@ export const createFacility = async (req, res, next) => {
       });
     }
 
-    // ─── DISTRICT HOSPITAL ──────────────────────────────
     if (facilityType === "DISTRICT_HOSPITAL") {
       if (!districtId) {
         return res.status(400).json({
@@ -528,9 +571,7 @@ export const createFacility = async (req, res, next) => {
       return res.status(201).json({ success: true, data: facility });
     }
 
-    // ─── TA HOSPITAL ──────────────────────────────────────
     if (facilityType === "TA_HOSPITAL") {
-      // 1. Parent district hospital must be provided
       if (!parentDistrictHospitalId) {
         return res.status(400).json({
           success: false,
@@ -538,7 +579,6 @@ export const createFacility = async (req, res, next) => {
         });
       }
 
-      // 2. Validate parent exists and is a DISTRICT_HOSPITAL
       const parent = await prisma.facility.findUnique({
         where: { id: parentDistrictHospitalId },
         select: { facilityType: true, districtId: true },
@@ -556,7 +596,6 @@ export const createFacility = async (req, res, next) => {
         });
       }
 
-      // 3. TA must be provided
       if (!taId) {
         return res.status(400).json({
           success: false,
@@ -564,7 +603,6 @@ export const createFacility = async (req, res, next) => {
         });
       }
 
-      // 4. TA must belong to the same district as the parent
       const ta = await prisma.traditionalAuthority.findUnique({
         where: { id: taId },
         select: { districtId: true },
@@ -583,7 +621,6 @@ export const createFacility = async (req, res, next) => {
         });
       }
 
-      // 5. Create the TA Hospital
       const facility = await prisma.facility.create({
         data: {
           name,
@@ -606,7 +643,6 @@ export const createFacility = async (req, res, next) => {
         });
       }
 
-      // Look up the TA's district and inherit it
       const ta = await prisma.traditionalAuthority.findUnique({
         where: { id: taId },
         select: { districtId: true },
@@ -622,7 +658,7 @@ export const createFacility = async (req, res, next) => {
         data: {
           name,
           facilityType,
-          districtId: ta.districtId, // ← inherit, don't null
+          districtId: ta.districtId,
           taId,
           gpsLat: gpsLat || null,
           gpsLng: gpsLng || null,
@@ -630,7 +666,6 @@ export const createFacility = async (req, res, next) => {
       });
       return res.status(201).json({ success: true, data: facility });
     }
-    // Fallback (should never reach here)
     return res.status(400).json({
       success: false,
       message: "Invalid facility type.",
@@ -639,6 +674,7 @@ export const createFacility = async (req, res, next) => {
     next(err);
   }
 };
+
 // ─── DRUGS
 export const createDrug = async (req, res, next) => {
   try {
@@ -676,7 +712,6 @@ export const getSecurityAlerts = async (req, res, next) => {
   try {
     console.log("📊 Fetching security alerts...");
 
-    // ── Step 1: Get locked users (including shadow users) ──
     const lockedUsers = await prisma.loginLockout.findMany({
       where: {
         isPermanent: true,
@@ -689,7 +724,6 @@ export const getSecurityAlerts = async (req, res, next) => {
       },
     });
 
-    // ── Step 2: Get user details for locked users ──
     const phoneNumbers = lockedUsers.map((l) => l.phoneNumber);
 
     let userData = [];
@@ -702,7 +736,8 @@ export const getSecurityAlerts = async (req, res, next) => {
         },
         select: {
           id: true,
-          fullName: true,
+          firstName: true,
+          lastName: true,
           phoneNumber: true,
           role: true,
           isActive: true,
@@ -715,29 +750,28 @@ export const getSecurityAlerts = async (req, res, next) => {
       });
     }
 
-    // ── Step 3: Format for dashboard ──
     const formattedLockedUsers = lockedUsers.map((lockout) => {
       const user = userData.find((u) => u.phoneNumber === lockout.phoneNumber);
       const isShadowUser = user?.id?.startsWith("shadow_") || false;
 
       return {
         id: user?.id || lockout.phoneNumber,
-        fullName: user?.fullName || `Unknown (${lockout.phoneNumber})`,
+        firstName: user?.firstName || "Unknown",
+        lastName: user?.lastName || `(${lockout.phoneNumber})`,
         phoneNumber: lockout.phoneNumber,
         role: user?.role || "UNKNOWN",
         isActive: user?.isActive || false,
-        isShadowUser: isShadowUser, // 🔴 Flag for admin
+        isShadowUser: isShadowUser,
         lockoutReason: "48 hour lockout",
         lockoutUntil: lockout.lockedUntil,
         zoneAllocations: user?.zoneAllocations || [],
       };
     });
 
-    // ── Step 4: Get unknown login attempts ──
     const unknownAttempts = await prisma.unknownLoginAttempt.findMany({
       where: {
         attemptCount: {
-          gte: 3, // Show attempts with 3+ tries
+          gte: 3,
         },
       },
       orderBy: {
@@ -746,7 +780,6 @@ export const getSecurityAlerts = async (req, res, next) => {
       take: 20,
     });
 
-    // ── Step 5: Get security alerts from audit_log ──
     const alerts = await prisma.auditLog.findMany({
       where: {
         action: {
@@ -757,7 +790,8 @@ export const getSecurityAlerts = async (req, res, next) => {
         user: {
           select: {
             id: true,
-            fullName: true,
+            firstName: true,
+            lastName: true,
             phoneNumber: true,
             role: true,
             isActive: true,
@@ -768,7 +802,6 @@ export const getSecurityAlerts = async (req, res, next) => {
       take: 50,
     });
 
-    // ── Step 6: Combine everything ──
     const formattedAlerts = alerts.map((alert) => ({
       ...alert,
       isShadowUser: alert.user?.id?.startsWith("shadow_") || false,
@@ -796,10 +829,9 @@ export const unlockUser = async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    // 🔴 UPDATE: First, find the user
     const user = await prisma.user.findUnique({
       where: { id },
-      select: { id: true, phoneNumber: true, fullName: true },
+      select: { id: true, phoneNumber: true, firstName: true, lastName: true },
     });
 
     if (!user) {
@@ -809,7 +841,6 @@ export const unlockUser = async (req, res, next) => {
       });
     }
 
-    // 🔴 UPDATE: Clear the lockout record
     await prisma.loginLockout.update({
       where: { phoneNumber: user.phoneNumber },
       data: {
@@ -820,19 +851,18 @@ export const unlockUser = async (req, res, next) => {
       },
     });
 
-    // Update user - reactivate
     const updatedUser = await prisma.user.update({
       where: { id },
       data: { isActive: true },
       select: {
         id: true,
-        fullName: true,
+        firstName: true,
+        lastName: true,
         phoneNumber: true,
         isActive: true,
       },
     });
 
-    // Write to audit log
     await prisma.auditLog.create({
       data: {
         userId: req.user.id,

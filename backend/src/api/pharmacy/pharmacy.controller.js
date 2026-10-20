@@ -20,7 +20,10 @@ export const getBatches = async (req, res, next) => {
           ? { drugName: { contains: search, mode: "insensitive" } }
           : {}),
       },
-      include: { supplier: true, receivedBy: { select: { fullName: true } } },
+      include: {
+        supplier: true,
+        receivedBy: { select: { firstName: true, lastName: true } },
+      },
       orderBy: { expiryDate: "asc" },
     });
     res.json({ success: true, data: batches });
@@ -268,8 +271,10 @@ export const getRequests = async (req, res, next) => {
       },
       include: {
         items: true,
-        requestedBy: { select: { fullName: true, role: true } },
-        fulfilledBy: { select: { fullName: true } },
+        requestedBy: {
+          select: { firstName: true, lastName: true, role: true },
+        },
+        fulfilledBy: { select: { firstName: true, lastName: true } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -501,7 +506,9 @@ export const getTransactions = async (req, res, next) => {
       },
       include: {
         batch: { select: { drugName: true, batchNumber: true, unit: true } },
-        performedBy: { select: { fullName: true, role: true } },
+        performedBy: {
+          select: { firstName: true, lastName: true, role: true },
+        },
       },
       orderBy: { createdAt: "desc" },
       take: 500,

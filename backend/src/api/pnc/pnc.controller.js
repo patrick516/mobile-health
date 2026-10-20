@@ -92,12 +92,13 @@ export const getPncSchedules = async (req, res, next) => {
           select: {
             id: true,
             localId: true,
-            fullName: true,
+            firstName: true,
+            lastName: true,
             expectedDeliveryDate: true,
           },
         },
         visitedBy: {
-          select: { id: true, fullName: true },
+          select: { id: true, firstName: true, lastName: true },
         },
       },
       orderBy: [{ expectedDate: "asc" }],
@@ -209,7 +210,7 @@ export const getMemberPncVisits = async (req, res, next) => {
     const visits = await prisma.pncVisit.findMany({
       where: { memberId },
       include: {
-        visitedBy: { select: { id: true, fullName: true } },
+        visitedBy: { select: { id: true, firstName: true, lastName: true } },
       },
       orderBy: { pncNumber: "asc" },
     });

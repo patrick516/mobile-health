@@ -13,7 +13,6 @@ import api from "../../services/api";
 import Select from "../../components/ui/Select";
 import DatePicker from "../../components/ui/DatePicker";
 
-// ─── Types
 type ReportType =
   | "households"
   | "referrals"
@@ -28,8 +27,12 @@ interface SummaryBox {
   color?: string;
 }
 
-// ─── Helpers
 const fmt = (d: string) => (d ? new Date(d).toLocaleDateString("en-GB") : "—");
+
+const fullName = (p: any) =>
+  p
+    ? `${p.firstName || ""} ${p.lastName || ""}`.trim() || p.fullName || "—"
+    : "—";
 
 const REPORT_TYPES: {
   key: ReportType;
@@ -59,7 +62,6 @@ const REPORT_TYPES: {
     color: "green",
   },
 ];
-// ─── Summary Card
 function SummaryCard({ label, value, color }: SummaryBox) {
   return (
     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-col gap-1">
@@ -73,7 +75,6 @@ function SummaryCard({ label, value, color }: SummaryBox) {
   );
 }
 
-// ─── Main Page
 export default function Reports() {
   const today = new Date().toISOString().split("T")[0];
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
@@ -116,7 +117,6 @@ export default function Reports() {
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState("");
 
-  // Auto-load when type or date changes
   useEffect(() => {
     loadReport();
   }, [reportType, from, to, regionId, districtId, zoneId]);
@@ -168,7 +168,6 @@ export default function Reports() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Page header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <current.icon size={24} className="text-teal-700" />
@@ -184,7 +183,6 @@ export default function Reports() {
         </p>
       </div>
 
-      {/* Report type selector */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {REPORT_TYPES.map((r) => (
           <button
@@ -202,7 +200,6 @@ export default function Reports() {
         ))}
       </div>
 
-      {/* Filters + Export */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-wrap items-end gap-4">
         <div className="w-40">
           <label className="block text-xs font-medium text-gray-500 mb-1">
@@ -278,7 +275,6 @@ export default function Reports() {
 
         <div className="flex-1" />
 
-        {/* Export buttons */}
         <button
           onClick={() => handleExport("excel")}
           disabled={!!exporting || loading || !data}
@@ -305,7 +301,6 @@ export default function Reports() {
         </button>
       </div>
 
-      {/* Loading */}
       {loading && (
         <div className="flex items-center justify-center py-16">
           <Loader2 size={32} className="animate-spin text-teal-600" />
@@ -313,17 +308,14 @@ export default function Reports() {
         </div>
       )}
 
-      {/* Error */}
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">
           {error}
         </div>
       )}
 
-      {/* ── REFERRAL REPORT ── */}
       {!loading && data && reportType === "referrals" && (
         <div className="space-y-5">
-          {/* Summary */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <SummaryCard
               label="Total Referrals"
@@ -352,7 +344,6 @@ export default function Reports() {
             />
           </div>
 
-          {/* CHW Breakdown */}
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
             <h3 className="text-sm font-bold text-gray-700 mb-3">
               CHW Performance
@@ -373,7 +364,9 @@ export default function Reports() {
                     key={i}
                     className="border-b border-gray-50 hover:bg-gray-50"
                   >
-                    <td className="py-2 font-medium text-gray-800">{c.name}</td>
+                    <td className="py-2 font-medium text-gray-800">
+                      {c.name || fullName(c)}
+                    </td>
                     <td className="py-2 text-center font-bold text-teal-700">
                       {c.total}
                     </td>
@@ -392,7 +385,6 @@ export default function Reports() {
             </table>
           </div>
 
-          {/* Village Breakdown */}
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
             <h3 className="text-sm font-bold text-gray-700 mb-3">
               Referrals by Village
@@ -409,7 +401,6 @@ export default function Reports() {
             </div>
           </div>
 
-          {/* Referral Table */}
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
             <h3 className="text-sm font-bold text-gray-700 mb-3">
               All Referrals ({data.data.length})
@@ -436,13 +427,13 @@ export default function Reports() {
                       className={`border-b border-gray-50 hover:bg-teal-50/30 ${i % 2 === 0 ? "" : "bg-gray-50/50"}`}
                     >
                       <td className="px-3 py-2 font-medium text-gray-800">
-                        {r.member?.fullName || "—"}
+                        {fullName(r.member)}
                       </td>
                       <td className="px-3 py-2 text-gray-600">
                         {r.member?.household?.village?.name || "—"}
                       </td>
                       <td className="px-3 py-2 text-gray-600">
-                        {r.referringUser?.fullName || "—"}
+                        {fullName(r.referringUser)}
                       </td>
                       <td className="px-3 py-2 text-gray-600 text-xs">
                         {r.reason}
@@ -503,7 +494,6 @@ export default function Reports() {
         </div>
       )}
 
-      {/* ── HOUSEHOLD REPORT ── */}
       {!loading && data && reportType === "households" && (
         <div className="space-y-5">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -580,7 +570,7 @@ export default function Reports() {
                         </span>
                       </td>
                       <td className="px-3 py-2 text-gray-500 text-xs">
-                        {h.registeredBy?.fullName || "—"}
+                        {fullName(h.registeredBy)}
                       </td>
                       <td className="px-3 py-2 text-gray-500 text-xs">
                         {fmt(h.createdAt)}
@@ -604,7 +594,6 @@ export default function Reports() {
         </div>
       )}
 
-      {/* ── VISIT REPORT ── */}
       {!loading && data && reportType === "visits" && (
         <div className="space-y-5">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -630,7 +619,6 @@ export default function Reports() {
             />
           </div>
 
-          {/* Top Symptoms */}
           {data.topSymptoms && data.topSymptoms.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
               <h3 className="text-sm font-bold text-gray-700 mb-3">
@@ -682,13 +670,13 @@ export default function Reports() {
                         className={`border-b border-gray-50 hover:bg-blue-50/30 ${i % 2 === 0 ? "" : "bg-gray-50/50"}`}
                       >
                         <td className="px-3 py-2 font-medium text-gray-800">
-                          {v.member?.fullName || "—"}
+                          {fullName(v.member)}
                         </td>
                         <td className="px-3 py-2 text-gray-600">
                           {v.member?.household?.village?.name || "—"}
                         </td>
                         <td className="px-3 py-2 text-gray-600">
-                          {v.chw?.fullName || "—"}
+                          {fullName(v.chw)}
                         </td>
                         <td className="px-3 py-2 text-center">
                           <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">
@@ -740,7 +728,6 @@ export default function Reports() {
         </div>
       )}
 
-      {/* ── IMMUNISATION REPORT ── */}
       {!loading && data && reportType === "immunisations" && (
         <div className="space-y-5">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -766,7 +753,6 @@ export default function Reports() {
             />
           </div>
 
-          {/* Vaccine breakdown */}
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
             <h3 className="text-sm font-bold text-gray-700 mb-3">
               Per Vaccine Breakdown
@@ -833,7 +819,7 @@ export default function Reports() {
                       className={`border-b border-gray-50 hover:bg-purple-50/30 ${i % 2 === 0 ? "" : "bg-gray-50/50"}`}
                     >
                       <td className="px-3 py-2 font-medium text-gray-800">
-                        {s.member?.fullName || "—"}
+                        {fullName(s.member)}
                       </td>
                       <td className="px-3 py-2 text-gray-600">
                         {s.member?.household?.village?.name || "—"}
@@ -887,7 +873,6 @@ export default function Reports() {
         </div>
       )}
 
-      {/* ── ANC / PREGNANT WOMEN REPORT ── */}
       {!loading && data && reportType === "anc" && (
         <div className="space-y-5">
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -966,7 +951,7 @@ export default function Reports() {
                         className={`border-b border-gray-50 hover:bg-pink-50/30 ${i % 2 === 0 ? "" : "bg-gray-50/50"}`}
                       >
                         <td className="px-3 py-2 font-medium text-gray-800">
-                          {m.fullName}
+                          {fullName(m)}
                         </td>
                         <td className="px-3 py-2 text-gray-600">
                           {m.household?.village?.name || "—"}
@@ -1004,7 +989,6 @@ export default function Reports() {
         </div>
       )}
 
-      {/* ── CHILDREN UNDER 5 REPORT ── */}
       {!loading && data && reportType === "children-under-5" && (
         <div className="space-y-5">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -1076,7 +1060,7 @@ export default function Reports() {
                         className={`border-b border-gray-50 hover:bg-green-50/30 ${i % 2 === 0 ? "" : "bg-gray-50/50"}`}
                       >
                         <td className="px-3 py-2 font-medium text-gray-800">
-                          {m.fullName}
+                          {fullName(m)}
                         </td>
                         <td className="px-3 py-2 text-gray-600">
                           {m.household?.village?.name || "—"}

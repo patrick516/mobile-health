@@ -16,6 +16,10 @@ const getDateRange = (from, to) => {
 // ─── HELPER: format date nicely ────────────────────────────────────────────
 const fmt = (date) => (date ? new Date(date).toLocaleDateString("en-GB") : "—");
 
+// ─── HELPER: safely combine first/last name ────────────────────────────────
+const fullName = (p) =>
+  p ? `${p.firstName || ""} ${p.lastName || ""}`.trim() || "—" : "—";
+
 // 1. HOUSEHOLD REPORT
 
 export const getHouseholdReport = async (req, res, next) => {
@@ -39,7 +43,9 @@ export const getHouseholdReport = async (req, res, next) => {
           },
         },
         members: true,
-        registeredBy: { select: { fullName: true, phoneNumber: true } },
+        registeredBy: {
+          select: { firstName: true, lastName: true, phoneNumber: true },
+        },
       },
       orderBy: { createdAt: "asc" },
     });
@@ -63,6 +69,7 @@ export const getHouseholdReport = async (req, res, next) => {
     next(err);
   }
 };
+
 // 2. REFERRAL REPORT
 
 export const getReferralReport = async (req, res, next) => {
@@ -92,7 +99,9 @@ export const getReferralReport = async (req, res, next) => {
             },
           },
         },
-        referringUser: { select: { fullName: true, phoneNumber: true } },
+        referringUser: {
+          select: { firstName: true, lastName: true, phoneNumber: true },
+        },
         destinationFacility: { select: { name: true } },
         visit: { select: { visitedAt: true, symptoms: true } },
       },
@@ -102,7 +111,7 @@ export const getReferralReport = async (req, res, next) => {
     // CHW performance breakdown
     const chwMap = {};
     for (const r of referrals) {
-      const name = r.referringUser?.fullName || "Unknown";
+      const name = fullName(r.referringUser);
       if (!chwMap[name])
         chwMap[name] = { name, total: 0, completed: 0, missed: 0, pending: 0 };
       chwMap[name].total++;
@@ -172,7 +181,7 @@ export const getVisitReport = async (req, res, next) => {
             household: { include: { village: { include: { zone: true } } } },
           },
         },
-        chw: { select: { fullName: true, phoneNumber: true } },
+        chw: { select: { firstName: true, lastName: true, phoneNumber: true } },
       },
       orderBy: { visitedAt: "desc" },
     });
@@ -303,7 +312,7 @@ export const exportReportExcel = async (req, res, next) => {
         include: {
           village: { include: { zone: { include: { ta: true } } } },
           members: true,
-          registeredBy: { select: { fullName: true } },
+          registeredBy: { select: { firstName: true, lastName: true } },
         },
         orderBy: { createdAt: "asc" },
       });
@@ -335,7 +344,7 @@ export const exportReportExcel = async (req, res, next) => {
           structure: h.structureType,
           water: h.waterSource,
           status: h.status,
-          regBy: h.registeredBy?.fullName || "—",
+          regBy: fullName(h.registeredBy),
           date: fmt(h.createdAt),
         });
       }
@@ -357,7 +366,7 @@ export const exportReportExcel = async (req, res, next) => {
       for (const h of households) {
         for (const m of h.members) {
           wsm.addRow({
-            name: m.fullName,
+            name: fullName(m),
             hid: h.householdNumber,
             village: h.village?.name || "—",
             sex: m.sex,
@@ -375,7 +384,7 @@ export const exportReportExcel = async (req, res, next) => {
         where: { createdAt: { gte: fromDate, lte: toDate } },
         include: {
           member: { include: { household: { include: { village: true } } } },
-          referringUser: { select: { fullName: true } },
+          referringUser: { select: { firstName: true, lastName: true } },
           destinationFacility: { select: { name: true } },
         },
         orderBy: { createdAt: "desc" },
@@ -400,10 +409,10 @@ export const exportReportExcel = async (req, res, next) => {
 
       for (const r of referrals) {
         ws.addRow({
-          patient: r.member?.fullName || "—",
+          patient: fullName(r.member),
           village: r.member?.household?.village?.name || "—",
           hid: r.member?.household?.householdNumber || "—",
-          chw: r.referringUser?.fullName || "—",
+          chw: fullName(r.referringUser),
           reason: r.reason,
           urgency: r.urgency,
           status: r.status,
@@ -421,7 +430,7 @@ export const exportReportExcel = async (req, res, next) => {
         where: { visitedAt: { gte: fromDate, lte: toDate } },
         include: {
           member: { include: { household: { include: { village: true } } } },
-          chw: { select: { fullName: true } },
+          chw: { select: { firstName: true, lastName: true } },
         },
         orderBy: { visitedAt: "desc" },
       });
@@ -451,10 +460,10 @@ export const exportReportExcel = async (req, res, next) => {
             ).join(", ")
           : "—";
         ws.addRow({
-          patient: v.member?.fullName || "—",
+          patient: fullName(v.member),
           village: v.member?.household?.village?.name || "—",
           hid: v.member?.household?.householdNumber || "—",
-          chw: v.chw?.fullName || "—",
+          chw: fullName(v.chw),
           type: v.visitType,
           date: fmt(v.visitedAt),
           temp: v.temperature || "—",
@@ -491,7 +500,7 @@ export const exportReportExcel = async (req, res, next) => {
 
       for (const s of schedules) {
         ws.addRow({
-          child: s.member?.fullName || "—",
+          child: fullName(s.member),
           village: s.member?.household?.village?.name || "—",
           hid: s.member?.household?.householdNumber || "—",
           vaccine: s.vaccineCode,
@@ -555,7 +564,7 @@ export const exportReportPDF = async (req, res, next) => {
         where: { createdAt: { gte: fromDate, lte: toDate } },
         include: {
           member: { include: { household: { include: { village: true } } } },
-          referringUser: { select: { fullName: true } },
+          referringUser: { select: { firstName: true, lastName: true } },
           destinationFacility: { select: { name: true } },
         },
         orderBy: { createdAt: "desc" },
@@ -618,9 +627,9 @@ export const exportReportPDF = async (req, res, next) => {
         if (odd) doc.rect(40, rowY - 2, 520, 16).fill("#F0FAF7");
         doc.fillColor("black");
         const row = [
-          r.member?.fullName || "—",
+          fullName(r.member),
           r.member?.household?.village?.name || "—",
-          r.referringUser?.fullName || "—",
+          fullName(r.referringUser),
           r.urgency,
           r.status,
           fmt(r.createdAt),
@@ -644,7 +653,7 @@ export const exportReportPDF = async (req, res, next) => {
         include: {
           village: { include: { zone: true } },
           members: true,
-          registeredBy: { select: { fullName: true } },
+          registeredBy: { select: { firstName: true, lastName: true } },
         },
         orderBy: { createdAt: "asc" },
       });
@@ -734,7 +743,7 @@ export const exportReportPDF = async (req, res, next) => {
   }
 };
 
-// 5. PREGNANT WOMEN & ANC REPORT
+// 7. PREGNANT WOMEN & ANC REPORT
 export const getAncReport = async (req, res, next) => {
   try {
     const { from, to, zoneId, districtId, regionId, taId } = req.query;
@@ -790,7 +799,7 @@ export const getAncReport = async (req, res, next) => {
         },
         ancVisits: { orderBy: { ancNumber: "asc" } },
       },
-      orderBy: { fullName: "asc" },
+      orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
     });
 
     const total = members.length;
@@ -818,7 +827,7 @@ export const getAncReport = async (req, res, next) => {
   }
 };
 
-// 6. CHILDREN UNDER 5 REPORT
+// 8. CHILDREN UNDER 5 REPORT
 export const getChildrenUnder5Report = async (req, res, next) => {
   try {
     const { from, to, zoneId, districtId, regionId, taId } = req.query;
@@ -876,7 +885,7 @@ export const getChildrenUnder5Report = async (req, res, next) => {
           orderBy: { dueDate: "asc" },
         },
       },
-      orderBy: { fullName: "asc" },
+      orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
     });
 
     const total = members.length;

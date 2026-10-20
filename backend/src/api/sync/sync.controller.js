@@ -1,5 +1,23 @@
 import prisma from "../../config/db.js";
 
+// ─── HELPER: normalize member name fields from mobile payload ─────────────
+// Old APKs send `fullName`. New APKs send `firstName` + `lastName`.
+// We split the old format so nothing is lost when a CHW syncs.
+function normalizeMemberPayload(payload) {
+  const out = { ...payload };
+
+  if (!out.firstName && !out.lastName && out.fullName) {
+    const parts = String(out.fullName).trim().split(/\s+/);
+    out.firstName = parts[0] || "";
+    out.lastName = parts.slice(1).join(" ") || "";
+  }
+
+  // Prisma will reject unknown fields — strip legacy `fullName`
+  delete out.fullName;
+
+  return out;
+}
+
 // POST /api/sync — receives a batch of records from the mobile app
 export const syncBatch = async (req, res, next) => {
   try {
@@ -114,14 +132,19 @@ export const syncBatch = async (req, res, next) => {
               continue;
             }
           }
+
           case "MEMBER": {
+            // ── Normalize name fields (handle old APK payloads) ──
+            const memberPayload = normalizeMemberPayload(payload);
+
             console.log(
               "[SYNC DEBUG] Member payload:",
               JSON.stringify(
                 {
                   localId,
-                  householdId: payload.householdId,
-                  fullName: payload.fullName,
+                  householdId: memberPayload.householdId,
+                  firstName: memberPayload.firstName,
+                  lastName: memberPayload.lastName,
                 },
                 null,
                 2,
@@ -131,8 +154,8 @@ export const syncBatch = async (req, res, next) => {
             const householdExists = await prisma.household.findFirst({
               where: {
                 OR: [
-                  { id: payload.householdId },
-                  { localId: payload.householdId },
+                  { id: memberPayload.householdId },
+                  { localId: memberPayload.householdId },
                 ],
               },
             });
@@ -151,10 +174,13 @@ export const syncBatch = async (req, res, next) => {
             }
 
             // ── Duplicate National ID check ──
-            if (payload.nationalId && payload.nationalId.trim() !== "") {
+            if (
+              memberPayload.nationalId &&
+              memberPayload.nationalId.trim() !== ""
+            ) {
               const dupMember = await prisma.householdMember.findFirst({
                 where: {
-                  nationalId: payload.nationalId.trim(),
+                  nationalId: memberPayload.nationalId.trim(),
                   status: "ACTIVE",
                   localId: { not: localId },
                 },
@@ -162,9 +188,11 @@ export const syncBatch = async (req, res, next) => {
               });
 
               if (dupMember) {
+                const dupName =
+                  `${dupMember.firstName} ${dupMember.lastName}`.trim();
                 failed.push({
                   localId,
-                  reason: `Duplicate National ID — already registered to ${dupMember.fullName} in household ${dupMember.household?.householdNumber || "unknown"}. This record will NOT retry automatically — review on the portal.`,
+                  reason: `Duplicate National ID — already registered to ${dupName} in household ${dupMember.household?.householdNumber || "unknown"}. This record will NOT retry automatically — review on the portal.`,
                   duplicate: true,
                 });
                 continue;
@@ -173,16 +201,16 @@ export const syncBatch = async (req, res, next) => {
 
             const member = await prisma.householdMember.upsert({
               where: { localId },
-              update: { ...payload, syncedAt: new Date() },
-              create: { ...payload, localId, syncedAt: new Date() },
+              update: { ...memberPayload, syncedAt: new Date() },
+              create: { ...memberPayload, localId, syncedAt: new Date() },
             });
 
-            const dob = payload.dateOfBirth
-              ? new Date(payload.dateOfBirth)
+            const dob = memberPayload.dateOfBirth
+              ? new Date(memberPayload.dateOfBirth)
               : null;
             const ageYears = dob
               ? (Date.now() - dob.getTime()) / (1000 * 60 * 60 * 24 * 365)
-              : payload.estimatedAge;
+              : memberPayload.estimatedAge;
 
             if (dob && ageYears < 5) {
               const VACCINE_SCHEDULE = [
@@ -228,12 +256,12 @@ export const syncBatch = async (req, res, next) => {
                 });
               }
               console.log(
-                `[SYNC] Created immunisation schedule for child ${member.fullName}`,
+                `[SYNC] Created immunisation schedule for child ${member.firstName} ${member.lastName}`,
               );
             }
 
-            if (payload.isPregnant && payload.lmpDate) {
-              const lmp = new Date(payload.lmpDate);
+            if (memberPayload.isPregnant && memberPayload.lmpDate) {
+              const lmp = new Date(memberPayload.lmpDate);
               const ancSchedule = [
                 { ancNumber: 1, weeksFromLmp: 16 },
                 { ancNumber: 2, weeksFromLmp: 28 },
@@ -262,7 +290,7 @@ export const syncBatch = async (req, res, next) => {
                 });
               }
               console.log(
-                `[SYNC] Created ANC schedule for pregnant woman ${member.fullName}`,
+                `[SYNC] Created ANC schedule for pregnant woman ${member.firstName} ${member.lastName}`,
               );
             }
             break;

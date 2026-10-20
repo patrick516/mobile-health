@@ -11,21 +11,20 @@ import {
 } from "lucide-react";
 import api from "../../services/api";
 import { useAuthStore } from "../../store/auth.store";
-
 import Select from "../../components/ui/Select";
 
 interface User {
   id: string;
-  fullName: string;
+  firstName: string;
+  lastName: string;
   phoneNumber: string;
+  email?: string;
   role: string;
   isActive: boolean;
 }
 
-const ROLES = ["CCW", "NURSE", "DISTRICT_OFFICER", "ADMIN"];
+const ROLES = ["CCW", "NURSE", "DISTRICT_OFFICER", "PHARMACIST", "ADMIN"];
 
-// Extract the 9 digits that follow +265.
-// Handles: "0995049331" | "+265995049331" | "265995049331" | "995049331"
 const extractPhoneSuffix = (raw: string): string => {
   let digits = String(raw).replace(/\D/g, "");
   if (digits.startsWith("265")) digits = digits.slice(3);
@@ -37,33 +36,37 @@ export default function Users() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
   const [showForm, setShowForm] = useState(false);
+
+  // Updated form state to match new schema
   const [form, setForm] = useState({
-    fullName: "",
+    firstName: "",
+    lastName: "",
     phoneSuffix: "",
+    email: "",
+    phone: "",
     pin: "1234",
     role: "CCW",
     facilityId: "",
     regionId: "",
     districtId: "",
   });
-  const [showPin, setShowPin] = useState(false);
 
+  const [showPin, setShowPin] = useState(false);
   const [resetTarget, setResetTarget] = useState<User | null>(null);
   const [resetResult, setResetResult] = useState<{
-    fullName: string;
+    name: string;
     tempPin: string;
   } | null>(null);
   const [copied, setCopied] = useState(false);
-
   const [error, setError] = useState("");
 
   const [roleFilter, setRoleFilter] = useState("");
   const [facilityFilter, setFacilityFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 10;
 
+  // Fetch data
   const { data, isLoading } = useQuery<User[]>({
     queryKey: ["admin-users"],
     queryFn: () => api.get("/admin/users").then((r) => r.data.data),
@@ -92,39 +95,52 @@ export default function Users() {
     enabled: !!form.districtId,
   });
 
+  const isWebUser = [
+    "NURSE",
+    "DISTRICT_OFFICER",
+    "PHARMACIST",
+    "ADMIN",
+  ].includes(form.role);
   const needsFacility =
-    ["CCW", "NURSE", "DISTRICT_OFFICER"].includes(form.role) &&
+    ["CCW", "NURSE", "DISTRICT_OFFICER", "PHARMACIST"].includes(form.role) &&
     user?.role === "SUPER_ADMIN";
   const isCcw = form.role === "CCW";
 
-  // ─── Client-side validation ───
+  // Validation
   const validate = (): string | null => {
-    if (!form.fullName.trim()) return "Full name is required.";
-    if (!form.phoneSuffix) return "Phone number is required.";
-    if (form.phoneSuffix.length !== 9)
-      return "Enter the full 9-digit mobile number after +265.";
+    if (!form.firstName.trim()) return "First name is required.";
+    if (!form.lastName.trim()) return "Last name is required.";
+    if (!form.phoneSuffix || form.phoneSuffix.length !== 9)
+      return "Enter the full 9-digit mobile number.";
     if (!/^[89]/.test(form.phoneSuffix))
       return "Malawi mobile numbers start with 8 or 9.";
     if (!form.pin || form.pin.length !== 4)
       return "PIN must be exactly 4 digits.";
     if (!form.role) return "Role is required.";
+    if (isWebUser && !form.email.trim())
+      return "Email is required for web portal users.";
     if (needsFacility && !form.facilityId)
       return "Facility is required for this role.";
     return null;
   };
 
   const canSubmit =
-    form.fullName.trim().length > 0 &&
+    form.firstName.trim().length > 0 &&
+    form.lastName.trim().length > 0 &&
     form.phoneSuffix.length === 9 &&
     /^[89]/.test(form.phoneSuffix) &&
     form.pin.length === 4 &&
     form.role &&
+    (!isWebUser || form.email.trim().length > 0) &&
     (!needsFacility || !!form.facilityId);
 
   const resetForm = () => {
     setForm({
-      fullName: "",
+      firstName: "",
+      lastName: "",
       phoneSuffix: "",
+      email: "",
+      phone: "",
       pin: "1234",
       role: "CCW",
       facilityId: "",
@@ -153,8 +169,11 @@ export default function Users() {
     }
     setError("");
     const payload = {
-      fullName: form.fullName.trim(),
+      firstName: form.firstName.trim(),
+      lastName: form.lastName.trim(),
       phoneNumber: `+265${form.phoneSuffix}`,
+      phone: form.phone || `+265${form.phoneSuffix}`,
+      email: isWebUser ? form.email.trim() : undefined,
       pin: form.pin,
       role: form.role,
       ...(form.facilityId ? { facilityId: form.facilityId } : {}),
@@ -178,7 +197,7 @@ export default function Users() {
     mutationFn: (id: string) => api.patch(`/admin/users/${id}/reset-pin`),
     onSuccess: (res) => {
       setResetResult({
-        fullName: resetTarget?.fullName || "",
+        name: `${resetTarget?.firstName} ${resetTarget?.lastName}`,
         tempPin: res.data.data.tempPin,
       });
       setResetTarget(null);
@@ -191,24 +210,14 @@ export default function Users() {
 
   const roleColor: Record<string, string> = {
     ADMIN: "badge-red",
+    SUPER_ADMIN: "badge-red",
     DISTRICT_OFFICER: "badge-blue",
     NURSE: "badge-green",
+    PHARMACIST: "badge-blue",
     CCW: "badge-gray",
   };
 
-  const handleRoleFilter = (val: string) => {
-    setRoleFilter(val);
-    setPage(1);
-  };
-  const handleFacilityFilter = (val: string) => {
-    setFacilityFilter(val);
-    setPage(1);
-  };
-  const handleStatusFilter = (val: string) => {
-    setStatusFilter(val);
-    setPage(1);
-  };
-
+  // Filtering & Pagination
   const facilityOptions = Array.from(
     new Map(
       (data || [])
@@ -258,24 +267,38 @@ export default function Users() {
             </p>
           )}
           <div className="grid grid-cols-2 gap-4">
+            {/* Names */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                Full Name
+                First Name
               </label>
               <input
                 className="input"
-                value={form.fullName}
+                value={form.firstName}
                 onChange={(e) =>
-                  setForm((p) => ({ ...p, fullName: e.target.value }))
+                  setForm((p) => ({ ...p, firstName: e.target.value }))
                 }
-                placeholder="e.g. Chimwemwe Leno"
+                placeholder="e.g. Chimwemwe"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                Last Name
+              </label>
+              <input
+                className="input"
+                value={form.lastName}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, lastName: e.target.value }))
+                }
+                placeholder="e.g. Leno"
               />
             </div>
 
-            {/* Phone with hardcoded +265 prefix */}
+            {/* Phone */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                Phone Number
+                Phone Number (Mobile Login)
               </label>
               <div className="flex items-stretch rounded-lg border border-gray-200 bg-white overflow-hidden focus-within:border-teal-600 focus-within:ring-2 focus-within:ring-teal-500/20 transition-colors">
                 <span className="flex items-center px-3 bg-gray-50 text-gray-500 font-mono text-sm border-r border-gray-200 select-none">
@@ -297,16 +320,30 @@ export default function Users() {
                   className="flex-1 px-3 py-2.5 text-sm font-mono text-gray-900 outline-none bg-white placeholder:text-gray-300"
                 />
               </div>
-              <p className="text-xs text-gray-400 mt-1">
-                {form.phoneSuffix.length === 9
-                  ? `Saved as +265${form.phoneSuffix}`
-                  : "9 digits after +265 (starts with 8 or 9)"}
-              </p>
             </div>
 
+            {/* Email (For Web Users) */}
+            {isWebUser && (
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  Email Address (Web Login)
+                </label>
+                <input
+                  className="input"
+                  type="email"
+                  value={form.email}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, email: e.target.value }))
+                  }
+                  placeholder="user@example.com"
+                />
+              </div>
+            )}
+
+            {/* PIN */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                PIN (4 digits)
+                Temporary PIN (4 digits)
               </label>
               <div className="relative">
                 <input
@@ -332,6 +369,7 @@ export default function Users() {
               </div>
             </div>
 
+            {/* Role */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                 Role
@@ -352,13 +390,13 @@ export default function Users() {
             {isCcw && (
               <div className="col-span-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
                 <p className="text-sm text-amber-800 font-medium">
-                  📱 CCW users log in via the mobile app and are allocated to
-                  zones for household visits. Assign a facility so their reports
-                  roll up correctly.
+                  📱 CCW users log in via the mobile app (Phone + PIN). Web
+                  portal users will receive a temporary password via email.
                 </p>
               </div>
             )}
 
+            {/* Facility Cascade */}
             {needsFacility && (
               <>
                 <div>
@@ -426,8 +464,7 @@ export default function Users() {
                           : [
                               {
                                 value: "",
-                                label:
-                                  "No facilities in this district — add one in Facilities first",
+                                label: "No facilities in this district",
                                 disabled: true,
                               },
                             ]
@@ -439,14 +476,11 @@ export default function Users() {
             )}
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex gap-3 mt-4">
             <button
               className="btn-primary"
               onClick={handleSubmit}
               disabled={!canSubmit || createMutation.isPending}
-              title={
-                !canSubmit ? "Fill in all required fields to continue" : ""
-              }
             >
               {createMutation.isPending ? "Creating..." : "Create User"}
             </button>
@@ -470,9 +504,10 @@ export default function Users() {
             <h3 className="font-bold text-gray-900">Reset PIN?</h3>
             <p className="text-sm text-gray-600">
               This will generate a new temporary PIN for{" "}
-              <strong>{resetTarget.fullName}</strong>. Their current PIN will
-              stop working immediately, and they'll be asked to create a new one
-              the next time they log in.
+              <strong>
+                {resetTarget.firstName} {resetTarget.lastName}
+              </strong>
+              . Their current PIN will stop working immediately.
             </p>
             <div className="flex gap-3">
               <button
@@ -499,9 +534,8 @@ export default function Users() {
           <div className="bg-white rounded-xl p-6 max-w-sm w-full space-y-4">
             <h3 className="font-bold text-gray-900">Temporary PIN Generated</h3>
             <p className="text-sm text-gray-600">
-              Relay this PIN to <strong>{resetResult.fullName}</strong> now by
-              phone or SMS. For security, it will not be shown again after you
-              close this window.
+              Relay this PIN to <strong>{resetResult.name}</strong> now by phone
+              or SMS. For security, it will not be shown again.
             </p>
             <div className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
               <span className="text-2xl font-mono font-bold text-gray-900 tracking-widest">
@@ -537,7 +571,10 @@ export default function Users() {
           </label>
           <Select
             value={roleFilter}
-            onChange={handleRoleFilter}
+            onChange={(val) => {
+              setRoleFilter(val);
+              setPage(1);
+            }}
             placeholder="All Roles"
             options={[
               { value: "", label: "All Roles" },
@@ -552,7 +589,10 @@ export default function Users() {
           </label>
           <Select
             value={facilityFilter}
-            onChange={handleFacilityFilter}
+            onChange={(val) => {
+              setFacilityFilter(val);
+              setPage(1);
+            }}
             placeholder="All Facilities"
             options={[
               { value: "", label: "All Facilities" },
@@ -570,7 +610,10 @@ export default function Users() {
           </label>
           <Select
             value={statusFilter}
-            onChange={handleStatusFilter}
+            onChange={(val) => {
+              setStatusFilter(val);
+              setPage(1);
+            }}
             placeholder="All Statuses"
             options={[
               { value: "", label: "All Statuses" },
@@ -640,7 +683,7 @@ export default function Users() {
             {pagedUsers.map((u) => (
               <tr key={u.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                  {u.fullName}
+                  {u.firstName} {u.lastName}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-500 font-mono">
                   {u.phoneNumber}

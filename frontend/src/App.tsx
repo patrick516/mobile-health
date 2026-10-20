@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useAuthStore } from "./store/auth.store";
 import Layout from "./components/layout/Layout";
 import Login from "./pages/auth/Login";
+import SuperAdminSetup from "./pages/auth/SuperAdminSetup";
 import Overview from "./pages/dashboard/Overview";
 import HouseholdList from "./pages/households/HouseholdList";
 import ReferralQueue from "./pages/referrals/ReferralQueue";
@@ -65,6 +66,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/setup" element={<SuperAdminSetup />} />
         <Route path="/facility-setup" element={<FacilitySetup />} />
         <Route path="/change-pin" element={<ChangePin />} />
         <Route

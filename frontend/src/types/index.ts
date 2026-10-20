@@ -1,8 +1,18 @@
 export interface User {
   id: string;
-  fullName: string;
+  firstName: string;
+  lastName: string;
+  fullName?: string;
   phoneNumber: string;
-  role: "CCW" | "NURSE" | "DISTRICT_OFFICER" | "ADMIN" | "SUPER_ADMIN";
+  phone?: string;
+  email?: string;
+  role:
+    | "CCW"
+    | "NURSE"
+    | "DISTRICT_OFFICER"
+    | "PHARMACIST"
+    | "ADMIN"
+    | "SUPER_ADMIN";
   isActive: boolean;
   zoneAllocations: Array<{ zone: { id: string; name: string; taId: string } }>;
   taAllocations: Array<{ ta: { id: string; name: string } }>;
@@ -15,6 +25,7 @@ export interface User {
   } | null;
   scopeLevel?: "ALL" | "DISTRICT" | "TA" | "ZONE";
 }
+
 export interface Household {
   id: string;
   localId: string;
@@ -25,11 +36,17 @@ export interface Household {
   consentGiven?: boolean;
   consentSignatureUrl?: string | null;
   status: string;
+  structureType?: string;
+  wallMaterial?: string | null;
+  roofMaterial?: string | null;
+  floorType?: string | null;
+  hasElectricity?: boolean;
   gpsLat?: number;
   gpsLng?: number;
   landmark?: string;
   waterSource: string;
   latrinePresent: boolean;
+  latrineType?: string | null;
   handwashingFacility: boolean;
   distanceToFacility: string;
   mosquitoNets?: string;
@@ -61,7 +78,9 @@ export interface Member {
   id: string;
   localId: string;
   householdId: string;
-  fullName: string;
+  firstName: string;
+  lastName: string;
+  fullName?: string;
   sex: string;
   dateOfBirth?: string;
   estimatedAge?: number;
@@ -90,8 +109,8 @@ export interface Visit {
   gpsLng?: number;
   notes?: string;
   syncedAt?: string;
-  member: { id: string; fullName: string; sex: string };
-  chw: { id: string; fullName: string };
+  member: { id: string; firstName: string; lastName: string; sex: string };
+  chw: { id: string; firstName: string; lastName: string };
 }
 
 export interface Referral {
@@ -120,12 +139,18 @@ export interface Referral {
   createdAt: string;
   member: {
     id: string;
-    fullName: string;
+    firstName: string;
+    lastName: string;
     sex: string;
     dateOfBirth?: string;
     estimatedAge?: number;
   };
-  referringUser: { id: string; fullName: string; phoneNumber: string };
+  referringUser: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    phoneNumber: string;
+  };
   destinationFacility?: { id: string; name: string };
   visit: {
     id: string;
@@ -153,7 +178,7 @@ export interface DrugStock {
   quantityMinimum: number;
   lastRestockedAt?: string;
   drug: Drug;
-  user?: { id: string; fullName: string };
+  user?: { id: string; firstName: string; lastName: string };
 }
 
 export interface ImmunisationSchedule {
@@ -166,7 +191,8 @@ export interface ImmunisationSchedule {
   givenAt?: string;
   member: {
     id: string;
-    fullName: string;
+    firstName: string;
+    lastName: string;
     dateOfBirth?: string;
     household: { householdNumber: string; village: { name: string } };
   };
@@ -194,7 +220,8 @@ export interface OverviewStats {
 
 export interface ChwActivity {
   id: string;
-  fullName: string;
+  firstName: string;
+  lastName: string;
   phoneNumber: string;
   zones: string[];
   visitsThisWeek: number;

@@ -39,7 +39,7 @@ export const getMapEvents = async (req, res, next) => {
           visitType: true,
           referralNeeded: true,
           muacStatus: true,
-          member: { select: { fullName: true } },
+          member: { select: { firstName: true, lastName: true } },
         },
         take: 2000,
       });
@@ -51,7 +51,7 @@ export const getMapEvents = async (req, res, next) => {
           lat: v.gpsLat,
           lng: v.gpsLng,
           timestamp: v.visitedAt,
-          label: v.member.fullName,
+          label: `${v.member.firstName} ${v.member.lastName}`.trim(),
           meta: {
             visitType: v.visitType,
             referralNeeded: v.referralNeeded,
@@ -113,7 +113,7 @@ export const getMapEvents = async (req, res, next) => {
         },
         include: {
           visit: { select: { gpsLat: true, gpsLng: true } },
-          member: { select: { fullName: true } },
+          member: { select: { firstName: true, lastName: true } },
         },
         take: 500,
       });
@@ -124,7 +124,7 @@ export const getMapEvents = async (req, res, next) => {
           type: "referral",
           lat: r.visit.gpsLat,
           lng: r.visit.gpsLng,
-          label: r.member.fullName,
+          label: `${r.member.firstName} ${r.member.lastName}`.trim(),
           meta: { urgency: r.urgency, status: r.status, reason: r.reason },
           colour: r.urgency === "EMERGENCY" ? "red" : "yellow",
         }),

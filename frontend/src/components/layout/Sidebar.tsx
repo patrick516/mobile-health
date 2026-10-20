@@ -48,7 +48,7 @@ const NAV = [
     to: "/pharmacy",
     icon: Tablets,
     label: "Pharmacy",
-    roles: ["NURSE", "DISTRICT_OFFICER", "ADMIN", "SUPER_ADMIN"],
+    roles: ["NURSE", "PHARMACIST", "DISTRICT_OFFICER", "ADMIN", "SUPER_ADMIN"],
   },
   {
     to: "/reports",
@@ -109,7 +109,6 @@ export default function Sidebar() {
 
   return (
     <aside className="w-64 bg-teal-800 flex flex-col h-full">
-      {/* ── Brand block: logo centered, wordmark below ── */}
       <div className="flex flex-col items-center text-center px-4 py-6 border-b border-teal-700">
         <div className="w-14 h-14 rounded-xl bg-white flex items-center justify-center shadow-md mb-3">
           <img
@@ -126,7 +125,6 @@ export default function Sidebar() {
         </p>
       </div>
 
-      {/* ── Navigation ── */}
       <nav className="flex-1 px-3 py-4 overflow-y-auto no-scrollbar">
         {visible.map((item) => (
           <NavLink

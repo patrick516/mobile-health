@@ -20,6 +20,11 @@ import {
 } from "./IdentityVerificationBadge";
 import { RiskBadge, RiskPanel } from "./RiskBadge";
 
+const fullName = (p: any) =>
+  p
+    ? `${p.firstName || ""} ${p.lastName || ""}`.trim() || p.fullName || "—"
+    : "—";
+
 export default function HouseholdList() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -72,7 +77,6 @@ export default function HouseholdList() {
 
   return (
     <div className="space-y-4">
-      {/* Search */}
       <div className="card p-4 flex items-center gap-3">
         <Search size={16} className="text-gray-400 shrink-0" />
         <input
@@ -91,7 +95,6 @@ export default function HouseholdList() {
         )}
       </div>
 
-      {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="card p-4 flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-teal-100 flex items-center justify-center">
@@ -142,7 +145,6 @@ export default function HouseholdList() {
         </div>
       </div>
 
-      {/* Table */}
       <div className="card overflow-hidden">
         <table className="w-full">
           <thead>
@@ -249,7 +251,6 @@ export default function HouseholdList() {
           </tbody>
         </table>
 
-        {/* Pagination */}
         {data?.pagination && data.pagination.totalPages > 1 && (
           <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between">
             <p className="text-xs text-gray-500">
@@ -275,11 +276,9 @@ export default function HouseholdList() {
         )}
       </div>
 
-      {/* ── HOUSEHOLD DETAIL MODAL ── */}
       {selectedId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-            {/* Modal Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-teal-100 flex items-center justify-center">
@@ -310,7 +309,6 @@ export default function HouseholdList() {
 
             {detail && (
               <div className="p-6 space-y-6">
-                {/* Location */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div className="bg-gray-50 rounded-xl p-3">
                     <p className="text-xs text-gray-500 mb-1">Village</p>
@@ -338,17 +336,14 @@ export default function HouseholdList() {
                   </div>
                 </div>
 
-                {/* Risk Stratification */}
                 <RiskPanel
                   riskLevel={(detail as any).riskLevel}
                   riskScore={(detail as any).riskScore}
                   riskReasons={(detail as any).riskReasons}
                 />
 
-                {/* Identity Verification */}
                 <VerificationPanel household={detail} />
 
-                {/* Household Info */}
                 <div>
                   <h3 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
                     <Home size={15} className="text-teal-600" /> Household
@@ -439,7 +434,6 @@ export default function HouseholdList() {
                   </div>
                 </div>
 
-                {/* Members */}
                 <div>
                   <h3 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
                     <Users size={15} className="text-teal-600" />
@@ -456,11 +450,11 @@ export default function HouseholdList() {
                             <div
                               className={`w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold ${m.sex === "FEMALE" ? "bg-pink-400" : "bg-blue-400"}`}
                             >
-                              {m.fullName.charAt(0)}
+                              {(m.firstName || m.fullName || "?").charAt(0)}
                             </div>
                             <div>
                               <p className="font-semibold text-gray-800">
-                                {m.fullName}
+                                {fullName(m)}
                               </p>
                               <p className="text-xs text-gray-500">
                                 {m.relationshipToHead} · {m.sex} ·{" "}
@@ -486,7 +480,6 @@ export default function HouseholdList() {
                           </div>
                         </div>
 
-                        {/* Member health alerts */}
                         <div className="mt-3 flex flex-wrap gap-2">
                           {m.referrals?.filter((r: any) =>
                             ["PENDING", "OVERDUE"].includes(r.status),

@@ -3,7 +3,9 @@ import api from "../../services/api";
 
 type CcwSummary = {
   id: string;
-  fullName: string;
+  firstName: string;
+  lastName: string;
+  fullName?: string;
   phoneNumber: string;
   zones: string[];
   ta: string | null;
@@ -33,6 +35,11 @@ const RATING_LABELS: Record<number, { label: string; color: string }> = {
   4: { label: "Good", color: "text-blue-600" },
   5: { label: "Excellent", color: "text-green-700" },
 };
+
+const fullName = (p: any) =>
+  p
+    ? `${p.firstName || ""} ${p.lastName || ""}`.trim() || p.fullName || "—"
+    : "—";
 
 export default function SupervisorFeedback() {
   const now = new Date();
@@ -75,7 +82,6 @@ export default function SupervisorFeedback() {
       setComment("");
       setRating(3);
       setSelectedCcw(null);
-      // Refresh list
       const r = await api.get("/feedback/ccws");
       setCcws(r.data.data);
       setTimeout(() => setSuccess(false), 3000);
@@ -96,7 +102,6 @@ export default function SupervisorFeedback() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">
           Supervisor Feedback
@@ -119,7 +124,6 @@ export default function SupervisorFeedback() {
       )}
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {/* CCW List */}
         <div className="xl:col-span-1 bg-white rounded-xl shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900">Select CHW</h2>
@@ -146,7 +150,7 @@ export default function SupervisorFeedback() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-medium text-gray-900 text-sm">
-                      {ccw.fullName}
+                      {fullName(ccw)}
                     </p>
                     <p className="text-xs text-gray-400 mt-0.5">
                       {ccw.zones.slice(0, 2).join(", ")}
@@ -172,7 +176,6 @@ export default function SupervisorFeedback() {
           </div>
         </div>
 
-        {/* Feedback Form */}
         <div className="xl:col-span-2 bg-white rounded-xl shadow-sm p-6">
           {!selectedCcw ? (
             <div className="flex flex-col items-center justify-center h-64 text-gray-400">
@@ -195,12 +198,11 @@ export default function SupervisorFeedback() {
             </div>
           ) : (
             <div className="space-y-5">
-              {/* Selected CCW summary */}
               <div className="bg-gray-50 rounded-lg p-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-semibold text-gray-900">
-                      {selectedCcw.fullName}
+                      {fullName(selectedCcw)}
                     </p>
                     <p className="text-sm text-gray-500">
                       {selectedCcw.zones.join(", ")} · {selectedCcw.ta}
@@ -215,7 +217,6 @@ export default function SupervisorFeedback() {
                 </div>
               </div>
 
-              {/* Period */}
               <div className="flex gap-3">
                 <div className="flex-1">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -248,7 +249,6 @@ export default function SupervisorFeedback() {
                 </div>
               </div>
 
-              {/* Rating */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Performance Rating
@@ -275,7 +275,6 @@ export default function SupervisorFeedback() {
                 </p>
               </div>
 
-              {/* Comment */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Feedback Comment <span className="text-red-500">*</span>
@@ -293,7 +292,6 @@ export default function SupervisorFeedback() {
                 </p>
               </div>
 
-              {/* Send */}
               <button
                 onClick={handleSend}
                 disabled={saving || !comment.trim()}
@@ -305,7 +303,7 @@ export default function SupervisorFeedback() {
               >
                 {saving
                   ? "Sending..."
-                  : `Send Feedback to ${selectedCcw.fullName}`}
+                  : `Send Feedback to ${fullName(selectedCcw)}`}
               </button>
             </div>
           )}

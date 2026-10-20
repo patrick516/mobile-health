@@ -30,6 +30,11 @@ const TICKS: Record<string, { text: string; color: string }> = {
   MISSED: { text: "✗", color: "text-red-500" },
 };
 
+const fullName = (p: any) =>
+  p
+    ? `${p.firstName || ""} ${p.lastName || ""}`.trim() || p.fullName || "—"
+    : "—";
+
 export default function ReferralQueue() {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<string>("ALL");
@@ -89,9 +94,7 @@ export default function ReferralQueue() {
 
   return (
     <div className="flex gap-6 h-full">
-      {/* List */}
       <div className="flex-1 space-y-4 min-w-0">
-        {/* Filter tabs */}
         <div className="card p-1 flex gap-1">
           {filters.map((f) => (
             <button
@@ -108,7 +111,6 @@ export default function ReferralQueue() {
           ))}
         </div>
 
-        {/* Overdue Alert Banner */}
         {(() => {
           const overdueCount =
             data?.data.filter((ref) => ref.status === "OVERDUE").length ?? 0;
@@ -125,7 +127,6 @@ export default function ReferralQueue() {
           );
         })()}
 
-        {/* Pending Alert Banner with Clock */}
         {(() => {
           const pendingCount =
             data?.data.filter((ref) => ref.status === "PENDING").length ?? 0;
@@ -167,7 +168,7 @@ export default function ReferralQueue() {
                       <Clock size={14} className="text-red-500 shrink-0" />
                     )}
                     <p className="font-semibold text-sm text-gray-900 truncate">
-                      {ref.member.fullName}
+                      {fullName(ref.member)}
                     </p>
                     <span className={URGENCY_STYLE[ref.urgency]}>
                       {ref.urgency}
@@ -177,7 +178,6 @@ export default function ReferralQueue() {
                     {ref.reason.replace("_", " ")}
                   </p>
 
-                  {/* WhatsApp-style thread */}
                   <div className="flex items-center gap-1 text-xs text-gray-400">
                     {[
                       { label: "Referred", done: true },
@@ -261,17 +261,16 @@ export default function ReferralQueue() {
         )}
       </div>
 
-      {/* Detail panel */}
       {selected && (
         <div className="w-80 shrink-0">
           <div className="card p-5 sticky top-0 space-y-4">
             <div className="flex items-start justify-between">
               <div>
                 <h3 className="font-bold text-gray-900">
-                  {selected.member.fullName}
+                  {fullName(selected.member)}
                 </h3>
                 <p className="text-xs text-gray-500">
-                  {selected.referringUser.fullName}
+                  {fullName(selected.referringUser)}
                 </p>
               </div>
               <button

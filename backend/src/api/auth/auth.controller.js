@@ -136,7 +136,13 @@ export const login = async (req, res, next) => {
     // ── Step 2b: Enforce platform separation ──
     const isWebLogin = !deviceId;
     const isMobileLogin = !!deviceId;
-    const portalRoles = ["SUPER_ADMIN", "ADMIN", "NURSE", "DISTRICT_OFFICER"];
+    const portalRoles = [
+      "SUPER_ADMIN",
+      "ADMIN",
+      "NURSE",
+      "DISTRICT_OFFICER",
+      "PHARMACIST",
+    ];
     const mobileRoles = ["CCW"];
 
     if (isWebLogin && !portalRoles.includes(user.role)) {
@@ -258,7 +264,8 @@ export const login = async (req, res, next) => {
         message: "Your PIN was reset. Please create a new PIN to continue.",
         data: {
           userId: user.id,
-          fullName: user.fullName,
+          firstName: user.firstName,
+          lastName: user.lastName,
           phoneNumber: user.phoneNumber,
         },
       });
@@ -325,7 +332,12 @@ export const login = async (req, res, next) => {
       message: "Login successful.",
       data: {
         token,
-        user: { ...userSafe, facility: userFacility.facility, scopeLevel },
+        user: {
+          ...userSafe,
+          fullName: `${user.firstName} ${user.lastName}`, // Backward compat for mobile
+          facility: userFacility.facility,
+          scopeLevel,
+        },
       },
     });
   } catch (err) {
@@ -340,7 +352,8 @@ export const getMe = async (req, res, next) => {
       where: { id: req.user.id },
       select: {
         id: true,
-        fullName: true,
+        firstName: true,
+        lastName: true,
         phoneNumber: true,
         role: true,
         isActive: true,
@@ -381,7 +394,11 @@ export const getMe = async (req, res, next) => {
 
     res.json({
       success: true,
-      data: { ...user, scopeLevel: req.user.scopeLevel },
+      data: {
+        ...user,
+        fullName: `${user.firstName} ${user.lastName}`, // Backward compat
+        scopeLevel: req.user.scopeLevel,
+      },
     });
   } catch (err) {
     next(err);
@@ -483,28 +500,18 @@ export const completePinReset = async (req, res, next) => {
     next(err);
   }
 };
-// POST /api/auth/login-web — email + password login for web portal
+
 export const loginWeb = async (req, res, next) => {
   try {
     const { email, password } = req.body;
     if (!email || !password)
-      return res.status(400).json({
-        success: false,
-        message: "Email and password are required.",
-      });
+      return res
+        .status(400)
+        .json({ success: false, message: "Email and password are required." });
 
     const user = await prisma.user.findUnique({
       where: { email: email.toLowerCase().trim() },
-      select: {
-        id: true,
-        fullName: true,
-        phoneNumber: true,
-        email: true,
-        role: true,
-        isActive: true,
-        passwordHash: true,
-        mustChangePin: true,
-        facilityId: true,
+      include: {
         facility: {
           select: {
             id: true,
@@ -520,58 +527,52 @@ export const loginWeb = async (req, res, next) => {
     });
 
     if (!user || !user.passwordHash)
-      return res.status(401).json({
-        success: false,
-        message: "Invalid email or password.",
-      });
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid email or password." });
 
     if (!user.isActive)
-      return res.status(403).json({
-        success: false,
-        message:
-          "Your account has been deactivated. Contact your administrator.",
-      });
+      return res
+        .status(403)
+        .json({ success: false, message: "Account deactivated." });
 
-    const passwordMatch = await bcrypt.compare(password, user.passwordHash);
-    if (!passwordMatch)
-      return res.status(401).json({
-        success: false,
-        message: "Invalid email or password.",
-      });
+    const match = await bcrypt.compare(password, user.passwordHash);
+    if (!match)
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid email or password." });
 
-    // Compute scope
+    // Force password change if it's a new account or reset
+    if (user.mustChangePin) {
+      const tempToken = signToken(user.id, "TEMP_PASSWORD_RESET");
+      return res.json({
+        success: true,
+        mustChangePassword: true,
+        message: "Please set a new password to continue.",
+        data: { tempToken, email: user.email, firstName: user.firstName },
+      });
+    }
+
     let scopeLevel = "ALL";
     if (user.role === "ADMIN") scopeLevel = "ALL";
-    else if (user.role === "CCW") scopeLevel = "ZONE";
     else if (user.facility) {
       if (user.facility.facilityType === "DISTRICT_HOSPITAL")
         scopeLevel = "DISTRICT";
       else if (["TA_HOSPITAL", "CLINIC"].includes(user.facility.facilityType))
         scopeLevel = "TA";
-    } else if (user.taAllocations.length > 0) {
-      scopeLevel = "TA";
-    }
+    } else if (user.taAllocations.length > 0) scopeLevel = "TA";
 
     const token = signToken(user.id, user.role);
-    const { passwordHash, ...userSafe } = user;
+    const { passwordHash, pinHash, ...userSafe } = user;
 
-    await prisma.auditLog.create({
-      data: {
-        userId: user.id,
-        action: "LOGIN_WEB",
-        details: `Web portal login from ${req.ip}`,
-        ipAddress: req.ip,
-      },
-    });
+    // Backward compatibility: keep fullName for mobile/old frontend
+    const safeUser = {
+      ...userSafe,
+      fullName: `${user.firstName} ${user.lastName}`,
+      scopeLevel,
+    };
 
-    res.json({
-      success: true,
-      message: "Login successful.",
-      data: {
-        token,
-        user: { ...userSafe, scopeLevel },
-      },
-    });
+    res.json({ success: true, data: { token, user: safeUser } });
   } catch (err) {
     next(err);
   }
@@ -587,7 +588,13 @@ export const flagLockout = async (req, res, next) => {
 
     let user = await prisma.user.findUnique({
       where: { phoneNumber },
-      select: { id: true, fullName: true, phoneNumber: true, isActive: true },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        phoneNumber: true,
+        isActive: true,
+      },
     });
 
     if (!user) {
@@ -597,7 +604,8 @@ export const flagLockout = async (req, res, next) => {
         user = await prisma.user.create({
           data: {
             id: `shadow_${phoneNumber}`,
-            fullName: `Unknown (${phoneNumber})`,
+            firstName: "Unknown",
+            lastName: phoneNumber,
             phoneNumber: phoneNumber,
             pinHash: "shadow_account_no_login",
             role: "CCW",
@@ -605,7 +613,8 @@ export const flagLockout = async (req, res, next) => {
           },
           select: {
             id: true,
-            fullName: true,
+            firstName: true,
+            lastName: true,
             phoneNumber: true,
             isActive: true,
           },
@@ -616,7 +625,8 @@ export const flagLockout = async (req, res, next) => {
           where: { phoneNumber },
           select: {
             id: true,
-            fullName: true,
+            firstName: true,
+            lastName: true,
             phoneNumber: true,
             isActive: true,
           },
@@ -626,7 +636,8 @@ export const flagLockout = async (req, res, next) => {
           user = await prisma.user.create({
             data: {
               id: `shadow_${phoneNumber}_${Date.now()}`,
-              fullName: `Unknown (${phoneNumber})`,
+              firstName: "Unknown",
+              lastName: phoneNumber,
               phoneNumber: phoneNumber,
               pinHash: "shadow_account_no_login",
               role: "CCW",
@@ -634,7 +645,8 @@ export const flagLockout = async (req, res, next) => {
             },
             select: {
               id: true,
-              fullName: true,
+              firstName: true,
+              lastName: true,
               phoneNumber: true,
               isActive: true,
             },
@@ -698,7 +710,13 @@ export const unlockAccount = async (req, res, next) => {
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: { isActive: true },
-      select: { id: true, fullName: true, phoneNumber: true, isActive: true },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        phoneNumber: true,
+        isActive: true,
+      },
     });
 
     await prisma.auditLog.create({
@@ -712,6 +730,92 @@ export const unlockAccount = async (req, res, next) => {
     });
 
     res.json({ success: true, data: user });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// 1. Check if a Super Admin exists
+export const setupStatus = async (req, res, next) => {
+  try {
+    const count = await prisma.user.count({ where: { role: "SUPER_ADMIN" } });
+    res.json({ success: true, hasSuperAdmin: count > 0 });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// 2. Register the first and only Super Admin
+export const registerSuperAdmin = async (req, res, next) => {
+  try {
+    const count = await prisma.user.count({ where: { role: "SUPER_ADMIN" } });
+    if (count > 0) {
+      return res.status(403).json({
+        success: false,
+        message: "Super Admin already exists. Registration locked.",
+      });
+    }
+
+    const { firstName, lastName, email, password, phoneNumber } = req.body;
+    if (!firstName || !lastName || !email || !password || !phoneNumber) {
+      return res
+        .status(400)
+        .json({ success: false, message: "All fields are required." });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const pinHash = await bcrypt.hash("1234", 12); // Dummy PIN to satisfy DB constraint
+
+    await prisma.user.create({
+      data: {
+        firstName,
+        lastName,
+        email: email.toLowerCase().trim(),
+        passwordHash,
+        phoneNumber,
+        phone: phoneNumber,
+        pinHash,
+        role: "SUPER_ADMIN",
+        mustChangePin: false,
+      },
+    });
+
+    res
+      .status(201)
+      .json({ success: true, message: "Super Admin created successfully." });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// 3. Complete forced password reset
+export const completePasswordReset = async (req, res, next) => {
+  try {
+    const { newPassword } = req.body;
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 6 characters.",
+      });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    if (!user || !user.mustChangePin) {
+      return res
+        .status(400)
+        .json({ success: false, message: "No password reset pending." });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash, mustChangePin: false },
+    });
+
+    res.json({
+      success: true,
+      message: "Password updated. You can now log in.",
+    });
   } catch (err) {
     next(err);
   }

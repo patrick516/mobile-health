@@ -117,9 +117,15 @@ export const getVisits = async (req, res, next) => {
         where,
         include: {
           member: {
-            select: { id: true, fullName: true, sex: true, dateOfBirth: true },
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              sex: true,
+              dateOfBirth: true,
+            },
           },
-          chw: { select: { id: true, fullName: true } },
+          chw: { select: { id: true, firstName: true, lastName: true } },
           referrals: { select: { id: true, status: true, urgency: true } },
         },
         orderBy: { visitedAt: "desc" },
@@ -151,7 +157,14 @@ export const getVisit = async (req, res, next) => {
       where: { id: req.params.id },
       include: {
         member: true,
-        chw: { select: { id: true, fullName: true, phoneNumber: true } },
+        chw: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phoneNumber: true,
+          },
+        },
         referrals: true,
         dispenses: { include: { drug: true } },
       },

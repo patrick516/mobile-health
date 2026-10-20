@@ -53,7 +53,7 @@ export const getMembers = async (req, res, next) => {
         },
         ancVisits: { where: { status: { in: ["SCHEDULED", "OVERDUE"] } } },
       },
-      orderBy: { fullName: "asc" },
+      orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
     });
     res.json({ success: true, data: members });
   } catch (err) {
@@ -112,7 +112,8 @@ export const createMember = async (req, res, next) => {
     const {
       localId,
       householdId,
-      fullName,
+      firstName,
+      lastName,
       dateOfBirth,
       estimatedAge,
       sex,
@@ -126,11 +127,18 @@ export const createMember = async (req, res, next) => {
       phone,
     } = req.body;
 
-    if (!localId || !householdId || !fullName || !sex || !relationshipToHead) {
+    if (
+      !localId ||
+      !householdId ||
+      !firstName ||
+      !lastName ||
+      !sex ||
+      !relationshipToHead
+    ) {
       return res.status(400).json({
         success: false,
         message:
-          "localId, householdId, fullName, sex, and relationshipToHead are required.",
+          "localId, householdId, firstName, lastName, sex, and relationshipToHead are required.",
       });
     }
 
@@ -149,13 +157,16 @@ export const createMember = async (req, res, next) => {
       });
 
       if (existingMember && existingMember.localId !== localId) {
+        const existingName =
+          `${existingMember.firstName} ${existingMember.lastName}`.trim();
         return res.status(409).json({
           success: false,
           duplicate: true,
-          message: `This National ID is already registered to ${existingMember.fullName} in household ${existingMember.household?.householdNumber || "unknown"} (${existingMember.household?.village?.name || "unknown village"}).`,
+          message: `This National ID is already registered to ${existingName} in household ${existingMember.household?.householdNumber || "unknown"} (${existingMember.household?.village?.name || "unknown village"}).`,
           existingMember: {
             id: existingMember.id,
-            fullName: existingMember.fullName,
+            firstName: existingMember.firstName,
+            lastName: existingMember.lastName,
             householdNumber: existingMember.household?.householdNumber,
             village: existingMember.household?.village?.name,
           },
@@ -174,7 +185,8 @@ export const createMember = async (req, res, next) => {
       data: {
         localId,
         householdId,
-        fullName,
+        firstName,
+        lastName,
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
         estimatedAge: estimatedAge || null,
         sex,
@@ -239,7 +251,8 @@ export const createMember = async (req, res, next) => {
 export const updateMember = async (req, res, next) => {
   try {
     const allowed = [
-      "fullName",
+      "firstName",
+      "lastName",
       "dateOfBirth",
       "estimatedAge",
       "sex",

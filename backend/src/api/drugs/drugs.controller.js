@@ -26,7 +26,9 @@ export const getStock = async (req, res, next) => {
       where,
       include: {
         drug: true,
-        user: { select: { id: true, fullName: true, role: true } },
+        user: {
+          select: { id: true, firstName: true, lastName: true, role: true },
+        },
       },
       orderBy: { drug: { nameEnglish: "asc" } },
     });
@@ -99,8 +101,10 @@ export const getStockRequests = async (req, res, next) => {
       },
       include: {
         drug: true,
-        requestingUser: { select: { id: true, fullName: true } },
-        approvedBy: { select: { id: true, fullName: true } },
+        requestingUser: {
+          select: { id: true, firstName: true, lastName: true },
+        },
+        approvedBy: { select: { id: true, firstName: true, lastName: true } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -125,7 +129,12 @@ export const updateStockRequest = async (req, res, next) => {
       include: {
         drug: true,
         requestingUser: {
-          select: { id: true, fullName: true, phoneNumber: true },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phoneNumber: true,
+          },
         },
       },
     });

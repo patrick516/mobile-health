@@ -27,7 +27,8 @@ export const getAncSchedules = async (req, res, next) => {
           select: {
             id: true,
             localId: true,
-            fullName: true,
+            firstName: true,
+            lastName: true,
             expectedDeliveryDate: true,
           },
         },

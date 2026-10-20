@@ -13,6 +13,11 @@ import {
 import api from "../../services/api";
 import { INDICATOR_LABELS as L } from "../../constants/indicatorLabels";
 
+const fullName = (p: any) =>
+  p
+    ? `${p.firstName || ""} ${p.lastName || ""}`.trim() || p.fullName || "—"
+    : "—";
+
 export default function Trends() {
   const [days, setDays] = useState(30);
 
@@ -66,7 +71,6 @@ export default function Trends() {
   });
   return (
     <div className="space-y-6">
-      {/* Controls */}
       <div className="card p-4 flex items-center gap-4">
         <span className="text-sm text-gray-600 font-medium">Time range:</span>
         {[7, 14, 30, 60, 90].map((d) => (
@@ -84,8 +88,6 @@ export default function Trends() {
         ))}
       </div>
 
-      {/* Visit trends chart */}
-      {/* Visit trends chart */}
       <div className="card p-6">
         <h2 className="font-bold text-gray-900 mb-1">{L.visitTrends.title}</h2>
         <p className="text-xs text-gray-500 mb-4">{L.visitTrends.subtitle}</p>
@@ -157,7 +159,6 @@ export default function Trends() {
         )}
       </div>
 
-      {/* Line Chart Trends */}
       <div className="card p-6">
         <h2 className="font-bold text-gray-900 mb-1">
           {L.comparativeTrends.title}
@@ -175,7 +176,6 @@ export default function Trends() {
               borderLeft: "1px solid #e2e8f0",
             }}
           >
-            {/* Y axis labels */}
             <div
               style={{
                 position: "absolute",
@@ -197,7 +197,6 @@ export default function Trends() {
                 </span>
               ))}
             </div>
-            {/* Dots and line */}
             <svg width="100%" height="100%" style={{ overflow: "visible" }}>
               {trends.map((d: any, i: number) => {
                 const maxCount = Math.max(
@@ -257,7 +256,6 @@ export default function Trends() {
         )}
       </div>
 
-      {/* Symptom Trends */}
       <div className="card p-6">
         <h2 className="font-bold text-gray-900 mb-1">
           {L.symptomTrends.title}
@@ -290,7 +288,6 @@ export default function Trends() {
         )}
       </div>
 
-      {/* Referral Completion Rate */}
       <div className="card p-6">
         <h2 className="font-bold text-gray-900 mb-1">
           {L.referralCompletion.title}
@@ -349,7 +346,6 @@ export default function Trends() {
         )}
       </div>
 
-      {/* MUAC / Malnutrition */}
       <div className="card p-6">
         <h2 className="font-bold text-gray-900 mb-1">
           {L.muacScreening.title}
@@ -390,7 +386,6 @@ export default function Trends() {
         )}
       </div>
 
-      {/* Immunisation Coverage */}
       <div className="card p-6">
         <h2 className="font-bold text-gray-900 mb-1">
           {L.immunisationCoverage.title}
@@ -435,7 +430,6 @@ export default function Trends() {
         )}
       </div>
 
-      {/* ANC Attendance Rate */}
       <div className="card p-6">
         <h2 className="font-bold text-gray-900 mb-1">
           {L.ancAttendance.title}
@@ -495,7 +489,7 @@ export default function Trends() {
           </div>
         )}
       </div>
-      {/* CHW performance table */}
+
       <div className="card overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100">
           <h2 className="font-bold text-gray-900 mb-1">
@@ -527,7 +521,7 @@ export default function Trends() {
             {chwData?.map((chw: any) => (
               <tr key={chw.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                  {chw.fullName}
+                  {fullName(chw)}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-500">
                   {chw.zones.join(", ") || "—"}

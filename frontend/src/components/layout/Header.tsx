@@ -22,6 +22,13 @@ const TITLES: Record<string, string> = {
   "/admin/facilities": "Facilities",
   "/admin/security": "Security Alerts",
   "/admin/relocated-households": "Relocated Households",
+  "/pharmacy": "Pharmacy Dashboard",
+  "/pharmacy/receiving": "Stock Receiving",
+  "/pharmacy/dispense": "Dispensing",
+  "/pharmacy/requests": "Pharmacy Requests",
+  "/pharmacy/alerts": "Expiry Alerts",
+  "/pharmacy/transactions": "Transaction Log",
+  "/pharmacy/suppliers": "Suppliers",
 };
 
 export default function Header() {
@@ -29,6 +36,15 @@ export default function Header() {
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
   const clearAuth = useAuthStore((s) => s.clearAuth);
+
+  // Backwards compatibility: display first/last name if available, else fallback to fullName
+  const displayName = user?.firstName
+    ? `${user.firstName} ${user.lastName || ""}`.trim()
+    : (user as any)?.fullName || "User";
+
+  const avatarInitial = user?.firstName
+    ? user.firstName.charAt(0).toUpperCase()
+    : (user as any)?.fullName?.charAt(0).toUpperCase() || "U";
 
   return (
     <header className="bg-white border-b border-gray-100 px-6 py-3.5 flex items-center justify-between shrink-0">
@@ -68,7 +84,7 @@ export default function Header() {
         <div className="flex items-center gap-3 pl-3 ml-1.5 border-l border-gray-100">
           <div className="text-right leading-tight hidden sm:block">
             <p className="text-sm font-semibold text-gray-900 truncate max-w-[160px]">
-              {user?.fullName || "User"}
+              {displayName}
             </p>
             <p className="text-[10px] uppercase tracking-widest text-gray-400">
               {user?.role?.replace(/_/g, " ") || ""}
@@ -77,9 +93,9 @@ export default function Header() {
 
           <div
             className="w-9 h-9 rounded-full bg-teal-700 flex items-center justify-center text-white text-sm font-bold shrink-0"
-            title={user?.fullName}
+            title={displayName}
           >
-            {user?.fullName?.charAt(0).toUpperCase() || "U"}
+            {avatarInitial}
           </div>
 
           <button

@@ -25,7 +25,8 @@ export const getSchedules = async (req, res, next) => {
           select: {
             id: true,
             localId: true,
-            fullName: true,
+            firstName: true,
+            lastName: true,
             dateOfBirth: true,
             household: {
               include: { village: true },
@@ -79,7 +80,8 @@ export const getDue = async (req, res, next) => {
         member: {
           select: {
             id: true,
-            fullName: true,
+            firstName: true,
+            lastName: true,
             dateOfBirth: true,
             household: { include: { village: true } },
           },
