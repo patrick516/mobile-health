@@ -41,7 +41,10 @@ export default function SuperAdminSetup() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-teal-800 to-teal-600 flex items-center justify-center p-4">
+    <div
+      className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat"
+      style={{ backgroundImage: "url('/images/background.png')" }}
+    >
       <div className="w-full max-w-md">
         {/* Logo Header */}
         <div className="text-center mb-8">
