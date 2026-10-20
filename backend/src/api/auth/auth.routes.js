@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   login,
+  loginWeb,
   getMe,
   changePin,
   completePinReset,
@@ -12,6 +13,7 @@ import { authenticate } from "../../middleware/auth.js";
 const router = Router();
 
 router.post("/login", login);
+router.post("/login-web", loginWeb);
 router.get("/me", authenticate, getMe);
 router.patch("/change-pin", authenticate, changePin);
 router.patch("/complete-pin-reset", completePinReset);

@@ -483,6 +483,99 @@ export const completePinReset = async (req, res, next) => {
     next(err);
   }
 };
+// POST /api/auth/login-web — email + password login for web portal
+export const loginWeb = async (req, res, next) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password)
+      return res.status(400).json({
+        success: false,
+        message: "Email and password are required.",
+      });
+
+    const user = await prisma.user.findUnique({
+      where: { email: email.toLowerCase().trim() },
+      select: {
+        id: true,
+        fullName: true,
+        phoneNumber: true,
+        email: true,
+        role: true,
+        isActive: true,
+        passwordHash: true,
+        mustChangePin: true,
+        facilityId: true,
+        facility: {
+          select: {
+            id: true,
+            name: true,
+            facilityType: true,
+            districtId: true,
+            taId: true,
+          },
+        },
+        zoneAllocations: { select: { zoneId: true } },
+        taAllocations: { select: { taId: true } },
+      },
+    });
+
+    if (!user || !user.passwordHash)
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password.",
+      });
+
+    if (!user.isActive)
+      return res.status(403).json({
+        success: false,
+        message:
+          "Your account has been deactivated. Contact your administrator.",
+      });
+
+    const passwordMatch = await bcrypt.compare(password, user.passwordHash);
+    if (!passwordMatch)
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password.",
+      });
+
+    // Compute scope
+    let scopeLevel = "ALL";
+    if (user.role === "ADMIN") scopeLevel = "ALL";
+    else if (user.role === "CCW") scopeLevel = "ZONE";
+    else if (user.facility) {
+      if (user.facility.facilityType === "DISTRICT_HOSPITAL")
+        scopeLevel = "DISTRICT";
+      else if (["TA_HOSPITAL", "CLINIC"].includes(user.facility.facilityType))
+        scopeLevel = "TA";
+    } else if (user.taAllocations.length > 0) {
+      scopeLevel = "TA";
+    }
+
+    const token = signToken(user.id, user.role);
+    const { passwordHash, ...userSafe } = user;
+
+    await prisma.auditLog.create({
+      data: {
+        userId: user.id,
+        action: "LOGIN_WEB",
+        details: `Web portal login from ${req.ip}`,
+        ipAddress: req.ip,
+      },
+    });
+
+    res.json({
+      success: true,
+      message: "Login successful.",
+      data: {
+        token,
+        user: { ...userSafe, scopeLevel },
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
 
 // POST /api/auth/flag-lockout
 export const flagLockout = async (req, res, next) => {
