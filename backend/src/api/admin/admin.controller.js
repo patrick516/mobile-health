@@ -65,6 +65,8 @@ export const createUser = async (req, res, next) => {
       role,
       facilityId,
       pin,
+      zoneIds, // <-- New
+      taIds, // <-- New
     } = req.body;
 
     if (!firstName || !lastName || !phoneNumber || !role) {
@@ -81,6 +83,7 @@ export const createUser = async (req, res, next) => {
       "ADMIN",
       "SUPER_ADMIN",
     ].includes(role);
+
     let tempPassword = null;
     let passwordHash = null;
 
@@ -90,16 +93,17 @@ export const createUser = async (req, res, next) => {
           success: false,
           message: "Email is required for web portal users.",
         });
-      tempPassword = Math.random().toString(36).slice(-8); // Generate 8-char temp password
+      tempPassword = Math.random().toString(36).slice(-8);
       passwordHash = await bcrypt.hash(tempPassword, 12);
     }
 
     const pinHash = await bcrypt.hash(String(pin || "1234"), 12);
 
     let assignedFacilityId = null;
+    // Auto-assign facility based on the creator
     if (["NURSE", "DISTRICT_OFFICER", "PHARMACIST", "CCW"].includes(role)) {
       if (req.user.role === "ADMIN" && req.user.facilityId) {
-        assignedFacilityId = req.user.facilityId;
+        assignedFacilityId = req.user.facilityId; // Admin's facility
       } else if (req.user.role === "SUPER_ADMIN") {
         assignedFacilityId = facilityId || null;
       }
@@ -107,6 +111,7 @@ export const createUser = async (req, res, next) => {
       assignedFacilityId = facilityId || null;
     }
 
+    // Create the user
     const user = await prisma.user.create({
       data: {
         firstName,
@@ -118,11 +123,38 @@ export const createUser = async (req, res, next) => {
         pinHash,
         role,
         facilityId: assignedFacilityId,
-        mustChangePin: true, // Forces change for both PIN (CCW) and Password (Web)
+        mustChangePin: true,
       },
     });
 
-    // Notify User
+    // Handle Allocations directly in the create flow
+    if (role === "CCW" && zoneIds && zoneIds.length > 0) {
+      await prisma.userZoneAllocation.createMany({
+        data: zoneIds.map((zoneId) => ({
+          userId: user.id,
+          zoneId,
+          allocatedById: req.user.id,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    if (
+      ["NURSE", "DISTRICT_OFFICER"].includes(role) &&
+      taIds &&
+      taIds.length > 0
+    ) {
+      await prisma.userTaAllocation.createMany({
+        data: taIds.map((taId) => ({
+          userId: user.id,
+          taId,
+          allocatedById: req.user.id,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    // Notify User (Same as before)
     try {
       if (isWebUser) {
         await sendEmail(

@@ -12,7 +12,7 @@ import Trends from "./pages/analytics/Trends";
 import DHIS2Export from "./pages/export/DHIS2Export";
 import Users from "./pages/admin/Users";
 import Geography from "./pages/admin/Geography";
-import Allocations from "./pages/admin/Allocations";
+
 import Facilities from "./pages/admin/Facilities";
 import Reports from "./pages/reports/Reports";
 import PharmacyDashboard from "./pages/pharmacy/PharmacyDashboard";
@@ -128,14 +128,7 @@ export default function App() {
               </AdminRoute>
             }
           />
-          <Route
-            path="admin/allocations"
-            element={
-              <AdminRoute>
-                <Allocations />
-              </AdminRoute>
-            }
-          />
+
           <Route
             path="admin/facilities"
             element={

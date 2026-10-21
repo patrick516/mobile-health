@@ -10,7 +10,6 @@ import {
   Download,
   Users,
   Map,
-  Network,
   ShieldAlert,
   Building2,
   MapPinOff,
@@ -82,7 +81,7 @@ const NAV = [
     roles: ["ADMIN", "DISTRICT_OFFICER", "NURSE"],
   },
 
-  // ── PHARMACY (Dedicated Pharmacist + Clinical Staff) ──
+  // ── PHARMACY ──
   {
     to: "/pharmacy",
     icon: Tablets,
@@ -90,41 +89,37 @@ const NAV = [
     roles: ["PHARMACIST", "ADMIN", "DISTRICT_OFFICER", "NURSE"],
   },
 
-  // ── SYSTEM ADMINISTRATION (SUPER_ADMIN & ADMIN) ──
+  // ── REPORTS & EXPORT (Operational Level) ──
   {
     to: "/reports",
     icon: FileBarChart,
     label: "Reports",
-    roles: ["ADMIN", "SUPER_ADMIN"],
+    roles: ["ADMIN", "DISTRICT_OFFICER", "SUPER_ADMIN"],
   },
   {
     to: "/export",
     icon: Download,
     label: "DHIS2 Export",
-    roles: ["ADMIN", "SUPER_ADMIN"],
+    roles: ["ADMIN", "DISTRICT_OFFICER"],
   },
+
+  // ── SYSTEM ADMINISTRATION ──
   {
     to: "/admin/users",
     icon: Users,
-    label: "User Management",
+    label: "Staff & Allocations",
+    roles: ["ADMIN", "SUPER_ADMIN"],
+  },
+  {
+    to: "/admin/facilities",
+    icon: Building2,
+    label: "Facilities & Clinics",
     roles: ["ADMIN", "SUPER_ADMIN"],
   },
   {
     to: "/admin/geography",
     icon: Map,
     label: "Geography Setup",
-    roles: ["ADMIN", "SUPER_ADMIN"],
-  },
-  {
-    to: "/admin/facilities",
-    icon: Building2,
-    label: "Facilities",
-    roles: ["ADMIN", "SUPER_ADMIN"],
-  },
-  {
-    to: "/admin/allocations",
-    icon: Network,
-    label: "Allocations",
     roles: ["ADMIN", "SUPER_ADMIN"],
   },
   {

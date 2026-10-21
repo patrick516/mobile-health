@@ -1,14 +1,17 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, Plus } from "lucide-react";
+import { ChevronRight, Plus, MapPin } from "lucide-react";
 import api from "../../services/api";
 import type { Region } from "../../types";
 import { useAuthStore } from "../../store/auth.store";
 import Select from "../../components/ui/Select";
+
 export default function Geography() {
   const isSuperAdmin = useAuthStore((s) => s.isSuperAdmin());
   const { user } = useAuthStore();
   const isAdmin = user?.role === "ADMIN";
+  const adminDistrictId = user?.facility?.districtId;
+
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
     type: "",
@@ -25,6 +28,7 @@ export default function Geography() {
     queryFn: () => api.get("/geography/tree").then((r) => r.data.data),
   });
 
+  // For Super Admin cascade
   const { data: districts } = useQuery({
     queryKey: ["districts", form.regionId],
     queryFn: () =>
@@ -34,11 +38,11 @@ export default function Geography() {
         )
         .then((r) => r.data.data),
     enabled:
-      form.type === "ta" || form.type === "zone" || form.type === "district",
+      isSuperAdmin &&
+      (form.type === "ta" || form.type === "zone" || form.type === "district"),
   });
 
-  const adminDistrictId = user?.facility?.districtId;
-
+  // For Admin: auto-load TAs for their district. For Super Admin: load TAs based on selected district.
   const { data: tas } = useQuery({
     queryKey: ["tas", isAdmin ? adminDistrictId : form.districtId],
     queryFn: () => {
@@ -73,11 +77,10 @@ export default function Geography() {
             : type === "ta"
               ? "/admin/geography/tas"
               : "/admin/geography/zones";
-      // ADMIN creating TA — auto-use their facility's districtId
+
+      // ADMIN creating TA — force their facility's districtId
       const taDistrictId =
-        isAdmin && user?.facility?.districtId
-          ? user.facility.districtId
-          : parentId;
+        isAdmin && adminDistrictId ? adminDistrictId : parentId;
 
       const body =
         type === "region"
@@ -112,8 +115,8 @@ export default function Geography() {
   const toggle = (id: string) => setExpanded((p) => ({ ...p, [id]: !p[id] }));
 
   return (
-    <div className="grid grid-cols-2 gap-6">
-      {/* Tree */}
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Tree View */}
       <div className="card p-5">
         <h2 className="font-bold text-gray-900 mb-4">Geographic Hierarchy</h2>
         <div className="space-y-1 text-sm max-h-[600px] overflow-y-auto">
@@ -127,7 +130,7 @@ export default function Geography() {
                   size={14}
                   className={`transition-transform ${expanded[region.id] ? "rotate-90" : ""}`}
                 />
-                🌍 {region.name}
+                Region: {region.name}
               </button>
               {expanded[region.id] &&
                 region.districts?.map((d) => (
@@ -140,7 +143,7 @@ export default function Geography() {
                         size={14}
                         className={`transition-transform ${expanded[d.id] ? "rotate-90" : ""}`}
                       />
-                      🏙 {d.name}
+                      District: {d.name}
                     </button>
                     {expanded[d.id] &&
                       d.traditionalAuthorities?.map((ta: any) => (
@@ -153,7 +156,7 @@ export default function Geography() {
                               size={14}
                               className={`transition-transform ${expanded[ta.id] ? "rotate-90" : ""}`}
                             />
-                            🏘 {ta.name}
+                            TA: {ta.name}
                           </button>
                           {expanded[ta.id] &&
                             ta.zones?.map((z: any) => (
@@ -161,7 +164,8 @@ export default function Geography() {
                                 key={z.id}
                                 className="ml-4 py-1 px-2 text-gray-500"
                               >
-                                📍 {z.name} ({z.villages?.length ?? 0} villages)
+                                Zone: {z.name} ({z.villages?.length ?? 0}{" "}
+                                villages)
                               </div>
                             ))}
                         </div>
@@ -173,9 +177,25 @@ export default function Geography() {
         </div>
       </div>
 
-      {/* Add form */}
-      <div className="card p-5 space-y-4">
+      {/* Add Form */}
+      <div className="card p-5 space-y-4 h-fit">
         <h2 className="font-bold text-gray-900">Add Geographic Unit</h2>
+
+        {isAdmin && user?.facility && (
+          <div className="bg-teal-50 border border-teal-200 rounded-lg px-4 py-3 flex items-start gap-3">
+            <MapPin size={18} className="text-teal-700 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-teal-900">
+                Auto-assigning to: {user.facility.name}
+              </p>
+              <p className="text-xs text-teal-700 mt-1">
+                New TAs and Zones will automatically be linked to your
+                facility's district.
+              </p>
+            </div>
+          </div>
+        )}
+
         {error && (
           <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">
             {error}
@@ -193,9 +213,11 @@ export default function Geography() {
             }
             placeholder="Select type..."
             options={[
-              ...(isSuperAdmin ? [{ value: "region", label: "Region" }] : []),
               ...(isSuperAdmin
-                ? [{ value: "district", label: "District" }]
+                ? [
+                    { value: "region", label: "Region" },
+                    { value: "district", label: "District" },
+                  ]
                 : []),
               { value: "ta", label: "Traditional Authority" },
               { value: "zone", label: "Zone" },
@@ -203,110 +225,29 @@ export default function Geography() {
           />
         </div>
 
-        {/* District → needs Region first */}
-        {form.type === "district" && (
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Region
-            </label>
-            <Select
-              value={form.parentId}
-              onChange={(val) => setForm((p) => ({ ...p, parentId: val }))}
-              placeholder="Select region..."
-              options={(tree || []).map((r) => ({
-                value: r.id,
-                label: r.name,
-              }))}
-            />
-          </div>
-        )}
-        {/* TA → needs Region then District (SUPER_ADMIN), or auto-uses facility district (ADMIN) */}
-        {form.type === "ta" && (
+        {/* SUPER ADMIN CASCADE */}
+        {isSuperAdmin && (
           <>
-            {isAdmin && user?.facility ? (
-              <div className="bg-teal-50 border border-teal-200 rounded-lg px-3 py-2">
-                <p className="text-xs text-teal-700 font-medium">
-                  📍 Adding TA to: <strong>{user.facility.name}</strong>{" "}
-                  district
-                </p>
+            {/* District -> Needs Region */}
+            {form.type === "district" && (
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  Region
+                </label>
+                <Select
+                  value={form.parentId}
+                  onChange={(val) => setForm((p) => ({ ...p, parentId: val }))}
+                  placeholder="Select region..."
+                  options={(tree || []).map((r) => ({
+                    value: r.id,
+                    label: r.name,
+                  }))}
+                />
               </div>
-            ) : (
-              <>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                    Region
-                  </label>
-                  <Select
-                    value={form.regionId}
-                    onChange={(val) =>
-                      setForm((p) => ({ ...p, regionId: val, parentId: "" }))
-                    }
-                    placeholder="Select region..."
-                    options={(tree || []).map((r) => ({
-                      value: r.id,
-                      label: r.name,
-                    }))}
-                  />
-                </div>
-                {form.regionId && (
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                      District
-                    </label>
-                    <Select
-                      value={form.parentId}
-                      onChange={(val) =>
-                        setForm((p) => ({ ...p, parentId: val }))
-                      }
-                      placeholder="Select district..."
-                      options={(districts || []).map((d: any) => ({
-                        value: d.id,
-                        label: d.name,
-                      }))}
-                    />
-                  </div>
-                )}
-              </>
             )}
-          </>
-        )}
 
-        {/* Zone → ADMIN skips Region/District, SUPER_ADMIN sees full cascade */}
-        {form.type === "zone" && (
-          <>
-            {isAdmin && user?.facility ? (
-              <>
-                <div className="bg-teal-50 border border-teal-200 rounded-lg px-3 py-2">
-                  <p className="text-xs text-teal-700 font-medium">
-                    📍 Adding Zone within: <strong>{user.facility.name}</strong>{" "}
-                    district
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                    Traditional Authority
-                  </label>
-                  <Select
-                    value={form.parentId}
-                    onChange={(val) =>
-                      setForm((p) => ({ ...p, parentId: val }))
-                    }
-                    placeholder="Select TA..."
-                    options={
-                      tas && tas.length > 0
-                        ? tas.map((t: any) => ({ value: t.id, label: t.name }))
-                        : [
-                            {
-                              value: "",
-                              label: "No TAs found — add a TA first",
-                              disabled: true,
-                            },
-                          ]
-                    }
-                  />
-                </div>
-              </>
-            ) : (
+            {/* TA or Zone -> Needs Region then District */}
+            {(form.type === "ta" || form.type === "zone") && (
               <>
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1.5">
@@ -351,61 +292,84 @@ export default function Geography() {
                     />
                   </div>
                 )}
-                {form.districtId && (
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                      Traditional Authority
-                    </label>
-                    <Select
-                      value={form.parentId}
-                      onChange={(val) =>
-                        setForm((p) => ({ ...p, parentId: val }))
-                      }
-                      placeholder="Select TA..."
-                      options={
-                        tas && tas.length > 0
-                          ? tas.map((t: any) => ({
-                              value: t.id,
-                              label: t.name,
-                            }))
-                          : [
-                              {
-                                value: "",
-                                label: "No TAs found — add a TA first",
-                                disabled: true,
-                              },
-                            ]
-                      }
-                    />
-                  </div>
-                )}
               </>
             )}
           </>
         )}
-        {form.type && (
+
+        {/* ADMIN: Skip directly to TA selection if creating a Zone */}
+        {isAdmin && form.type === "zone" && (
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Name
+              Traditional Authority
             </label>
-            <input
-              className="input"
-              placeholder={`Enter ${form.type} name`}
-              value={form.name}
-              onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+            <Select
+              value={form.parentId}
+              onChange={(val) => setForm((p) => ({ ...p, parentId: val }))}
+              placeholder="Select TA..."
+              options={
+                tas && tas.length > 0
+                  ? tas.map((t: any) => ({ value: t.id, label: t.name }))
+                  : [
+                      {
+                        value: "",
+                        label: "No TAs found in your district",
+                        disabled: true,
+                      },
+                    ]
+              }
+            />
+          </div>
+        )}
+
+        {/* SUPER ADMIN: TA Dropdown for Zone creation */}
+        {isSuperAdmin && form.type === "zone" && form.districtId && (
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              Traditional Authority
+            </label>
+            <Select
+              value={form.parentId}
+              onChange={(val) => setForm((p) => ({ ...p, parentId: val }))}
+              placeholder="Select TA..."
+              options={
+                tas && tas.length > 0
+                  ? tas.map((t: any) => ({ value: t.id, label: t.name }))
+                  : [{ value: "", label: "No TAs found", disabled: true }]
+              }
             />
           </div>
         )}
 
         {form.type && (
-          <button
-            className="btn-primary flex items-center gap-2"
-            onClick={() => createMutation.mutate(form)}
-            disabled={createMutation.isPending || !form.name}
-          >
-            <Plus size={16} />
-            {createMutation.isPending ? "Creating..." : `Add ${form.type}`}
-          </button>
+          <>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                Name
+              </label>
+              <input
+                className="input"
+                placeholder={`Enter ${form.type} name`}
+                value={form.name}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, name: e.target.value }))
+                }
+              />
+            </div>
+
+            <button
+              className="btn-primary w-full flex items-center justify-center gap-2"
+              onClick={() => createMutation.mutate(form)}
+              disabled={
+                createMutation.isPending ||
+                !form.name ||
+                (form.type === "zone" && !form.parentId)
+              }
+            >
+              <Plus size={16} />
+              {createMutation.isPending ? "Creating..." : `Add ${form.type}`}
+            </button>
+          </>
         )}
       </div>
     </div>
