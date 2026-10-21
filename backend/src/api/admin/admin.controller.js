@@ -26,6 +26,7 @@ export const getUsers = async (req, res, next) => {
       },
       select: {
         id: true,
+        title: true,
         firstName: true,
         lastName: true,
         phoneNumber: true,
@@ -57,6 +58,7 @@ export const getUsers = async (req, res, next) => {
 export const createUser = async (req, res, next) => {
   try {
     const {
+      title,
       firstName,
       lastName,
       phoneNumber,
@@ -114,6 +116,7 @@ export const createUser = async (req, res, next) => {
     // Create the user
     const user = await prisma.user.create({
       data: {
+        title: title || null,
         firstName,
         lastName,
         phoneNumber,
@@ -199,6 +202,7 @@ export const updateUser = async (req, res, next) => {
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: {
+        ...(title !== undefined ? { title } : {}),
         ...(firstName ? { firstName } : {}),
         ...(lastName ? { lastName } : {}),
         ...(phoneNumber ? { phoneNumber } : {}),

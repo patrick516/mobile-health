@@ -329,6 +329,7 @@ model Village {
 
 model User {
   id            String    @id @default(uuid())
+  title         String? 
   firstName     String    @map("first_name")
   lastName      String    @map("last_name")
   phoneNumber   String    @unique @map("phone_number")
@@ -645,16 +646,21 @@ model PharmacyRequestItem {
 
 // ─── REFERRALS 
 model Facility {
-  id               String                @id @default(uuid())
-  name             String
-  facilityType     FacilityType?         @map("facility_type")
-  districtId       String?               @map("district_id")
-  taId             String?               @map("ta_id")
-  gpsLat           Float?                @map("gps_lat")
-  gpsLng           Float?                @map("gps_lng")
-  createdAt        DateTime              @default(now()) @map("created_at")
-  district         District?             @relation(fields: [districtId], references: [id])
-  ta               TraditionalAuthority? @relation(fields: [taId], references: [id])
+  id                       String                @id @default(uuid())
+  name                     String
+  facilityType             FacilityType?         @map("facility_type")
+  districtId               String?               @map("district_id")
+  taId                     String?               @map("ta_id")
+  parentDistrictHospitalId String?               @map("parent_district_hospital_id") // <-- ADD THIS
+  gpsLat                   Float?                @map("gps_lat")
+  gpsLng                   Float?                @map("gps_lng")
+  createdAt                DateTime              @default(now()) @map("created_at")
+  
+  district                 District?             @relation(fields: [districtId], references: [id])
+  ta                       TraditionalAuthority? @relation(fields: [taId], references: [id])
+  parentDistrictHospital   Facility?             @relation("DistrictHospital", fields: [parentDistrictHospitalId], references: [id]) // <-- ADD THIS
+  taHospitals              Facility[]            @relation("DistrictHospital") // <-- ADD THIS
+  
   referrals        Referral[]
   staff            User[]                @relation("FacilityStaff")
   drugBatches      DrugBatch[]

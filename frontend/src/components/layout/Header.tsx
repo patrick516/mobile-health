@@ -84,6 +84,7 @@ export default function Header() {
         <div className="flex items-center gap-3 pl-3 ml-1.5 border-l border-gray-100">
           <div className="text-right leading-tight hidden sm:block">
             <p className="text-sm font-semibold text-gray-900 truncate max-w-[160px]">
+              {user?.title ? `${user.title} ` : ""}
               {displayName}
             </p>
             <p className="text-[10px] uppercase tracking-widest text-gray-400">

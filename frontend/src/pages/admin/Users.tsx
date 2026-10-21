@@ -15,6 +15,7 @@ import Select from "../../components/ui/Select";
 
 interface User {
   id: string;
+  title?: string;
   firstName: string;
   lastName: string;
   phoneNumber: string;
@@ -24,6 +25,7 @@ interface User {
 }
 
 const ROLES = ["CCW", "NURSE", "DISTRICT_OFFICER", "PHARMACIST", "ADMIN"];
+const TITLES = ["Mr.", "Mrs.", "Ms.", "Miss", "Dr.", "Prof.", "Rev."];
 
 const extractPhoneSuffix = (raw: string): string => {
   let digits = String(raw).replace(/\D/g, "");
@@ -39,6 +41,7 @@ export default function Users() {
   const [showForm, setShowForm] = useState(false);
 
   const [form, setForm] = useState({
+    title: "",
     firstName: "",
     lastName: "",
     phoneSuffix: "",
@@ -163,6 +166,7 @@ export default function Users() {
 
   const resetForm = () => {
     setForm({
+      title: "",
       firstName: "",
       lastName: "",
       phoneSuffix: "",
@@ -196,6 +200,7 @@ export default function Users() {
 
     setError("");
     const payload = {
+      title: form.title,
       firstName: form.firstName.trim(),
       lastName: form.lastName.trim(),
       phoneNumber: `+265${form.phoneSuffix}`,
@@ -299,31 +304,44 @@ export default function Users() {
 
           <div className="grid grid-cols-2 gap-4">
             {/* Names */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                First Name
-              </label>
-              <input
-                className="input"
-                value={form.firstName}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, firstName: e.target.value }))
-                }
-                placeholder="e.g. Chimwemwe"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                Last Name
-              </label>
-              <input
-                className="input"
-                value={form.lastName}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, lastName: e.target.value }))
-                }
-                placeholder="e.g. Leno"
-              />
+            <div className="col-span-2 grid grid-cols-4 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  Title
+                </label>
+                <Select
+                  value={form.title}
+                  onChange={(val) => setForm((p) => ({ ...p, title: val }))}
+                  placeholder="Select..."
+                  options={TITLES.map((t) => ({ value: t, label: t }))}
+                />
+              </div>
+              <div className="col-span-1">
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  First Name
+                </label>
+                <input
+                  className="input"
+                  value={form.firstName}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, firstName: e.target.value }))
+                  }
+                  placeholder="e.g. Chimwemwe"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  Last Name
+                </label>
+                <input
+                  className="input"
+                  value={form.lastName}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, lastName: e.target.value }))
+                  }
+                  placeholder="e.g. Leno"
+                />
+              </div>
             </div>
 
             {/* Phone */}
@@ -788,6 +806,7 @@ export default function Users() {
             {pagedUsers.map((u) => (
               <tr key={u.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                  {u.title ? `${u.title} ` : ""}
                   {u.firstName} {u.lastName}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-500 font-mono">
