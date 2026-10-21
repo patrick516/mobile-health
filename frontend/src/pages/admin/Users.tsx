@@ -34,7 +34,6 @@ const extractPhoneSuffix = (raw: string): string => {
 
 export default function Users() {
   const queryClient = useQueryClient();
-  // FIXED: Properly destructure the role checking functions
   const { user, isAdmin, isSuperAdmin } = useAuthStore();
 
   const [showForm, setShowForm] = useState(false);
@@ -130,15 +129,24 @@ export default function Users() {
       return "Enter the full 9-digit mobile number.";
     if (!/^[89]/.test(form.phoneSuffix))
       return "Malawi mobile numbers start with 8 or 9.";
-    if (!form.pin || form.pin.length !== 4)
+
+    // FIXED: Only validate PIN for mobile users (CCW)
+    if (!isWebUser && (!form.pin || form.pin.length !== 4))
       return "PIN must be exactly 4 digits.";
+
     if (!form.role) return "Role is required.";
+
+    // Web users need an email
     if (isWebUser && !form.email.trim())
       return "Email is required for web portal users.";
+
     if (needsFacility && !form.facilityId)
       return "Facility is required for this role.";
+
+    // CCW needs at least one zone
     if (isCcw && form.selectedZoneIds.length === 0)
       return "Please assign at least one zone to the CCW.";
+
     return null;
   };
 
@@ -147,7 +155,7 @@ export default function Users() {
     form.lastName.trim().length > 0 &&
     form.phoneSuffix.length === 9 &&
     /^[89]/.test(form.phoneSuffix) &&
-    form.pin.length === 4 &&
+    (isWebUser || form.pin.length === 4) && // FIXED: PIN only required for mobile
     form.role &&
     (!isWebUser || form.email.trim().length > 0) &&
     (!needsFacility || !!form.facilityId) &&
@@ -195,8 +203,8 @@ export default function Users() {
       email: isWebUser ? form.email.trim() : undefined,
       pin: form.pin,
       role: form.role,
-      zoneIds: form.selectedZoneIds, // Send to backend
-      taIds: form.selectedTaIds, // Send to backend
+      zoneIds: form.selectedZoneIds,
+      taIds: form.selectedTaIds,
       ...(form.facilityId ? { facilityId: form.facilityId } : {}),
     };
     createMutation.mutate(payload);
@@ -362,33 +370,47 @@ export default function Users() {
               </div>
             )}
 
-            {/* PIN */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                Temporary PIN (4 digits)
-              </label>
-              <div className="relative">
-                <input
-                  className="input pr-10"
-                  type={showPin ? "text" : "password"}
-                  maxLength={4}
-                  value={form.pin}
-                  onChange={(e) =>
-                    setForm((p) => ({
-                      ...p,
-                      pin: e.target.value.replace(/\D/g, "").slice(0, 4),
-                    }))
-                  }
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPin((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  {showPin ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
+            {/* PIN (Only for Mobile Users / CCW) */}
+            {!isWebUser && (
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  Temporary PIN (4 digits)
+                </label>
+                <div className="relative">
+                  <input
+                    className="input pr-10"
+                    type={showPin ? "text" : "password"}
+                    maxLength={4}
+                    inputMode="numeric"
+                    value={form.pin}
+                    onChange={(e) =>
+                      setForm((p) => ({
+                        ...p,
+                        pin: e.target.value.replace(/\D/g, "").slice(0, 4),
+                      }))
+                    }
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPin((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPin ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
+
+            {/* Web User Info Banner */}
+            {isWebUser && (
+              <div className="col-span-2 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mt-2">
+                <p className="text-sm text-blue-800 font-medium">
+                  A temporary password will be automatically generated and sent
+                  to their email address. They will be prompted to change it on
+                  their first login.
+                </p>
+              </div>
+            )}
 
             {/* Role */}
             <div>
@@ -417,7 +439,7 @@ export default function Users() {
             {isCcw && (
               <div className="col-span-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
                 <p className="text-sm text-amber-800 font-medium">
-                  📱 CCW users log in via the mobile app (Phone + PIN).
+                  CCW users log in via the mobile app (Phone + PIN).
                 </p>
               </div>
             )}
@@ -585,7 +607,7 @@ export default function Users() {
         </div>
       )}
 
-      {/* (Modals and Table remain exactly the same as your provided file) */}
+      {/* Confirm reset PIN */}
       {resetTarget && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 max-w-sm w-full space-y-4">
@@ -616,6 +638,7 @@ export default function Users() {
         </div>
       )}
 
+      {/* Show temp PIN once */}
       {resetResult && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 max-w-sm w-full space-y-4">
@@ -649,7 +672,7 @@ export default function Users() {
         </div>
       )}
 
-      {/* Filters & Table (Same as your provided file) */}
+      {/* Filters */}
       <div className="card p-4 flex flex-wrap items-end gap-4">
         <div className="w-48">
           <label className="block text-xs font-semibold text-gray-500 mb-1">
@@ -724,6 +747,7 @@ export default function Users() {
         </p>
       </div>
 
+      {/* Users table */}
       <div className="card overflow-hidden">
         <table className="w-full">
           <thead>
