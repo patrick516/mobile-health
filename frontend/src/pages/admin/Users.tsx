@@ -14,6 +14,7 @@ import api from "../../services/api";
 import { useAuthStore } from "../../store/auth.store";
 import Select from "../../components/ui/Select";
 
+// Updated to match the exact backend response payload
 interface User {
   id: string;
   title?: string;
@@ -24,7 +25,14 @@ interface User {
   role: string;
   isActive: boolean;
   createdAt?: string;
-  facility?: { name: string };
+  facility?: {
+    name: string;
+    facilityType?: string;
+    district?: { name: string };
+    ta?: { name: string };
+  };
+  zoneAllocations?: Array<{ zone: { name: string; ta?: { name: string } } }>;
+  taAllocations?: Array<{ ta: { name: string } }>;
 }
 
 const ROLES = ["CCW", "NURSE", "DISTRICT_OFFICER", "PHARMACIST", "ADMIN"];
@@ -623,8 +631,8 @@ export default function Users() {
       {/* View Details Modal */}
       {viewTarget && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
-            <div className="bg-teal-800 px-6 py-4 flex items-center justify-between">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="bg-teal-800 px-6 py-4 flex items-center justify-between shrink-0">
               <h3 className="text-lg font-bold text-white">User Details</h3>
               <button
                 onClick={() => setViewTarget(null)}
@@ -634,7 +642,7 @@ export default function Users() {
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="p-6 space-y-4 overflow-y-auto">
               <div className="flex items-center gap-4 pb-4 border-b border-gray-100">
                 <div className="w-16 h-16 rounded-full bg-teal-100 flex items-center justify-center text-teal-800 text-2xl font-bold">
                   {viewTarget.firstName.charAt(0)}
@@ -654,6 +662,7 @@ export default function Users() {
               </div>
 
               <div className="space-y-3 text-sm">
+                {/* Basic Info */}
                 <div className="flex justify-between py-2 border-b border-gray-50">
                   <span className="text-gray-500 font-medium">Role</span>
                   <span className="font-bold text-gray-900">
@@ -677,36 +686,101 @@ export default function Users() {
                   </span>
                 </div>
                 <div className="flex justify-between py-2 border-b border-gray-50">
-                  <span className="text-gray-500 font-medium">Facility</span>
-                  <span className="text-gray-900">
-                    {viewTarget.facility?.name || "Unassigned"}
-                  </span>
-                </div>
-                <div className="flex justify-between py-2 border-b border-gray-50">
                   <span className="text-gray-500 font-medium">Date Added</span>
                   <span className="text-gray-900">
                     {viewTarget.createdAt
                       ? new Date(viewTarget.createdAt).toLocaleDateString(
                           "en-GB",
-                          {
-                            day: "numeric",
-                            month: "long",
-                            year: "numeric",
-                          },
+                          { day: "numeric", month: "long", year: "numeric" },
                         )
                       : "Unknown"}
                   </span>
                 </div>
-              </div>
 
-              <div className="pt-4">
-                <button
-                  onClick={() => setViewTarget(null)}
-                  className="btn-secondary w-full"
-                >
-                  Close
-                </button>
+                {/* Geographic & Facility Info */}
+                {viewTarget.facility && (
+                  <>
+                    <div className="flex justify-between py-2 border-b border-gray-50">
+                      <span className="text-gray-500 font-medium">
+                        Facility
+                      </span>
+                      <span className="text-gray-900 font-medium">
+                        {viewTarget.facility.name}
+                      </span>
+                    </div>
+                    <div className="flex justify-between py-2 border-b border-gray-50">
+                      <span className="text-gray-500 font-medium">
+                        Facility Type
+                      </span>
+                      <span className="text-gray-900 capitalize">
+                        {viewTarget.facility.facilityType
+                          ?.replace(/_/g, " ")
+                          .toLowerCase() || "—"}
+                      </span>
+                    </div>
+                    {viewTarget.facility.district && (
+                      <div className="flex justify-between py-2 border-b border-gray-50">
+                        <span className="text-gray-500 font-medium">
+                          District
+                        </span>
+                        <span className="text-gray-900">
+                          {viewTarget.facility.district.name}
+                        </span>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Allocations (CCW Zones) */}
+                {viewTarget.zoneAllocations &&
+                  viewTarget.zoneAllocations.length > 0 && (
+                    <div className="py-2 border-b border-gray-50">
+                      <span className="text-gray-500 font-medium block mb-2">
+                        Assigned Zones
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {viewTarget.zoneAllocations.map((za, idx) => (
+                          <span
+                            key={idx}
+                            className="bg-teal-50 text-teal-700 text-xs font-semibold px-2 py-1 rounded-md border border-teal-200"
+                          >
+                            {za.zone.name}{" "}
+                            {za.zone.ta ? `(${za.zone.ta.name})` : ""}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                {/* Allocations (Nurse/DO TAs) */}
+                {viewTarget.taAllocations &&
+                  viewTarget.taAllocations.length > 0 && (
+                    <div className="py-2 border-b border-gray-50">
+                      <span className="text-gray-500 font-medium block mb-2">
+                        Assigned Traditional Authorities
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {viewTarget.taAllocations.map((ta, idx) => (
+                          <span
+                            key={idx}
+                            className="bg-blue-50 text-blue-700 text-xs font-semibold px-2 py-1 rounded-md border border-blue-200"
+                          >
+                            {ta.ta.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
               </div>
+            </div>
+
+            <div className="p-4 border-t border-gray-100 bg-gray-50 shrink-0">
+              <button
+                onClick={() => setViewTarget(null)}
+                className="btn-secondary w-full"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
