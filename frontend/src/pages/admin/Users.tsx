@@ -8,6 +8,7 @@ import {
   Check,
   Eye,
   EyeOff,
+  X,
 } from "lucide-react";
 import api from "../../services/api";
 import { useAuthStore } from "../../store/auth.store";
@@ -22,6 +23,8 @@ interface User {
   email?: string;
   role: string;
   isActive: boolean;
+  createdAt?: string;
+  facility?: { name: string };
 }
 
 const ROLES = ["CCW", "NURSE", "DISTRICT_OFFICER", "PHARMACIST", "ADMIN"];
@@ -39,6 +42,7 @@ export default function Users() {
   const { user, isAdmin, isSuperAdmin } = useAuthStore();
 
   const [showForm, setShowForm] = useState(false);
+  const [viewTarget, setViewTarget] = useState<User | null>(null); // <-- New State for View Modal
 
   const [form, setForm] = useState({
     title: "",
@@ -71,7 +75,6 @@ export default function Users() {
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 10;
 
-  // Fetch data
   const { data, isLoading } = useQuery<User[]>({
     queryKey: ["admin-users"],
     queryFn: () => api.get("/admin/users").then((r) => r.data.data),
@@ -132,24 +135,15 @@ export default function Users() {
       return "Enter the full 9-digit mobile number.";
     if (!/^[89]/.test(form.phoneSuffix))
       return "Malawi mobile numbers start with 8 or 9.";
-
-    // FIXED: Only validate PIN for mobile users (CCW)
     if (!isWebUser && (!form.pin || form.pin.length !== 4))
       return "PIN must be exactly 4 digits.";
-
     if (!form.role) return "Role is required.";
-
-    // Web users need an email
     if (isWebUser && !form.email.trim())
       return "Email is required for web portal users.";
-
     if (needsFacility && !form.facilityId)
       return "Facility is required for this role.";
-
-    // CCW needs at least one zone
     if (isCcw && form.selectedZoneIds.length === 0)
       return "Please assign at least one zone to the CCW.";
-
     return null;
   };
 
@@ -158,7 +152,7 @@ export default function Users() {
     form.lastName.trim().length > 0 &&
     form.phoneSuffix.length === 9 &&
     /^[89]/.test(form.phoneSuffix) &&
-    (isWebUser || form.pin.length === 4) && // FIXED: PIN only required for mobile
+    (isWebUser || form.pin.length === 4) &&
     form.role &&
     (!isWebUser || form.email.trim().length > 0) &&
     (!needsFacility || !!form.facilityId) &&
@@ -193,10 +187,21 @@ export default function Users() {
     onError: (err: any) =>
       setError(err.response?.data?.message || "Failed to create user."),
   });
-
   const handleSubmit = () => {
     const validationError = validate();
     if (validationError) return setError(validationError);
+
+    // NEW: Prevent duplicate emails on the frontend
+    if (isWebUser) {
+      const emailExists = data?.some(
+        (u) => u.email?.toLowerCase() === form.email.trim().toLowerCase(),
+      );
+      if (emailExists) {
+        return setError(
+          "This email address is already registered to another user.",
+        );
+      }
+    }
 
     setError("");
     const payload = {
@@ -214,7 +219,6 @@ export default function Users() {
     };
     createMutation.mutate(payload);
   };
-
   const deactivateMutation = useMutation({
     mutationFn: (id: string) => api.patch(`/admin/users/${id}/deactivate`),
     onSuccess: () =>
@@ -231,7 +235,7 @@ export default function Users() {
     mutationFn: (id: string) => api.patch(`/admin/users/${id}/reset-pin`),
     onSuccess: (res) => {
       setResetResult({
-        name: `${resetTarget?.firstName} ${resetTarget?.lastName}`,
+        name: `${resetTarget?.title ? resetTarget.title + " " : ""}${resetTarget?.firstName} ${resetTarget?.lastName}`,
         tempPin: res.data.data.tempPin,
       });
       setResetTarget(null);
@@ -261,6 +265,8 @@ export default function Users() {
   ).sort((a: any, b: any) => a.name.localeCompare(b.name));
 
   const filteredUsers = (data || []).filter((u) => {
+    // SECURITY: Hide SUPER_ADMIN from ADMIN lists in frontend as extra safety
+    if (user?.role !== "SUPER_ADMIN" && u.role === "SUPER_ADMIN") return false;
     if (roleFilter && u.role !== roleFilter) return false;
     if (facilityFilter && (u as any).facility?.id !== facilityFilter)
       return false;
@@ -285,12 +291,10 @@ export default function Users() {
           }}
           className="btn-primary flex items-center gap-2"
         >
-          <UserPlus size={16} />
-          Add Staff
+          <UserPlus size={16} /> Add Staff
         </button>
       </div>
 
-      {/* Create form */}
       {showForm && (
         <div className="card p-6 space-y-4">
           <h3 className="font-bold text-gray-900">
@@ -303,7 +307,6 @@ export default function Users() {
           )}
 
           <div className="grid grid-cols-2 gap-4">
-            {/* Names */}
             <div className="col-span-2 grid grid-cols-4 gap-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">
@@ -344,7 +347,6 @@ export default function Users() {
               </div>
             </div>
 
-            {/* Phone */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                 Phone Number (Mobile Login)
@@ -370,7 +372,6 @@ export default function Users() {
               </div>
             </div>
 
-            {/* Email (For Web Users) */}
             {isWebUser && (
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">
@@ -388,7 +389,6 @@ export default function Users() {
               </div>
             )}
 
-            {/* PIN (Only for Mobile Users / CCW) */}
             {!isWebUser && (
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">
@@ -419,7 +419,6 @@ export default function Users() {
               </div>
             )}
 
-            {/* Web User Info Banner */}
             {isWebUser && (
               <div className="col-span-2 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mt-2">
                 <p className="text-sm text-blue-800 font-medium">
@@ -430,7 +429,6 @@ export default function Users() {
               </div>
             )}
 
-            {/* Role */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                 Role
@@ -462,7 +460,6 @@ export default function Users() {
               </div>
             )}
 
-            {/* Facility Cascade (Super Admin Only) */}
             {needsFacility && user?.role === "SUPER_ADMIN" && (
               <>
                 <div>
@@ -486,7 +483,6 @@ export default function Users() {
                     }))}
                   />
                 </div>
-
                 {form.regionId && (
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1.5">
@@ -509,7 +505,6 @@ export default function Users() {
                     />
                   </div>
                 )}
-
                 {form.districtId && (
                   <div className="col-span-2">
                     <label className="block text-sm font-semibold text-gray-700 mb-1.5">
@@ -533,7 +528,6 @@ export default function Users() {
               </>
             )}
 
-            {/* Auto-Allocation for CCW */}
             {isCcw && (
               <div className="col-span-2 mt-2">
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">
@@ -568,7 +562,6 @@ export default function Users() {
               </div>
             )}
 
-            {/* Auto-Allocation for Nurse / DO */}
             {isNurseOrDO && (
               <div className="col-span-2 mt-2">
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">
@@ -625,6 +618,98 @@ export default function Users() {
         </div>
       )}
 
+      {/* View Details Modal */}
+      {viewTarget && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
+            <div className="bg-teal-800 px-6 py-4 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-white">User Details</h3>
+              <button
+                onClick={() => setViewTarget(null)}
+                className="text-teal-200 hover:text-white transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-4 pb-4 border-b border-gray-100">
+                <div className="w-16 h-16 rounded-full bg-teal-100 flex items-center justify-center text-teal-800 text-2xl font-bold">
+                  {viewTarget.firstName.charAt(0)}
+                  {viewTarget.lastName.charAt(0)}
+                </div>
+                <div>
+                  <h4 className="text-xl font-bold text-gray-900">
+                    {viewTarget.title ? `${viewTarget.title} ` : ""}
+                    {viewTarget.firstName} {viewTarget.lastName}
+                  </h4>
+                  <span
+                    className={`badge-${viewTarget.isActive ? "green" : "gray"} mt-1`}
+                  >
+                    {viewTarget.isActive ? "Active Account" : "Deactivated"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-3 text-sm">
+                <div className="flex justify-between py-2 border-b border-gray-50">
+                  <span className="text-gray-500 font-medium">Role</span>
+                  <span className="font-bold text-gray-900">
+                    {viewTarget.role.replace("_", " ")}
+                  </span>
+                </div>
+                <div className="flex justify-between py-2 border-b border-gray-50">
+                  <span className="text-gray-500 font-medium">
+                    Phone Number
+                  </span>
+                  <span className="font-mono text-gray-900">
+                    {viewTarget.phoneNumber}
+                  </span>
+                </div>
+                <div className="flex justify-between py-2 border-b border-gray-50">
+                  <span className="text-gray-500 font-medium">
+                    Email Address
+                  </span>
+                  <span className="text-gray-900">
+                    {viewTarget.email || "Not provided"}
+                  </span>
+                </div>
+                <div className="flex justify-between py-2 border-b border-gray-50">
+                  <span className="text-gray-500 font-medium">Facility</span>
+                  <span className="text-gray-900">
+                    {viewTarget.facility?.name || "Unassigned"}
+                  </span>
+                </div>
+                <div className="flex justify-between py-2 border-b border-gray-50">
+                  <span className="text-gray-500 font-medium">Date Added</span>
+                  <span className="text-gray-900">
+                    {viewTarget.createdAt
+                      ? new Date(viewTarget.createdAt).toLocaleDateString(
+                          "en-GB",
+                          {
+                            day: "numeric",
+                            month: "long",
+                            year: "numeric",
+                          },
+                        )
+                      : "Unknown"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="pt-4">
+                <button
+                  onClick={() => setViewTarget(null)}
+                  className="btn-secondary w-full"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Confirm reset PIN */}
       {resetTarget && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
@@ -633,6 +718,7 @@ export default function Users() {
             <p className="text-sm text-gray-600">
               This will generate a new temporary PIN for{" "}
               <strong>
+                {resetTarget.title ? `${resetTarget.title} ` : ""}
                 {resetTarget.firstName} {resetTarget.lastName}
               </strong>
               .
@@ -765,7 +851,7 @@ export default function Users() {
         </p>
       </div>
 
-      {/* Users table */}
+      {/* Users Table */}
       <div className="card overflow-hidden">
         <table className="w-full">
           <thead>
@@ -827,6 +913,12 @@ export default function Users() {
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setViewTarget(u)}
+                      className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 transition-colors"
+                    >
+                      <Eye size={13} /> View
+                    </button>
                     {u.role !== "SUPER_ADMIN" && (
                       <button
                         onClick={() => setResetTarget(u)}
@@ -836,12 +928,14 @@ export default function Users() {
                       </button>
                     )}
                     {u.isActive ? (
-                      <button
-                        onClick={() => deactivateMutation.mutate(u.id)}
-                        className="flex items-center gap-1 text-xs text-red-600 hover:text-red-800 transition-colors"
-                      >
-                        <UserX size={13} /> Deactivate
-                      </button>
+                      u.id !== user?.id && (
+                        <button
+                          onClick={() => deactivateMutation.mutate(u.id)}
+                          className="flex items-center gap-1 text-xs text-red-600 hover:text-red-800 transition-colors"
+                        >
+                          <UserX size={13} /> Deactivate
+                        </button>
+                      )
                     ) : (
                       <button
                         onClick={() => activateMutation.mutate(u.id)}

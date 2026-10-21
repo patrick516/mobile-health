@@ -12,7 +12,12 @@ export const getUsers = async (req, res, next) => {
   try {
     const { role, isActive } = req.query;
 
-    // ADMIN (facility-scoped) only sees users belonging to their facility
+    // Hide SUPER_ADMIN from non-super-admins
+    let roleFilter = {};
+    if (req.user.role !== "SUPER_ADMIN") {
+      roleFilter = { role: { not: "SUPER_ADMIN" } };
+    }
+
     let facilityScope = {};
     if (req.user.role === "ADMIN" && req.user.facilityId) {
       facilityScope = { facilityId: req.user.facilityId };
@@ -20,6 +25,7 @@ export const getUsers = async (req, res, next) => {
 
     const users = await prisma.user.findMany({
       where: {
+        ...roleFilter,
         ...(role ? { role } : {}),
         ...(isActive !== undefined ? { isActive: isActive === "true" } : {}),
         ...facilityScope,
@@ -67,8 +73,8 @@ export const createUser = async (req, res, next) => {
       role,
       facilityId,
       pin,
-      zoneIds, // <-- New
-      taIds, // <-- New
+      zoneIds,
+      taIds,
     } = req.body;
 
     if (!firstName || !lastName || !phoneNumber || !role) {
@@ -105,7 +111,7 @@ export const createUser = async (req, res, next) => {
     // Auto-assign facility based on the creator
     if (["NURSE", "DISTRICT_OFFICER", "PHARMACIST", "CCW"].includes(role)) {
       if (req.user.role === "ADMIN" && req.user.facilityId) {
-        assignedFacilityId = req.user.facilityId; // Admin's facility
+        assignedFacilityId = req.user.facilityId;
       } else if (req.user.role === "SUPER_ADMIN") {
         assignedFacilityId = facilityId || null;
       }
@@ -157,7 +163,7 @@ export const createUser = async (req, res, next) => {
       });
     }
 
-    // Notify User (Same as before)
+    // Notify User
     try {
       if (isWebUser) {
         await sendEmail(
@@ -186,9 +192,22 @@ export const createUser = async (req, res, next) => {
     });
   } catch (err) {
     if (err.code === "P2002") {
+      const target = err.meta?.target || [];
+      if (target.includes("email")) {
+        return res.status(409).json({
+          success: false,
+          message: "This email address is already registered to another user.",
+        });
+      }
+      if (target.includes("phone_number")) {
+        return res.status(409).json({
+          success: false,
+          message: "This phone number is already registered to another user.",
+        });
+      }
       return res.status(409).json({
         success: false,
-        message: "Phone number or Email is already registered.",
+        message: "A user with these details already exists.",
       });
     }
     next(err);
@@ -197,8 +216,18 @@ export const createUser = async (req, res, next) => {
 
 export const updateUser = async (req, res, next) => {
   try {
-    const { firstName, lastName, phoneNumber, phone, email, role, facilityId } =
-      req.body;
+    // FIX: Added 'title' to the destructuring
+    const {
+      title,
+      firstName,
+      lastName,
+      phoneNumber,
+      phone,
+      email,
+      role,
+      facilityId,
+    } = req.body;
+
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: {
@@ -233,6 +262,27 @@ export const updateUser = async (req, res, next) => {
 
 export const deactivateUser = async (req, res, next) => {
   try {
+    // 1. Prevent self-deactivation
+    if (req.params.id === req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: "You cannot deactivate your own account.",
+      });
+    }
+
+    // 2. Prevent deactivating a Super Admin
+    const targetUser = await prisma.user.findUnique({
+      where: { id: req.params.id },
+      select: { role: true },
+    });
+
+    if (targetUser?.role === "SUPER_ADMIN") {
+      return res.status(403).json({
+        success: false,
+        message: "Super Admin accounts cannot be deactivated.",
+      });
+    }
+
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: { isActive: false },
