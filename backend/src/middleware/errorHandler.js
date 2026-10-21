@@ -26,19 +26,19 @@ export const errorHandler = (err, req, res, next) => {
   }
 
   // JWT errors
+
   if (err.name === "JsonWebTokenError") {
     return res.status(401).json({
       success: false,
-      message: "Invalid token.",
+      message: "Invalid session. Please log in again.",
     });
   }
   if (err.name === "TokenExpiredError") {
     return res.status(401).json({
       success: false,
-      message: "Token expired. Please log in again.",
+      message: "Your session has expired. Please log in again.",
     });
   }
-
   // Catch-all for any other Prisma errors (validation errors, connection
   // errors, etc.) — never leak raw query/table details to the client.
   if (err.name?.startsWith("Prisma")) {

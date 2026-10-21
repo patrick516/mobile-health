@@ -42,7 +42,7 @@ export default function Users() {
   const { user, isAdmin, isSuperAdmin } = useAuthStore();
 
   const [showForm, setShowForm] = useState(false);
-  const [viewTarget, setViewTarget] = useState<User | null>(null); // <-- New State for View Modal
+  const [viewTarget, setViewTarget] = useState<User | null>(null);
 
   const [form, setForm] = useState({
     title: "",
@@ -64,7 +64,8 @@ export default function Users() {
   const [resetTarget, setResetTarget] = useState<User | null>(null);
   const [resetResult, setResetResult] = useState<{
     name: string;
-    tempPin: string;
+    tempPin?: string;
+    isWebUser?: boolean;
   } | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
@@ -187,11 +188,11 @@ export default function Users() {
     onError: (err: any) =>
       setError(err.response?.data?.message || "Failed to create user."),
   });
+
   const handleSubmit = () => {
     const validationError = validate();
     if (validationError) return setError(validationError);
 
-    // NEW: Prevent duplicate emails on the frontend
     if (isWebUser) {
       const emailExists = data?.some(
         (u) => u.email?.toLowerCase() === form.email.trim().toLowerCase(),
@@ -219,6 +220,7 @@ export default function Users() {
     };
     createMutation.mutate(payload);
   };
+
   const deactivateMutation = useMutation({
     mutationFn: (id: string) => api.patch(`/admin/users/${id}/deactivate`),
     onSuccess: () =>
@@ -237,11 +239,12 @@ export default function Users() {
       setResetResult({
         name: `${resetTarget?.title ? resetTarget.title + " " : ""}${resetTarget?.firstName} ${resetTarget?.lastName}`,
         tempPin: res.data.data.tempPin,
+        isWebUser: res.data.data.isWebUser,
       });
       setResetTarget(null);
     },
     onError: (err: any) => {
-      setError(err.response?.data?.message || "Failed to reset PIN.");
+      setError(err.response?.data?.message || "Failed to reset account.");
       setResetTarget(null);
     },
   });
@@ -265,7 +268,6 @@ export default function Users() {
   ).sort((a: any, b: any) => a.name.localeCompare(b.name));
 
   const filteredUsers = (data || []).filter((u) => {
-    // SECURITY: Hide SUPER_ADMIN from ADMIN lists in frontend as extra safety
     if (user?.role !== "SUPER_ADMIN" && u.role === "SUPER_ADMIN") return false;
     if (roleFilter && u.role !== roleFilter) return false;
     if (facilityFilter && (u as any).facility?.id !== facilityFilter)
@@ -710,18 +712,17 @@ export default function Users() {
         </div>
       )}
 
-      {/* Confirm reset PIN */}
+      {/* Confirm reset PIN/Password */}
       {resetTarget && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 max-w-sm w-full space-y-4">
-            <h3 className="font-bold text-gray-900">Reset PIN?</h3>
+            <h3 className="font-bold text-gray-900">
+              Reset {resetTarget.role === "CCW" ? "PIN" : "Password"}?
+            </h3>
             <p className="text-sm text-gray-600">
-              This will generate a new temporary PIN for{" "}
-              <strong>
-                {resetTarget.title ? `${resetTarget.title} ` : ""}
-                {resetTarget.firstName} {resetTarget.lastName}
-              </strong>
-              .
+              {resetTarget.role === "CCW"
+                ? `This will generate a new 4-digit temporary PIN for ${resetTarget.title ? resetTarget.title + " " : ""}${resetTarget.firstName} ${resetTarget.lastName}.`
+                : `This will generate a new temporary password and email it to ${resetTarget.email}.`}
             </p>
             <div className="flex gap-3">
               <button
@@ -729,7 +730,7 @@ export default function Users() {
                 onClick={() => resetPinMutation.mutate(resetTarget.id)}
                 disabled={resetPinMutation.isPending}
               >
-                {resetPinMutation.isPending ? "Resetting..." : "Yes, Reset PIN"}
+                {resetPinMutation.isPending ? "Resetting..." : "Yes, Reset"}
               </button>
               <button
                 className="btn-secondary"
@@ -742,30 +743,40 @@ export default function Users() {
         </div>
       )}
 
-      {/* Show temp PIN once */}
+      {/* Show temp PIN or Email Confirmation */}
       {resetResult && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 max-w-sm w-full space-y-4">
-            <h3 className="font-bold text-gray-900">Temporary PIN Generated</h3>
+            <h3 className="font-bold text-gray-900">
+              {resetResult.isWebUser
+                ? "Password Emailed"
+                : "Temporary PIN Generated"}
+            </h3>
             <p className="text-sm text-gray-600">
-              Relay this PIN to <strong>{resetResult.name}</strong> now.
+              {resetResult.isWebUser
+                ? `A temporary password has been sent to the email address for ${resetResult.name}.`
+                : `Relay this PIN to ${resetResult.name} now.`}
             </p>
-            <div className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
-              <span className="text-2xl font-mono font-bold text-gray-900 tracking-widest">
-                {resetResult.tempPin}
-              </span>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(resetResult.tempPin);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 1500);
-                }}
-                className="flex items-center gap-1 text-xs text-teal-600 hover:text-teal-800 transition-colors"
-              >
-                {copied ? <Check size={14} /> : <Copy size={14} />}{" "}
-                {copied ? "Copied" : "Copy"}
-              </button>
-            </div>
+
+            {!resetResult.isWebUser && resetResult.tempPin && (
+              <div className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
+                <span className="text-2xl font-mono font-bold text-gray-900 tracking-widest">
+                  {resetResult.tempPin}
+                </span>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(resetResult.tempPin!);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1500);
+                  }}
+                  className="flex items-center gap-1 text-xs text-teal-600 hover:text-teal-800 transition-colors"
+                >
+                  {copied ? <Check size={14} /> : <Copy size={14} />}{" "}
+                  {copied ? "Copied" : "Copy"}
+                </button>
+              </div>
+            )}
+
             <button
               className="btn-primary w-full"
               onClick={() => setResetResult(null)}
@@ -924,7 +935,8 @@ export default function Users() {
                         onClick={() => setResetTarget(u)}
                         className="flex items-center gap-1 text-xs text-teal-600 hover:text-teal-800 transition-colors"
                       >
-                        <KeyRound size={13} /> Reset PIN
+                        <KeyRound size={13} />{" "}
+                        {u.role === "CCW" ? "Reset PIN" : "Reset Password"}
                       </button>
                     )}
                     {u.isActive ? (

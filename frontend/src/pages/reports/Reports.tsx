@@ -137,7 +137,18 @@ export default function Reports() {
       });
       setData(res.data);
     } catch (err: any) {
-      setError(err?.response?.data?.message || "Failed to load report");
+      // The API interceptor will handle 401s automatically.
+      // If we reach here, it's a different error.
+      if (err.response?.status === 500) {
+        setError(
+          "Server error. Please try again later or check the backend logs.",
+        );
+      } else {
+        setError(
+          err?.response?.data?.message ||
+            "Failed to load report. Please check your connection.",
+        );
+      }
     } finally {
       setLoading(false);
     }

@@ -12,7 +12,6 @@ import Trends from "./pages/analytics/Trends";
 import DHIS2Export from "./pages/export/DHIS2Export";
 import Users from "./pages/admin/Users";
 import Geography from "./pages/admin/Geography";
-
 import Facilities from "./pages/admin/Facilities";
 import Reports from "./pages/reports/Reports";
 import PharmacyDashboard from "./pages/pharmacy/PharmacyDashboard";
@@ -31,36 +30,40 @@ import TbTracker from "./pages/tb/TbTracker";
 import FpTracker from "./pages/fp/FpTracker";
 import SupervisorFeedback from "./pages/feedback/SupervisorFeedback";
 
-// function ProtectedRoute({ children }: { children: React.ReactNode }) {
-//   const token = useAuthStore((s) => s.token);
-//   if (!token) return <Navigate to="/login" replace />;
-//   return <>{children}</>;
-// }
+// Helper to check if token is expired synchronously
+const isTokenExpired = (token: string) => {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    // exp is in seconds, Date.now() is in milliseconds
+    return payload.exp * 1000 < Date.now();
+  } catch {
+    return true; // If malformed, treat as expired
+  }
+};
 
-function AdminRoute({ children }: { children: React.ReactNode }) {
-  const { token, isAdmin, user } = useAuthStore();
-  if (!token) return <Navigate to="/login" replace />;
-  if (!isAdmin()) return <Navigate to="/" replace />;
-  // ADMIN (not SUPER_ADMIN) must have a facility assigned
+// Unified Route Guard
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { token, user, clearAuth } = useAuthStore();
+
+  // 1. No token at all
+  if (!token) {
+    return <Navigate to="/login" replace />;
+  }
+
+  // 2. Token is expired
+  if (isTokenExpired(token)) {
+    clearAuth(); // Wipe the stale session
+    return <Navigate to="/login" replace />;
+  }
+
+  // 3. Force Facility Setup for Admins without a facility
   if (user?.role === "ADMIN" && !user?.facility) {
     return <Navigate to="/facility-setup" replace />;
   }
+
   return <>{children}</>;
 }
 
-function ProtectedWithFacilityGuard({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const { token, user } = useAuthStore();
-  if (!token) return <Navigate to="/login" replace />;
-  // ADMIN with no facility → force setup
-  if (user?.role === "ADMIN" && !user?.facility) {
-    return <Navigate to="/facility-setup" replace />;
-  }
-  return <>{children}</>;
-}
 export default function App() {
   return (
     <BrowserRouter>
@@ -69,12 +72,14 @@ export default function App() {
         <Route path="/setup" element={<SuperAdminSetup />} />
         <Route path="/facility-setup" element={<FacilitySetup />} />
         <Route path="/change-pin" element={<ChangePin />} />
+
+        {/* All protected routes go inside this guard */}
         <Route
           path="/"
           element={
-            <ProtectedWithFacilityGuard>
+            <ProtectedRoute>
               <Layout />
-            </ProtectedWithFacilityGuard>
+            </ProtectedRoute>
           }
         >
           <Route index element={<Overview />} />
@@ -85,6 +90,8 @@ export default function App() {
           <Route path="analytics" element={<Trends />} />
           <Route path="export" element={<DHIS2Export />} />
           <Route path="reports" element={<Reports />} />
+
+          {/* Pharmacy Routes */}
           <Route path="pharmacy" element={<PharmacyDashboard />} />
           <Route path="pharmacy/receiving" element={<StockReceiving />} />
           <Route path="pharmacy/dispense" element={<DispensingWindow />} />
@@ -92,52 +99,24 @@ export default function App() {
           <Route path="pharmacy/alerts" element={<ExpiryAlerts />} />
           <Route path="pharmacy/transactions" element={<TransactionLog />} />
           <Route path="pharmacy/suppliers" element={<Suppliers />} />
+
+          {/* Clinical Trackers */}
           <Route path="pnc" element={<PncTracker />} />
           <Route path="tb" element={<TbTracker />} />
           <Route path="fp" element={<FpTracker />} />
           <Route path="feedback" element={<SupervisorFeedback />} />
-          <Route
-            path="admin/security"
-            element={
-              <AdminRoute>
-                <Security />
-              </AdminRoute>
-            }
-          />
+
+          {/* Admin Routes */}
+          <Route path="admin/security" element={<Security />} />
           <Route
             path="admin/relocated-households"
-            element={
-              <AdminRoute>
-                <RelocatedHouseholds />
-              </AdminRoute>
-            }
+            element={<RelocatedHouseholds />}
           />
-          <Route
-            path="admin/users"
-            element={
-              <AdminRoute>
-                <Users />
-              </AdminRoute>
-            }
-          />
-          <Route
-            path="admin/geography"
-            element={
-              <AdminRoute>
-                <Geography />
-              </AdminRoute>
-            }
-          />
-
-          <Route
-            path="admin/facilities"
-            element={
-              <AdminRoute>
-                <Facilities />
-              </AdminRoute>
-            }
-          />
+          <Route path="admin/users" element={<Users />} />
+          <Route path="admin/geography" element={<Geography />} />
+          <Route path="admin/facilities" element={<Facilities />} />
         </Route>
+
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

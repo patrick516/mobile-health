@@ -7,8 +7,6 @@ import {
   Clock,
   AlertTriangle,
   KeyRound,
-  Copy,
-  Check,
 } from "lucide-react";
 import api from "../../services/api";
 
@@ -16,8 +14,11 @@ const fmt = (d: string) => (d ? new Date(d).toLocaleString("en-GB") : "—");
 
 interface AdminUser {
   id: string;
-  fullName: string;
+  title?: string;
+  firstName: string;
+  lastName: string;
   phoneNumber: string;
+  email?: string;
   role: string;
   isActive: boolean;
   facility?: { name: string } | null;
@@ -27,13 +28,12 @@ export default function Security() {
   const qc = useQueryClient();
   const [unlocking, setUnlocking] = useState<string | null>(null);
 
-  // Super Admin → reset Admin PIN state, same pattern as Users.tsx
+  // Super Admin → reset Admin Password state
   const [resetTarget, setResetTarget] = useState<AdminUser | null>(null);
   const [resetResult, setResetResult] = useState<{
-    fullName: string;
-    tempPin: string;
+    name: string;
+    isWebUser: boolean;
   } | null>(null);
-  const [copied, setCopied] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["security-alerts"],
@@ -41,8 +41,7 @@ export default function Security() {
     refetchInterval: 30000,
   });
 
-  // Admins list — reuses the same /admin/users endpoint, filtered client-side,
-  // since getUsers already returns role for every user in scope.
+  // Admins list — reuses the same /admin/users endpoint, filtered client-side.
   const { data: allUsers } = useQuery<AdminUser[]>({
     queryKey: ["admin-users"],
     queryFn: () => api.get("/admin/users").then((r) => r.data.data),
@@ -62,8 +61,8 @@ export default function Security() {
     mutationFn: (id: string) => api.patch(`/admin/users/${id}/reset-pin`),
     onSuccess: (res) => {
       setResetResult({
-        fullName: resetTarget?.fullName || "",
-        tempPin: res.data.data.tempPin,
+        name: `${resetTarget?.title ? resetTarget.title + " " : ""}${resetTarget?.firstName} ${resetTarget?.lastName}`,
+        isWebUser: res.data.data.isWebUser,
       });
       setResetTarget(null);
     },
@@ -141,44 +140,49 @@ export default function Security() {
         )}
 
         <div className="space-y-3">
-          {lockedUsers.map((u: any) => (
-            <div
-              key={u.id}
-              className="flex items-center justify-between border border-red-100 bg-red-50 rounded-xl px-4 py-3"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-red-200 flex items-center justify-center text-red-700 font-bold">
-                  {u.fullName.charAt(0)}
-                </div>
-                <div>
-                  <p className="font-semibold text-gray-800">{u.fullName}</p>
-                  <p className="text-xs text-gray-500">
-                    {u.phoneNumber} · {u.role}
-                  </p>
-                  <p className="text-xs text-gray-400">
-                    {u.zoneAllocations
-                      ?.map((z: any) => z.zone.name)
-                      .join(", ") || "No zone"}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setUnlocking(u.id);
-                  unlock.mutate(u.id);
-                }}
-                disabled={unlocking === u.id}
-                className="flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-sm font-medium disabled:opacity-50 transition-colors"
+          {lockedUsers.map((u: any) => {
+            const name = u.firstName
+              ? `${u.firstName} ${u.lastName}`
+              : u.fullName || "Unknown";
+            return (
+              <div
+                key={u.id}
+                className="flex items-center justify-between border border-red-100 bg-red-50 rounded-xl px-4 py-3"
               >
-                <Unlock size={14} />
-                {unlocking === u.id ? "Unlocking..." : "Unlock"}
-              </button>
-            </div>
-          ))}
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-red-200 flex items-center justify-center text-red-700 font-bold">
+                    {name.charAt(0)}
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-800">{name}</p>
+                    <p className="text-xs text-gray-500">
+                      {u.phoneNumber} · {u.role}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      {u.zoneAllocations
+                        ?.map((z: any) => z.zone.name)
+                        .join(", ") || "No zone"}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setUnlocking(u.id);
+                    unlock.mutate(u.id);
+                  }}
+                  disabled={unlocking === u.id}
+                  className="flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-sm font-medium disabled:opacity-50 transition-colors"
+                >
+                  <Unlock size={14} />
+                  {unlocking === u.id ? "Unlocking..." : "Unlock"}
+                </button>
+              </div>
+            );
+          })}
         </div>
       </div>
 
-      {/* Admin accounts — Super Admin resets Admin PINs here */}
+      {/* Admin accounts — Super Admin resets Admin Passwords here */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
         <h3 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
           <KeyRound size={16} className="text-teal-600" />
@@ -199,10 +203,13 @@ export default function Security() {
             >
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 font-bold">
-                  {a.fullName.charAt(0)}
+                  {a.firstName.charAt(0)}
                 </div>
                 <div>
-                  <p className="font-semibold text-gray-800">{a.fullName}</p>
+                  <p className="font-semibold text-gray-800">
+                    {a.title ? `${a.title} ` : ""}
+                    {a.firstName} {a.lastName}
+                  </p>
                   <p className="text-xs text-gray-500">
                     {a.phoneNumber} · {a.facility?.name || "No facility"}
                   </p>
@@ -222,23 +229,25 @@ export default function Security() {
                 className="flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-sm font-medium transition-colors"
               >
                 <KeyRound size={14} />
-                Reset PIN
+                Reset Password
               </button>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Confirm reset PIN */}
+      {/* Confirm reset Password */}
       {resetTarget && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 max-w-sm w-full space-y-4">
-            <h3 className="font-bold text-gray-900">Reset Admin PIN?</h3>
+            <h3 className="font-bold text-gray-900">Reset Admin Password?</h3>
             <p className="text-sm text-gray-600">
-              This will generate a new temporary PIN for{" "}
-              <strong>{resetTarget.fullName}</strong>. Their current PIN will
-              stop working immediately, and they'll be asked to create a new one
-              the next time they log in.
+              This will generate a new temporary password and email it to{" "}
+              <strong>
+                {resetTarget.title ? `${resetTarget.title} ` : ""}
+                {resetTarget.firstName} {resetTarget.lastName}
+              </strong>
+              .
             </p>
             <div className="flex gap-3">
               <button
@@ -246,7 +255,9 @@ export default function Security() {
                 onClick={() => resetPinMutation.mutate(resetTarget.id)}
                 disabled={resetPinMutation.isPending}
               >
-                {resetPinMutation.isPending ? "Resetting..." : "Yes, Reset PIN"}
+                {resetPinMutation.isPending
+                  ? "Resetting..."
+                  : "Yes, Reset Password"}
               </button>
               <button
                 className="px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50"
@@ -259,32 +270,16 @@ export default function Security() {
         </div>
       )}
 
-      {/* Show temp PIN once */}
+      {/* Show Password Emailed Success */}
       {resetResult && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 max-w-sm w-full space-y-4">
-            <h3 className="font-bold text-gray-900">Temporary PIN Generated</h3>
+            <h3 className="font-bold text-gray-900">Password Emailed</h3>
             <p className="text-sm text-gray-600">
-              Relay this PIN to <strong>{resetResult.fullName}</strong> now by
-              phone or SMS. For security, it will not be shown again after you
-              close this window.
+              A temporary password has been sent to the email address for{" "}
+              <strong>{resetResult.name}</strong>. They will be prompted to
+              change it on their next login.
             </p>
-            <div className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
-              <span className="text-2xl font-mono font-bold text-gray-900 tracking-widest">
-                {resetResult.tempPin}
-              </span>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(resetResult.tempPin);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 1500);
-                }}
-                className="flex items-center gap-1 text-xs text-teal-600 hover:text-teal-800 transition-colors"
-              >
-                {copied ? <Check size={14} /> : <Copy size={14} />}
-                {copied ? "Copied" : "Copy"}
-              </button>
-            </div>
             <button
               className="w-full px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-sm font-medium"
               onClick={() => setResetResult(null)}
@@ -313,40 +308,43 @@ export default function Security() {
               </tr>
             </thead>
             <tbody>
-              {alerts.map((a: any, i: number) => (
-                <tr
-                  key={i}
-                  className={`border-b border-gray-50 hover:bg-gray-50 ${i % 2 === 0 ? "" : "bg-gray-50/50"}`}
-                >
-                  <td className="px-3 py-2 font-medium text-gray-800">
-                    {a.user?.fullName || "—"}
-                  </td>
-                  <td className="px-3 py-2 text-gray-500 text-xs">
-                    {a.user?.phoneNumber || "—"}
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-                        a.action === "ACCOUNT_LOCKED"
-                          ? "bg-red-100 text-red-700"
-                          : "bg-green-100 text-green-700"
-                      }`}
-                    >
-                      {a.action === "ACCOUNT_LOCKED"
-                        ? "🔒 Locked"
-                        : "🔓 Unlocked"}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-gray-500 text-xs">
-                    {a.newValue?.reason || a.newValue?.unlockedBy
-                      ? "By admin"
-                      : "—"}
-                  </td>
-                  <td className="px-3 py-2 text-gray-400 text-xs">
-                    {fmt(a.loggedAt)}
-                  </td>
-                </tr>
-              ))}
+              {alerts.map((a: any, i: number) => {
+                const uName = a.user?.firstName
+                  ? `${a.user.firstName} ${a.user.lastName}`
+                  : a.user?.fullName || "—";
+                return (
+                  <tr
+                    key={i}
+                    className={`border-b border-gray-50 hover:bg-gray-50 ${i % 2 === 0 ? "" : "bg-gray-50/50"}`}
+                  >
+                    <td className="px-3 py-2 font-medium text-gray-800">
+                      {uName}
+                    </td>
+                    <td className="px-3 py-2 text-gray-500 text-xs">
+                      {a.user?.phoneNumber || "—"}
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                          a.action.includes("LOCKED")
+                            ? "bg-red-100 text-red-700"
+                            : "bg-green-100 text-green-700"
+                        }`}
+                      >
+                        {a.action.includes("LOCKED") ? "Locked" : "Unlocked"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-gray-500 text-xs">
+                      {a.newValue?.reason || a.newValue?.unlockedBy
+                        ? "By admin"
+                        : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-gray-400 text-xs">
+                      {fmt(a.loggedAt)}
+                    </td>
+                  </tr>
+                );
+              })}
               {alerts.length === 0 && (
                 <tr>
                   <td colSpan={5} className="text-center py-8 text-gray-400">

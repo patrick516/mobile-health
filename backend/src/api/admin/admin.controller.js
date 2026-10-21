@@ -318,6 +318,7 @@ export const resetUserPin = async (req, res, next) => {
         lastName: true,
         role: true,
         facilityId: true,
+        email: true, // Need this for web users
       },
     });
 
@@ -333,7 +334,7 @@ export const resetUserPin = async (req, res, next) => {
       if (!allowedRoles.includes(targetUser.role)) {
         return res.status(403).json({
           success: false,
-          message: "You are not permitted to reset this account's PIN.",
+          message: "You are not permitted to reset this account.",
         });
       }
       if (
@@ -348,39 +349,98 @@ export const resetUserPin = async (req, res, next) => {
     } else if (req.user.role !== "SUPER_ADMIN") {
       return res.status(403).json({
         success: false,
-        message: "You are not permitted to reset PINs.",
+        message: "You are not permitted to reset accounts.",
       });
     }
 
-    // Generate a random 4-digit temp PIN
-    const tempPin = String(Math.floor(1000 + Math.random() * 9000));
-    const pinHash = await bcrypt.hash(tempPin, 12);
+    const isWebUser = [
+      "NURSE",
+      "DISTRICT_OFFICER",
+      "PHARMACIST",
+      "ADMIN",
+      "SUPER_ADMIN",
+    ].includes(targetUser.role);
 
-    await prisma.user.update({
-      where: { id: targetUser.id },
-      data: {
-        pinHash,
-        mustChangePin: true,
-        pinResetAt: new Date(),
-        pinResetById: req.user.id,
-      },
-    });
+    if (isWebUser) {
+      // ── WEB USER FLOW: Generate Password & Email ──
+      if (!targetUser.email) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "This user does not have an email address on file. Cannot send password.",
+        });
+      }
 
-    await prisma.auditLog.create({
-      data: {
-        userId: req.user.id,
-        action: "PIN_RESET",
-        recordType: "USER",
-        recordId: targetUser.id,
-        newValue: { resetBy: req.user.id, resetAt: new Date().toISOString() },
-      },
-    });
+      const tempPassword = Math.random().toString(36).slice(-8);
+      const passwordHash = await bcrypt.hash(tempPassword, 12);
 
-    res.json({
-      success: true,
-      message: `Temporary PIN generated for ${targetUser.firstName} ${targetUser.lastName}. Relay it to them now — it will not be shown again.`,
-      data: { tempPin },
-    });
+      await prisma.user.update({
+        where: { id: targetUser.id },
+        data: {
+          passwordHash,
+          mustChangePin: true, // Forces password change on next web login
+          pinResetAt: new Date(),
+          pinResetById: req.user.id,
+        },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          userId: req.user.id,
+          action: "PASSWORD_RESET",
+          recordType: "USER",
+          recordId: targetUser.id,
+          newValue: { resetBy: req.user.id, resetAt: new Date().toISOString() },
+        },
+      });
+
+      // Send email via Brevo
+      await sendEmail(
+        targetUser.email,
+        "MobileHealth Malawi - Password Reset",
+        `<h3>Hello ${targetUser.firstName},</h3>
+         <p>Your password has been reset by an administrator.</p>
+         <p>Use the temporary password below to log in. You will be prompted to change it immediately.</p>
+         <p><strong>Temporary Password:</strong> ${tempPassword}</p>
+         <p><a href="${process.env.PORTAL_LINK || "http://localhost:5173"}">Go to Portal</a></p>`,
+      );
+
+      return res.json({
+        success: true,
+        message: `Temporary password generated and emailed to ${targetUser.email}.`,
+        data: { isWebUser: true }, // No tempPin sent back to frontend
+      });
+    } else {
+      // ── CCW FLOW: Generate PIN ──
+      const tempPin = String(Math.floor(1000 + Math.random() * 9000));
+      const pinHash = await bcrypt.hash(tempPin, 12);
+
+      await prisma.user.update({
+        where: { id: targetUser.id },
+        data: {
+          pinHash,
+          mustChangePin: true,
+          pinResetAt: new Date(),
+          pinResetById: req.user.id,
+        },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          userId: req.user.id,
+          action: "PIN_RESET",
+          recordType: "USER",
+          recordId: targetUser.id,
+          newValue: { resetBy: req.user.id, resetAt: new Date().toISOString() },
+        },
+      });
+
+      return res.json({
+        success: true,
+        message: `Temporary PIN generated for ${targetUser.firstName} ${targetUser.lastName}. Relay it to them now.`,
+        data: { tempPin }, // Send PIN back to frontend to display
+      });
+    }
   } catch (err) {
     next(err);
   }
