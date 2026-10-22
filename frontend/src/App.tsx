@@ -26,6 +26,7 @@ import RelocatedHouseholds from "./pages/admin/RelocatedHouseholds";
 import FacilitySetup from "./pages/admin/FacilitySetup";
 import ChangePassword from "./pages/auth/ChangePassword";
 import SupervisorFeedback from "./pages/feedback/SupervisorFeedback";
+import DrugList from "./pages/pharmacy/DrugList";
 
 // NEW: Import the unified Clinical Programs page
 import ClinicalPrograms from "./pages/programs/ClinicalPrograms";
@@ -99,7 +100,7 @@ export default function App() {
           <Route path="pharmacy/alerts" element={<ExpiryAlerts />} />
           <Route path="pharmacy/transactions" element={<TransactionLog />} />
           <Route path="pharmacy/suppliers" element={<Suppliers />} />
-
+          <Route path="pharmacy/inventory" element={<DrugList />} />
           {/* Unified Clinical Trackers (PNC, TB, FP) */}
           <Route path="programs" element={<ClinicalPrograms />} />
 

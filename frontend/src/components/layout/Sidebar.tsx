@@ -14,6 +14,7 @@ import {
   MessageSquare,
   Tablets,
   Activity,
+  Package,
 } from "lucide-react";
 import { useAuthStore } from "../../store/auth.store";
 import clsx from "clsx";
@@ -68,6 +69,12 @@ const NAV_GROUPS = [
         to: "/pharmacy",
         icon: Tablets,
         label: "Pharmacy Hub",
+        roles: ["PHARMACIST", "ADMIN", "DISTRICT_OFFICER", "NURSE"],
+      },
+      {
+        to: "/pharmacy/inventory",
+        icon: Package,
+        label: "Drug Inventory",
         roles: ["PHARMACIST", "ADMIN", "DISTRICT_OFFICER", "NURSE"],
       },
     ],
@@ -152,12 +159,10 @@ export default function Sidebar() {
       {/* Navigation grouped by sections */}
       <nav className="flex-1 px-3 py-4 overflow-y-auto no-scrollbar">
         {NAV_GROUPS.map((group, groupIdx) => {
-          // Filter the items in this group based on user role and Pharmacist overrides
           const visibleItems = group.items.filter((item) => {
             if (isPharmacist) {
-              if (item.to === "/") return false; // Hide Overview
-              if (item.to === "/pharmacy") return true; // Keep Pharmacy
-              if (item.to === "/drugs") return false; // Hide CHW Kits
+              if (item.to === "/") return false;
+              // Pharmacist only sees the Pharmacy group
               if (group.title !== "Pharmacy & Drugs") return false;
             }
             return (
@@ -179,7 +184,8 @@ export default function Sidebar() {
                 <NavLink
                   key={item.to}
                   to={item.to}
-                  end={item.to === "/"}
+                  // FIX: Added /pharmacy to the 'end' prop so it doesn't highlight when on /pharmacy/inventory
+                  end={item.to === "/" || item.to === "/pharmacy"}
                   className={({ isActive }) =>
                     clsx(
                       "flex items-center gap-3 px-3 py-2 rounded-lg mb-0.5 text-sm font-medium transition-colors",

@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PackagePlus } from "lucide-react";
 import api from "../../services/api";
+import Select from "../../components/ui/Select";
+import DatePicker from "../../components/ui/DatePicker";
 
 const CATEGORIES = [
   "Antibiotics",
@@ -85,6 +87,22 @@ export default function StockReceiving() {
     },
   });
 
+  const handleSubmit = () => {
+    if (
+      !form.drugName ||
+      !form.category ||
+      !form.unit ||
+      !form.batchNumber ||
+      !form.quantityReceived ||
+      !form.expiryDate
+    ) {
+      return setError(
+        "Please fill in all required fields (Drug Name, Category, Unit, Batch Number, Quantity, Expiry Date).",
+      );
+    }
+    mutation.mutate(form);
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Form */}
@@ -108,15 +126,13 @@ export default function StockReceiving() {
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Drug Name (English)
+              Drug Name (English) *
             </label>
             <input
               className="input"
               placeholder="e.g. Amoxicillin 250mg"
               value={form.drugName}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, drugName: e.target.value }))
-              }
+              onChange={(e) => setForm({ ...form, drugName: e.target.value })}
             />
           </div>
           <div className="col-span-2">
@@ -128,62 +144,50 @@ export default function StockReceiving() {
               placeholder="Chichewa name"
               value={form.drugNameChichewa}
               onChange={(e) =>
-                setForm((p) => ({ ...p, drugNameChichewa: e.target.value }))
+                setForm({ ...form, drugNameChichewa: e.target.value })
               }
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              Category *
+            </label>
+            <Select
+              value={form.category}
+              onChange={(val) => setForm({ ...form, category: val })}
+              placeholder="Select category..."
+              options={CATEGORIES.map((c) => ({ value: c, label: c }))}
             />
           </div>
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Category
+              Unit *
             </label>
-            <select
-              className="input"
-              value={form.category}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, category: e.target.value }))
-              }
-            >
-              <option value="">Select...</option>
-              {CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Unit
-            </label>
-            <select
-              className="input"
+            <Select
               value={form.unit}
-              onChange={(e) => setForm((p) => ({ ...p, unit: e.target.value }))}
-            >
-              <option value="">Select...</option>
-              {UNITS.map((u) => (
-                <option key={u} value={u}>
-                  {u}
-                </option>
-              ))}
-            </select>
+              onChange={(val) => setForm({ ...form, unit: val })}
+              placeholder="Select unit..."
+              options={UNITS.map((u) => ({ value: u, label: u }))}
+            />
           </div>
+
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Batch Number
+              Batch Number *
             </label>
             <input
               className="input"
               placeholder="e.g. BN2024-001"
               value={form.batchNumber}
               onChange={(e) =>
-                setForm((p) => ({ ...p, batchNumber: e.target.value }))
+                setForm({ ...form, batchNumber: e.target.value })
               }
             />
           </div>
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Quantity Received
+              Quantity Received *
             </label>
             <input
               className="input"
@@ -191,36 +195,30 @@ export default function StockReceiving() {
               placeholder="0"
               value={form.quantityReceived}
               onChange={(e) =>
-                setForm((p) => ({ ...p, quantityReceived: e.target.value }))
+                setForm({ ...form, quantityReceived: e.target.value })
               }
             />
           </div>
+
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
               Manufacture Date
             </label>
-            <input
-              className="input"
-              type="date"
+            <DatePicker
               value={form.manufactureDate}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, manufactureDate: e.target.value }))
-              }
+              onChange={(val) => setForm({ ...form, manufactureDate: val })}
             />
           </div>
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
               Expiry Date *
             </label>
-            <input
-              className="input"
-              type="date"
+            <DatePicker
               value={form.expiryDate}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, expiryDate: e.target.value }))
-              }
+              onChange={(val) => setForm({ ...form, expiryDate: val })}
             />
           </div>
+
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
               Minimum Stock Level
@@ -231,7 +229,7 @@ export default function StockReceiving() {
               placeholder="0"
               value={form.minimumStock}
               onChange={(e) =>
-                setForm((p) => ({ ...p, minimumStock: e.target.value }))
+                setForm({ ...form, minimumStock: e.target.value })
               }
             />
           </div>
@@ -245,29 +243,27 @@ export default function StockReceiving() {
               placeholder="0"
               value={form.reorderPoint}
               onChange={(e) =>
-                setForm((p) => ({ ...p, reorderPoint: e.target.value }))
+                setForm({ ...form, reorderPoint: e.target.value })
               }
             />
           </div>
+
+          {/* Supplier is now optional and uses the custom Select */}
           <div className="col-span-2">
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Supplier
+              Supplier (Optional)
             </label>
-            <select
-              className="input"
+            <Select
               value={form.supplierId}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, supplierId: e.target.value }))
+              onChange={(val) => setForm({ ...form, supplierId: val })}
+              placeholder="Select supplier (if applicable)..."
+              options={
+                suppliers?.map((s: any) => ({ value: s.id, label: s.name })) ||
+                []
               }
-            >
-              <option value="">Select supplier (optional)</option>
-              {suppliers?.map((s: any) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} — {s.type}
-                </option>
-              ))}
-            </select>
+            />
           </div>
+
           <div className="col-span-2">
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
               Notes
@@ -277,27 +273,17 @@ export default function StockReceiving() {
               rows={2}
               placeholder="Any additional notes..."
               value={form.notes}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, notes: e.target.value }))
-              }
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
             />
           </div>
         </div>
 
         <button
-          className="btn-primary flex items-center gap-2"
-          onClick={() => mutation.mutate(form)}
-          disabled={
-            mutation.isPending ||
-            !form.drugName ||
-            !form.category ||
-            !form.unit ||
-            !form.batchNumber ||
-            !form.quantityReceived ||
-            !form.expiryDate
-          }
+          className="btn-primary flex items-center gap-2 w-full"
+          onClick={handleSubmit}
+          disabled={mutation.isPending}
         >
-          <PackagePlus size={16} />
+          <PackagePlus size={16} />{" "}
           {mutation.isPending ? "Saving..." : "Receive Batch"}
         </button>
       </div>
@@ -322,13 +308,7 @@ export default function StockReceiving() {
                   </p>
                 </div>
                 <span
-                  className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
-                    b.status === "ACTIVE"
-                      ? "bg-green-100 text-green-700"
-                      : b.status === "DEPLETED"
-                        ? "bg-gray-100 text-gray-600"
-                        : "bg-red-100 text-red-700"
-                  }`}
+                  className={`text-xs px-2 py-0.5 rounded-full font-semibold ${b.status === "ACTIVE" ? "bg-green-100 text-green-700" : b.status === "DEPLETED" ? "bg-gray-100 text-gray-600" : "bg-red-100 text-red-700"}`}
                 >
                   {b.status}
                 </span>
