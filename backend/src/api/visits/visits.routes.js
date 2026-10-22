@@ -11,10 +11,12 @@ import { authenticate } from "../../middleware/auth.js";
 const router = Router();
 router.use(authenticate);
 
-router.get("/", getVisits);
-router.get("/:id", getVisit);
-router.post("/", createVisit);
+// FIX: Put static routes BEFORE the /:id route
 router.get("/outbreak-alerts", getOutbreakAlerts);
 router.patch("/outbreak-alerts/:id/resolve", resolveOutbreakAlert);
+
+router.get("/", getVisits);
+router.post("/", createVisit);
+router.get("/:id", getVisit);
 
 export default router;

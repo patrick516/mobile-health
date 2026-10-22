@@ -63,7 +63,8 @@ export default function Overview() {
   const { data: securityData } = useQuery({
     queryKey: ["security-alerts"],
     queryFn: () => api.get("/admin/security/alerts").then((r) => r.data.data),
-    refetchInterval: 60000,
+    enabled: isSuperAdmin === true, // Strict boolean check
+    retry: false,
   });
 
   const lockedUsers = securityData?.lockedUsers || [];

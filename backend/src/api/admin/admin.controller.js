@@ -7,29 +7,35 @@ import {
 } from "../../utils/smsService.js";
 import { sendEmail } from "../../utils/emailService.js";
 
-// ─── USERS
+//users
+
 export const getUsers = async (req, res, next) => {
   try {
     const { role, isActive } = req.query;
 
-    // Hide SUPER_ADMIN from non-super-admins
-    let roleFilter = {};
-    if (req.user.role !== "SUPER_ADMIN") {
-      roleFilter = { role: { not: "SUPER_ADMIN" } };
-    }
+    // Base filter
+    let whereClause = {
+      ...(isActive !== undefined ? { isActive: isActive === "true" } : {}),
+    };
 
-    let facilityScope = {};
-    if (req.user.role === "ADMIN" && req.user.facilityId) {
-      facilityScope = { facilityId: req.user.facilityId };
+    // Role Scoping
+    if (req.user.role === "SUPER_ADMIN") {
+      // Super Admin can filter by ADMIN or SUPER_ADMIN. If they try to filter by anything else, default to both.
+      whereClause.role =
+        role && ["ADMIN", "SUPER_ADMIN"].includes(role)
+          ? role
+          : { in: ["ADMIN", "SUPER_ADMIN"] };
+    } else if (req.user.role === "ADMIN") {
+      // Admin can only see staff in their facility. They can filter by CCW, NURSE, or PHARMACIST.
+      whereClause.facilityId = req.user.facilityId;
+      whereClause.role =
+        role && ["CCW", "NURSE", "PHARMACIST"].includes(role)
+          ? role
+          : { notIn: ["SUPER_ADMIN", "ADMIN"] };
     }
 
     const users = await prisma.user.findMany({
-      where: {
-        ...roleFilter,
-        ...(role ? { role } : {}),
-        ...(isActive !== undefined ? { isActive: isActive === "true" } : {}),
-        ...facilityScope,
-      },
+      where: whereClause,
       select: {
         id: true,
         title: true,
@@ -55,12 +61,12 @@ export const getUsers = async (req, res, next) => {
       },
       orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
     });
+
     res.json({ success: true, data: users });
   } catch (err) {
     next(err);
   }
 };
-
 export const createUser = async (req, res, next) => {
   try {
     const {
@@ -84,14 +90,26 @@ export const createUser = async (req, res, next) => {
       });
     }
 
-    const isWebUser = [
-      "NURSE",
-      "DISTRICT_OFFICER",
-      "PHARMACIST",
-      "ADMIN",
-      "SUPER_ADMIN",
-    ].includes(role);
+    // ─── SECURITY GUARD: Role Hierarchy Enforcement ───
+    if (req.user.role === "SUPER_ADMIN" && role !== "ADMIN") {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Super Admin can only create Facility Admins. Hospital staff must be added by the Admin.",
+      });
+    }
 
+    if (req.user.role === "ADMIN") {
+      const allowedRoles = ["CCW", "NURSE", "PHARMACIST"];
+      if (!allowedRoles.includes(role)) {
+        return res.status(403).json({
+          success: false,
+          message: "You are not authorized to create this role.",
+        });
+      }
+    }
+
+    const isWebUser = ["NURSE", "PHARMACIST", "ADMIN"].includes(role);
     let tempPassword = null;
     let passwordHash = null;
 
@@ -107,19 +125,23 @@ export const createUser = async (req, res, next) => {
 
     const pinHash = await bcrypt.hash(String(pin || "1234"), 12);
 
+    // ─── FACILITY ASSIGNMENT LOGIC ───
     let assignedFacilityId = null;
-    // Auto-assign facility based on the creator
-    if (["NURSE", "DISTRICT_OFFICER", "PHARMACIST", "CCW"].includes(role)) {
-      if (req.user.role === "ADMIN" && req.user.facilityId) {
-        assignedFacilityId = req.user.facilityId;
-      } else if (req.user.role === "SUPER_ADMIN") {
-        assignedFacilityId = facilityId || null;
-      }
-    } else if (role === "ADMIN") {
+
+    if (req.user.role === "SUPER_ADMIN") {
+      // Super Admin creates ADMINs, so they MUST specify the facility
       assignedFacilityId = facilityId || null;
+      if (!assignedFacilityId) {
+        return res.status(400).json({
+          success: false,
+          message: "A facility must be selected for the Admin.",
+        });
+      }
+    } else if (req.user.role === "ADMIN") {
+      // Admin creates staff, so they are auto-assigned to the Admin's facility
+      assignedFacilityId = req.user.facilityId;
     }
 
-    // Create the user
     const user = await prisma.user.create({
       data: {
         title: title || null,
@@ -148,11 +170,7 @@ export const createUser = async (req, res, next) => {
       });
     }
 
-    if (
-      ["NURSE", "DISTRICT_OFFICER"].includes(role) &&
-      taIds &&
-      taIds.length > 0
-    ) {
+    if (["NURSE"].includes(role) && taIds && taIds.length > 0) {
       await prisma.userTaAllocation.createMany({
         data: taIds.map((taId) => ({
           userId: user.id,
@@ -179,7 +197,7 @@ export const createUser = async (req, res, next) => {
       } else {
         await sendSms(
           user.phoneNumber,
-          `MobileHealth Malawi\n\nHello ${firstName}, your account has been created.\nRole: ${role}\nContact your admin for your PIN.`,
+          `MobileHealth Malawi\n\nHello ${firstName}, your account has been created.\nContact your admin for your PIN.`,
         );
       }
     } catch (notifyErr) {
@@ -193,18 +211,16 @@ export const createUser = async (req, res, next) => {
   } catch (err) {
     if (err.code === "P2002") {
       const target = err.meta?.target || [];
-      if (target.includes("email")) {
+      if (target.includes("email"))
         return res.status(409).json({
           success: false,
-          message: "This email address is already registered to another user.",
+          message: "This email address is already registered.",
         });
-      }
-      if (target.includes("phone_number")) {
+      if (target.includes("phone_number"))
         return res.status(409).json({
           success: false,
-          message: "This phone number is already registered to another user.",
+          message: "This phone number is already registered.",
         });
-      }
       return res.status(409).json({
         success: false,
         message: "A user with these details already exists.",
@@ -213,7 +229,6 @@ export const createUser = async (req, res, next) => {
     next(err);
   }
 };
-
 export const updateUser = async (req, res, next) => {
   try {
     // FIX: Added 'title' to the destructuring

@@ -24,10 +24,10 @@ import Suppliers from "./pages/pharmacy/Suppliers";
 import Security from "./pages/admin/Security";
 import RelocatedHouseholds from "./pages/admin/RelocatedHouseholds";
 import FacilitySetup from "./pages/admin/FacilitySetup";
-import ChangePin from "./pages/auth/ChangePin";
 import PncTracker from "./pages/pnc/PncTracker";
 import TbTracker from "./pages/tb/TbTracker";
 import FpTracker from "./pages/fp/FpTracker";
+import ChangePassword from "./pages/auth/ChangePassword";
 import SupervisorFeedback from "./pages/feedback/SupervisorFeedback";
 
 // Helper to check if token is expired synchronously
@@ -71,7 +71,7 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/setup" element={<SuperAdminSetup />} />
         <Route path="/facility-setup" element={<FacilitySetup />} />
-        <Route path="/change-pin" element={<ChangePin />} />
+        <Route path="/change-password" element={<ChangePassword />} />
 
         {/* All protected routes go inside this guard */}
         <Route

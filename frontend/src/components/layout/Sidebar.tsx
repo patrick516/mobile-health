@@ -107,9 +107,9 @@ const NAV = [
   {
     to: "/admin/users",
     icon: Users,
-    label: "Staff & Allocations",
+    label: "User Management",
     roles: ["ADMIN", "SUPER_ADMIN"],
-  },
+  }, // <-- Renamed
   {
     to: "/admin/facilities",
     icon: Building2,

@@ -14,7 +14,6 @@ import api from "../../services/api";
 import { useAuthStore } from "../../store/auth.store";
 import Select from "../../components/ui/Select";
 
-// Updated to match the exact backend response payload
 interface User {
   id: string;
   title?: string;
@@ -35,7 +34,6 @@ interface User {
   taAllocations?: Array<{ ta: { name: string } }>;
 }
 
-const ROLES = ["CCW", "NURSE", "DISTRICT_OFFICER", "PHARMACIST", "ADMIN"];
 const TITLES = ["Mr.", "Mrs.", "Ms.", "Miss", "Dr.", "Prof.", "Rev."];
 
 const extractPhoneSuffix = (raw: string): string => {
@@ -49,6 +47,17 @@ export default function Users() {
   const queryClient = useQueryClient();
   const { user, isAdmin, isSuperAdmin } = useAuthStore();
 
+  // 1. Roles allowed to be CREATED by the current user
+  const availableRoles =
+    user?.role === "SUPER_ADMIN" ? ["ADMIN"] : ["CCW", "NURSE", "PHARMACIST"];
+
+  // 2. Roles allowed to be FILTERED by the current user
+
+  const filterRoles =
+    user?.role === "SUPER_ADMIN"
+      ? ["SUPER_ADMIN", "ADMIN"] // Super Admin only filters Admins
+      : ["CCW", "NURSE", "PHARMACIST"]; // Admin filters their staff
+
   const [showForm, setShowForm] = useState(false);
   const [viewTarget, setViewTarget] = useState<User | null>(null);
 
@@ -60,7 +69,7 @@ export default function Users() {
     email: "",
     phone: "",
     pin: "1234",
-    role: "CCW",
+    role: availableRoles[0] || "CCW",
     facilityId: "",
     regionId: "",
     districtId: "",
@@ -124,18 +133,12 @@ export default function Users() {
     enabled: !!form.districtId,
   });
 
-  const isWebUser = [
-    "NURSE",
-    "DISTRICT_OFFICER",
-    "PHARMACIST",
-    "ADMIN",
-  ].includes(form.role);
+  const isWebUser = ["NURSE", "PHARMACIST", "ADMIN"].includes(form.role);
   const needsFacility =
-    ["CCW", "NURSE", "DISTRICT_OFFICER", "PHARMACIST", "ADMIN"].includes(
-      form.role,
-    ) && user?.role === "SUPER_ADMIN";
+    ["CCW", "NURSE", "PHARMACIST", "ADMIN"].includes(form.role) &&
+    user?.role === "SUPER_ADMIN";
   const isCcw = form.role === "CCW";
-  const isNurseOrDO = ["NURSE", "DISTRICT_OFFICER"].includes(form.role);
+  const isNurse = form.role === "NURSE";
 
   const validate = (): string | null => {
     if (!form.firstName.trim()) return "First name is required.";
@@ -176,7 +179,7 @@ export default function Users() {
       email: "",
       phone: "",
       pin: "1234",
-      role: "CCW",
+      role: availableRoles[0] || "CCW",
       facilityId: "",
       regionId: "",
       districtId: "",
@@ -455,7 +458,7 @@ export default function Users() {
                   }))
                 }
                 placeholder="Select role..."
-                options={ROLES.map((r) => ({
+                options={availableRoles.map((r) => ({
                   value: r,
                   label: r.replace("_", " "),
                 }))}
@@ -572,7 +575,7 @@ export default function Users() {
               </div>
             )}
 
-            {isNurseOrDO && (
+            {isNurse && (
               <div className="col-span-2 mt-2">
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                   Assign Traditional Authorities
@@ -876,7 +879,10 @@ export default function Users() {
             placeholder="All Roles"
             options={[
               { value: "", label: "All Roles" },
-              ...ROLES.map((r) => ({ value: r, label: r.replace("_", " ") })),
+              ...filterRoles.map((r) => ({
+                value: r,
+                label: r.replace("_", " "),
+              })),
             ]}
           />
         </div>

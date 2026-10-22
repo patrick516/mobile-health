@@ -13,7 +13,6 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -28,14 +27,20 @@ export default function Login() {
         password,
       });
 
-      const { token, user, mustChangePassword, tempToken } = res.data.data;
+      // 1. Check if password change is forced (New account or Admin reset)
+      if (res.data.mustChangePassword) {
+        const { tempToken, email: userEmail } = res.data.data;
 
-      if (mustChangePassword) {
+        // Save the temp token so the next page can use it to authenticate
         localStorage.setItem("auth_token", tempToken);
-        navigate("/change-password", { state: { email: res.data.data.email } });
+
+        // Redirect to the password reset page
+        navigate("/change-password", { state: { email: userEmail } });
         return;
       }
 
+      // 2. Normal Login
+      const { token, user } = res.data.data;
       setAuth(user, token);
       navigate("/", { replace: true });
     } catch (err: any) {
@@ -46,7 +51,6 @@ export default function Login() {
       setLoading(false);
     }
   };
-
   return (
     <div
       className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat"
