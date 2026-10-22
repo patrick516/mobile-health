@@ -6,12 +6,19 @@ import {
   ClipboardList,
   AlertTriangle,
   ArrowRight,
-  TrendingDown,
   Clock,
+  FlaskConical,
+  TrendingDown,
 } from "lucide-react";
 import api from "../../services/api";
+import { useAuthStore } from "../../store/auth.store";
 
 export default function PharmacyDashboard() {
+  const { user } = useAuthStore();
+
+  // Only Nurses and District Officers can issue CHW Kits
+  const canIssueKits = ["NURSE", "DISTRICT_OFFICER"].includes(user?.role || "");
+
   const { data: alerts } = useQuery({
     queryKey: ["pharmacy-alerts"],
     queryFn: () => api.get("/pharmacy/alerts").then((r) => r.data.data),
@@ -70,6 +77,18 @@ export default function PharmacyDashboard() {
     },
   ];
 
+  // Add the CHW Kits link ONLY for Nurse/DHO
+  if (canIssueKits) {
+    QUICK_LINKS.push({
+      to: "/drugs",
+      icon: FlaskConical,
+      label: "Issue CHW Kits",
+      desc: "Allocate drugs to Health Workers",
+      color: "text-indigo-700",
+      bg: "bg-indigo-50",
+    });
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -116,23 +135,25 @@ export default function PharmacyDashboard() {
       </div>
 
       {/* Quick links */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {QUICK_LINKS.map((link) => (
           <Link
-            key={link.to}
+            key={link.label}
             to={link.to}
             className="card p-5 flex items-center gap-4 hover:shadow-md transition-shadow"
           >
-            <div className={`${link.bg} p-3 rounded-xl`}>
+            <div className={`${link.bg} p-3 rounded-xl shrink-0`}>
               <link.icon size={22} className={link.color} />
             </div>
-            <div className="flex-1">
-              <p className="font-semibold text-gray-900 text-sm">
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-gray-900 text-sm truncate">
                 {link.label}
               </p>
-              <p className="text-xs text-gray-500 mt-0.5">{link.desc}</p>
+              <p className="text-xs text-gray-500 mt-0.5 truncate">
+                {link.desc}
+              </p>
             </div>
-            <ArrowRight size={16} className="text-gray-400" />
+            <ArrowRight size={16} className="text-gray-400 shrink-0" />
           </Link>
         ))}
       </div>
@@ -142,8 +163,8 @@ export default function PharmacyDashboard() {
         <div className="card p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-bold text-gray-900 flex items-center gap-2">
-              <Clock size={16} className="text-red-500" />
-              Expiring Within 90 Days
+              <Clock size={16} className="text-red-500" /> Expiring Within 90
+              Days
             </h2>
             <Link
               to="/pharmacy/alerts"
@@ -187,8 +208,8 @@ export default function PharmacyDashboard() {
       {lowStockCount > 0 && (
         <div className="card p-5">
           <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
-            <TrendingDown size={16} className="text-yellow-500" />
-            Low Stock Alert
+            <TrendingDown size={16} className="text-yellow-500" /> Low Stock
+            Alert
           </h2>
           <div className="space-y-2">
             {alerts?.lowStock?.slice(0, 5).map((b: any) => (
@@ -198,14 +219,14 @@ export default function PharmacyDashboard() {
               >
                 <div>
                   <p className="text-sm font-medium text-gray-800">
-                    {b.drug_name}
+                    {b.drug_name || b.drugName}
                   </p>
                   <p className="text-xs text-gray-500">
-                    Batch {b.batch_number}
+                    Batch {b.batch_number || b.batchNumber}
                   </p>
                 </div>
                 <span className="text-xs font-semibold px-2 py-1 rounded-full bg-yellow-100 text-yellow-700">
-                  {b.quantity_remaining} {b.unit} left
+                  {b.quantity_remaining ?? b.quantityRemaining} {b.unit} left
                 </span>
               </div>
             ))}

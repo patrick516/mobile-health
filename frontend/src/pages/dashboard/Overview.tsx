@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Users,
   AlertTriangle,
@@ -12,6 +12,10 @@ import {
   ShieldAlert,
   MapPin,
   Building2,
+  Pill,
+  Stethoscope,
+  HeartHandshake,
+  MessageSquare,
 } from "lucide-react";
 import api from "../../services/api";
 import { useAuthStore } from "../../store/auth.store";
@@ -46,10 +50,19 @@ function StatCard({ icon: Icon, label, value, color, to }: any) {
 }
 
 export default function Overview() {
+  const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const scopeLevel = useAuthStore((s) => s.scopeLevel());
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
+  const isPharmacist = user?.role === "PHARMACIST";
   const [taId, setTaId] = useState("");
+
+  // Redirect Pharmacist to their dedicated operational dashboard
+  useEffect(() => {
+    if (isPharmacist) {
+      navigate("/pharmacy", { replace: true });
+    }
+  }, [isPharmacist, navigate]);
 
   // ── SHARED QUERIES ──
   const { data: chwData } = useQuery<ChwActivity[]>({
@@ -58,12 +71,13 @@ export default function Overview() {
       api
         .get("/analytics/chw-activity", { params: taId ? { taId } : {} })
         .then((r) => r.data.data),
+    enabled: !isPharmacist,
   });
 
   const { data: securityData } = useQuery({
     queryKey: ["security-alerts"],
     queryFn: () => api.get("/admin/security/alerts").then((r) => r.data.data),
-    enabled: isSuperAdmin === true, // Strict boolean check
+    enabled: isSuperAdmin === true,
     retry: false,
   });
 
@@ -83,11 +97,11 @@ export default function Overview() {
     enabled: isSuperAdmin,
   });
 
-  // ── CLINICAL QUERIES (HIDDEN FROM SUPER ADMIN) ──
+  // ── CLINICAL QUERIES (HIDDEN FROM SUPER ADMIN & PHARMACIST) ──
   const { data: myTAs } = useQuery({
     queryKey: ["my-tas"],
     queryFn: () => api.get("/geography/my-tas").then((r) => r.data.data),
-    enabled: scopeLevel === "DISTRICT" && !isSuperAdmin,
+    enabled: scopeLevel === "DISTRICT" && !isSuperAdmin && !isPharmacist,
   });
 
   const { data: stats } = useQuery<OverviewStats>({
@@ -96,7 +110,7 @@ export default function Overview() {
       api
         .get("/analytics/overview", { params: taId ? { taId } : {} })
         .then((r) => r.data.data),
-    enabled: !isSuperAdmin,
+    enabled: !isSuperAdmin && !isPharmacist,
     refetchInterval: 30000,
   });
 
@@ -106,13 +120,13 @@ export default function Overview() {
       api
         .get("/map/events", { params: taId ? { taId } : {} })
         .then((r) => r.data.data),
-    enabled: !isSuperAdmin,
+    enabled: !isSuperAdmin && !isPharmacist,
   });
 
   const { data: outbreakData } = useQuery({
     queryKey: ["outbreak-alerts"],
     queryFn: () => api.get("/visits/outbreak-alerts").then((r) => r.data.data),
-    enabled: !isSuperAdmin,
+    enabled: !isSuperAdmin && !isPharmacist,
     refetchInterval: 60000,
   });
   const activeOutbreaks = outbreakData ?? [];
@@ -242,6 +256,49 @@ export default function Overview() {
   // ─────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
+      {/* Quick Actions for Nurses/Admins */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-2">
+        <Link
+          to="/pharmacy/requests"
+          className="card p-4 flex flex-col items-center justify-center hover:bg-teal-50 hover:border-teal-300 transition-colors border-dashed border-2"
+        >
+          <Pill className="text-teal-600 mb-2" size={24} />
+          <p className="text-sm font-semibold text-gray-800">Request Drugs</p>
+          <p className="text-xs text-gray-500 text-center">
+            Send to Pharmacist
+          </p>
+        </Link>
+
+        <Link
+          to="/referrals"
+          className="card p-4 flex flex-col items-center justify-center hover:bg-teal-50 hover:border-teal-300 transition-colors border-dashed border-2"
+        >
+          <Stethoscope className="text-red-500 mb-2" size={24} />
+          <p className="text-sm font-semibold text-gray-800">New Referral</p>
+          <p className="text-xs text-gray-500 text-center">Refer a patient</p>
+        </Link>
+
+        <Link
+          to="/programs"
+          className="card p-4 flex flex-col items-center justify-center hover:bg-teal-50 hover:border-teal-300 transition-colors border-dashed border-2"
+        >
+          <HeartHandshake className="text-purple-600 mb-2" size={24} />
+          <p className="text-sm font-semibold text-gray-800">
+            Clinical Programs
+          </p>
+          <p className="text-xs text-gray-500 text-center">PNC, TB, FP</p>
+        </Link>
+
+        <Link
+          to="/feedback"
+          className="card p-4 flex flex-col items-center justify-center hover:bg-teal-50 hover:border-teal-300 transition-colors border-dashed border-2"
+        >
+          <MessageSquare className="text-blue-600 mb-2" size={24} />
+          <p className="text-sm font-semibold text-gray-800">Send Feedback</p>
+          <p className="text-xs text-gray-500 text-center">Rate a CHW</p>
+        </Link>
+      </div>
+
       {/* District-wide TA filter */}
       {scopeLevel === "DISTRICT" && (
         <div className="card p-4 flex items-center gap-3">
@@ -363,7 +420,7 @@ export default function Overview() {
           label="ANC Overdue"
           value={stats?.ancOverdue ?? 0}
           color="bg-pink-600"
-          to="/pnc"
+          to="/programs"
         />
       </div>
 

@@ -24,11 +24,11 @@ import Suppliers from "./pages/pharmacy/Suppliers";
 import Security from "./pages/admin/Security";
 import RelocatedHouseholds from "./pages/admin/RelocatedHouseholds";
 import FacilitySetup from "./pages/admin/FacilitySetup";
-import PncTracker from "./pages/pnc/PncTracker";
-import TbTracker from "./pages/tb/TbTracker";
-import FpTracker from "./pages/fp/FpTracker";
 import ChangePassword from "./pages/auth/ChangePassword";
 import SupervisorFeedback from "./pages/feedback/SupervisorFeedback";
+
+// NEW: Import the unified Clinical Programs page
+import ClinicalPrograms from "./pages/programs/ClinicalPrograms";
 
 // Helper to check if token is expired synchronously
 const isTokenExpired = (token: string) => {
@@ -100,10 +100,9 @@ export default function App() {
           <Route path="pharmacy/transactions" element={<TransactionLog />} />
           <Route path="pharmacy/suppliers" element={<Suppliers />} />
 
-          {/* Clinical Trackers */}
-          <Route path="pnc" element={<PncTracker />} />
-          <Route path="tb" element={<TbTracker />} />
-          <Route path="fp" element={<FpTracker />} />
+          {/* Unified Clinical Trackers (PNC, TB, FP) */}
+          <Route path="programs" element={<ClinicalPrograms />} />
+
           <Route path="feedback" element={<SupervisorFeedback />} />
 
           {/* Admin Routes */}

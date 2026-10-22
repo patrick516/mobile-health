@@ -7,8 +7,7 @@ import {
 } from "../../utils/smsService.js";
 import { sendEmail } from "../../utils/emailService.js";
 
-//users
-
+// ─── USERS
 export const getUsers = async (req, res, next) => {
   try {
     const { role, isActive } = req.query;
@@ -67,6 +66,7 @@ export const getUsers = async (req, res, next) => {
     next(err);
   }
 };
+
 export const createUser = async (req, res, next) => {
   try {
     const {
@@ -138,8 +138,8 @@ export const createUser = async (req, res, next) => {
         });
       }
     } else if (req.user.role === "ADMIN") {
-      // Admin creates staff, so they are auto-assigned to the Admin's facility
-      assignedFacilityId = req.user.facilityId;
+      // Admin can assign to a specific clinic via facilityId, or defaults to their own hospital
+      assignedFacilityId = facilityId || req.user.facilityId;
     }
 
     const user = await prisma.user.create({
@@ -229,9 +229,9 @@ export const createUser = async (req, res, next) => {
     next(err);
   }
 };
+
 export const updateUser = async (req, res, next) => {
   try {
-    // FIX: Added 'title' to the destructuring
     const {
       title,
       firstName,
@@ -333,7 +333,7 @@ export const resetUserPin = async (req, res, next) => {
         lastName: true,
         role: true,
         facilityId: true,
-        email: true, // Need this for web users
+        email: true,
       },
     });
 
@@ -393,7 +393,7 @@ export const resetUserPin = async (req, res, next) => {
         where: { id: targetUser.id },
         data: {
           passwordHash,
-          mustChangePin: true, // Forces password change on next web login
+          mustChangePin: true,
           pinResetAt: new Date(),
           pinResetById: req.user.id,
         },
@@ -409,7 +409,6 @@ export const resetUserPin = async (req, res, next) => {
         },
       });
 
-      // Send email via Brevo
       await sendEmail(
         targetUser.email,
         "MobileHealth Malawi - Password Reset",
@@ -423,7 +422,7 @@ export const resetUserPin = async (req, res, next) => {
       return res.json({
         success: true,
         message: `Temporary password generated and emailed to ${targetUser.email}.`,
-        data: { isWebUser: true }, // No tempPin sent back to frontend
+        data: { isWebUser: true },
       });
     } else {
       // ── CCW FLOW: Generate PIN ──
@@ -453,7 +452,7 @@ export const resetUserPin = async (req, res, next) => {
       return res.json({
         success: true,
         message: `Temporary PIN generated for ${targetUser.firstName} ${targetUser.lastName}. Relay it to them now.`,
-        data: { tempPin }, // Send PIN back to frontend to display
+        data: { tempPin },
       });
     }
   } catch (err) {
@@ -815,6 +814,12 @@ export const createFacility = async (req, res, next) => {
         });
       }
 
+      // NEW: Auto-attach the clinic to the Admin's parent hospital
+      let linkedHospitalId = parentDistrictHospitalId || null;
+      if (req.user.role === "ADMIN" && req.user.facilityId) {
+        linkedHospitalId = req.user.facilityId;
+      }
+
       const facility = await prisma.facility.create({
         data: {
           name,
@@ -823,6 +828,7 @@ export const createFacility = async (req, res, next) => {
           taId,
           gpsLat: gpsLat || null,
           gpsLng: gpsLng || null,
+          parentDistrictHospitalId: linkedHospitalId, // Auto-linked!
         },
       });
       return res.status(201).json({ success: true, data: facility });

@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ClipboardList } from "lucide-react";
+import { ClipboardList, Plus, X } from "lucide-react";
 import api from "../../services/api";
+import Select from "../../components/ui/Select";
+import { useAuthStore } from "../../store/auth.store";
 
 const STATUS_COLORS: Record<string, string> = {
   PENDING: "bg-yellow-100 text-yellow-700",
@@ -10,11 +12,33 @@ const STATUS_COLORS: Record<string, string> = {
   REJECTED: "bg-red-100 text-red-700",
 };
 
+const STATUS_OPTIONS = [
+  { value: "ALL", label: "All Requests" },
+  { value: "PENDING", label: "Pending" },
+  { value: "FULFILLED", label: "Fulfilled" },
+  { value: "PARTIALLY_FULFILLED", label: "Partially Fulfilled" },
+];
+
 export default function PharmacyRequests() {
   const queryClient = useQueryClient();
+  const { user } = useAuthStore();
+
+  const isPharmacist = user?.role === "PHARMACIST";
+  const canCreateRequest = ["NURSE", "ADMIN", "DISTRICT_OFFICER"].includes(
+    user?.role || "",
+  );
+
   const [filter, setFilter] = useState("PENDING");
   const [selected, setSelected] = useState<any>(null);
   const [fulfillData, setFulfillData] = useState<Record<string, string>>({});
+
+  const [showForm, setShowForm] = useState(false);
+  const [newRequest, setNewRequest] = useState({
+    patientName: "",
+    diagnosis: "",
+    drugName: "",
+    quantity: "",
+  });
 
   const { data: requests, isLoading } = useQuery({
     queryKey: ["pharmacy-requests", filter],
@@ -24,6 +48,29 @@ export default function PharmacyRequests() {
           params: filter !== "ALL" ? { status: filter } : {},
         })
         .then((r) => r.data.data),
+  });
+
+  const { data: drugs } = useQuery({
+    queryKey: ["drugs-formulary"],
+    queryFn: () => api.get("/drugs").then((r) => r.data.data),
+    enabled: showForm,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data: any) => api.post("/pharmacy/requests", data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["pharmacy-requests"] });
+      setShowForm(false);
+      setNewRequest({
+        patientName: "",
+        diagnosis: "",
+        drugName: "",
+        quantity: "",
+      });
+      alert("Drug request sent to Pharmacist successfully!");
+    },
+    onError: (err: any) =>
+      alert(err.response?.data?.message || "Failed to create request"),
   });
 
   const fulfillMutation = useMutation({
@@ -46,27 +93,54 @@ export default function PharmacyRequests() {
     fulfillMutation.mutate({ id: selected.id, data: { fulfilledItems } });
   };
 
+  const handleCreate = () => {
+    if (
+      !newRequest.patientName ||
+      !newRequest.drugName ||
+      !newRequest.quantity
+    ) {
+      return alert("Please fill in Patient Name, Drug, and Quantity.");
+    }
+    createMutation.mutate({
+      patientName: newRequest.patientName,
+      diagnosis: newRequest.diagnosis,
+      items: [
+        {
+          drugName: newRequest.drugName,
+          quantityRequested: parseInt(newRequest.quantity),
+        },
+      ],
+    });
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <ClipboardList size={20} className="text-orange-600" />
-          <h1 className="text-xl font-bold text-gray-900">Drug Requests</h1>
+          <h1 className="text-xl font-bold text-gray-900">
+            Patient Prescriptions
+          </h1>
         </div>
-        <div className="flex gap-2">
-          {["ALL", "PENDING", "FULFILLED", "PARTIALLY_FULFILLED"].map((s) => (
+
+        <div className="flex items-center gap-4">
+          {canCreateRequest && (
             <button
-              key={s}
-              onClick={() => setFilter(s)}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-                filter === s
-                  ? "bg-teal-700 text-white"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              }`}
+              onClick={() => setShowForm(true)}
+              className="btn-primary flex items-center gap-2"
             >
-              {s.replace("_", " ")}
+              <Plus size={16} /> New Prescription
             </button>
-          ))}
+          )}
+
+          <div className="w-56">
+            <Select
+              value={filter}
+              onChange={setFilter}
+              placeholder="Filter by status..."
+              options={STATUS_OPTIONS}
+            />
+          </div>
         </div>
       </div>
 
@@ -86,7 +160,8 @@ export default function PharmacyRequests() {
                   </p>
                 )}
                 <p className="text-xs text-gray-500">
-                  Requested by {r.requestedBy?.fullName} ·{" "}
+                  Requested by {r.requestedBy?.firstName}{" "}
+                  {r.requestedBy?.lastName} ·{" "}
                   {new Date(r.createdAt).toLocaleDateString()}
                 </p>
                 <div className="mt-2 space-y-1">
@@ -105,7 +180,7 @@ export default function PharmacyRequests() {
                 >
                   {r.status.replace("_", " ")}
                 </span>
-                {r.status === "PENDING" && (
+                {isPharmacist && r.status === "PENDING" && (
                   <button
                     onClick={() => {
                       setSelected(r);
@@ -131,16 +206,100 @@ export default function PharmacyRequests() {
         )}
       </div>
 
-      {/* Fulfill modal */}
+      {showForm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="font-bold text-gray-900">
+                New Patient Prescription
+              </h3>
+              <button onClick={() => setShowForm(false)}>
+                <X size={20} className="text-gray-400" />
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Patient Name
+              </label>
+              <input
+                className="input"
+                value={newRequest.patientName}
+                onChange={(e) =>
+                  setNewRequest({ ...newRequest, patientName: e.target.value })
+                }
+                placeholder="e.g. John Doe"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Diagnosis (Optional)
+              </label>
+              <input
+                className="input"
+                value={newRequest.diagnosis}
+                onChange={(e) =>
+                  setNewRequest({ ...newRequest, diagnosis: e.target.value })
+                }
+                placeholder="e.g. Severe Malaria"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Drug
+              </label>
+              <Select
+                value={newRequest.drugName}
+                onChange={(val) =>
+                  setNewRequest({ ...newRequest, drugName: val })
+                }
+                placeholder="Select drug..."
+                options={
+                  drugs?.map((d: any) => ({
+                    value: d.nameEnglish,
+                    label: d.nameEnglish,
+                  })) || []
+                }
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Quantity
+              </label>
+              <input
+                className="input"
+                type="number"
+                value={newRequest.quantity}
+                onChange={(e) =>
+                  setNewRequest({ ...newRequest, quantity: e.target.value })
+                }
+                placeholder="0"
+              />
+            </div>
+
+            <button
+              onClick={handleCreate}
+              disabled={createMutation.isPending}
+              className="btn-primary w-full"
+            >
+              {createMutation.isPending ? "Sending..." : "Send to Pharmacist"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {selected && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4">
             <h3 className="font-bold text-gray-900">
-              Fulfill Request — {selected.patientName}
+              Fulfill Prescription — {selected.patientName}
             </h3>
             <p className="text-sm text-gray-500">
-              Enter quantity to dispense for each item. Stock will deduct
-              automatically using FEFO.
+              Enter quantity to dispense for each item. Stock will deduct using
+              FEFO.
             </p>
             <div className="space-y-3">
               {selected.items.map((item: any) => (
@@ -157,7 +316,6 @@ export default function PharmacyRequests() {
                   <input
                     type="number"
                     className="input w-24 text-center"
-                    placeholder="0"
                     value={fulfillData[item.id] || ""}
                     onChange={(e) =>
                       setFulfillData((p) => ({
@@ -172,14 +330,14 @@ export default function PharmacyRequests() {
             <div className="flex gap-3">
               <button
                 onClick={() => setSelected(null)}
-                className="flex-1 border border-gray-200 text-gray-600 py-2 rounded-lg text-sm hover:bg-gray-50"
+                className="flex-1 border border-gray-200 text-gray-600 py-2 rounded-lg text-sm"
               >
                 Cancel
               </button>
               <button
                 onClick={handleFulfill}
                 disabled={fulfillMutation.isPending}
-                className="flex-1 bg-teal-700 text-white py-2 rounded-lg text-sm hover:bg-teal-800"
+                className="flex-1 bg-teal-700 text-white py-2 rounded-lg text-sm"
               >
                 {fulfillMutation.isPending
                   ? "Processing..."

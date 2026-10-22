@@ -9,6 +9,7 @@ import {
   Eye,
   EyeOff,
   X,
+  Building2,
 } from "lucide-react";
 import api from "../../services/api";
 import { useAuthStore } from "../../store/auth.store";
@@ -52,11 +53,10 @@ export default function Users() {
     user?.role === "SUPER_ADMIN" ? ["ADMIN"] : ["CCW", "NURSE", "PHARMACIST"];
 
   // 2. Roles allowed to be FILTERED by the current user
-
   const filterRoles =
     user?.role === "SUPER_ADMIN"
-      ? ["SUPER_ADMIN", "ADMIN"] // Super Admin only filters Admins
-      : ["CCW", "NURSE", "PHARMACIST"]; // Admin filters their staff
+      ? ["SUPER_ADMIN", "ADMIN"]
+      : ["CCW", "NURSE", "PHARMACIST"];
 
   const [showForm, setShowForm] = useState(false);
   const [viewTarget, setViewTarget] = useState<User | null>(null);
@@ -110,9 +110,11 @@ export default function Users() {
     enabled: isAdmin() || isSuperAdmin(),
   });
 
+  // For SUPER_ADMIN: cascade query for facilities
   const { data: regions } = useQuery({
     queryKey: ["regions"],
     queryFn: () => api.get("/geography/regions").then((r) => r.data.data),
+    enabled: isSuperAdmin(),
   });
 
   const { data: districts } = useQuery({
@@ -121,24 +123,36 @@ export default function Users() {
       api
         .get(`/geography/districts?regionId=${form.regionId}`)
         .then((r) => r.data.data),
-    enabled: !!form.regionId,
+    enabled: !!form.regionId && isSuperAdmin(),
   });
 
-  const { data: facilities } = useQuery({
-    queryKey: ["user-facilities", form.districtId],
+  const { data: superAdminFacilities } = useQuery({
+    queryKey: ["user-facilities-sa", form.districtId],
     queryFn: () =>
       api
         .get(`/admin/facilities?districtId=${form.districtId}`)
         .then((r) => r.data.data),
-    enabled: !!form.districtId,
+    enabled: !!form.districtId && isSuperAdmin(),
+  });
+
+  // For ADMIN: fetch all facilities (clinics + hospital) in their district
+  const { data: adminFacilities } = useQuery({
+    queryKey: ["user-facilities-admin", user?.facility?.districtId],
+    queryFn: () =>
+      api
+        .get(`/admin/facilities?districtId=${user?.facility?.districtId}`)
+        .then((r) => r.data.data),
+    enabled: user?.role === "ADMIN" && !!user?.facility?.districtId,
   });
 
   const isWebUser = ["NURSE", "PHARMACIST", "ADMIN"].includes(form.role);
-  const needsFacility =
-    ["CCW", "NURSE", "PHARMACIST", "ADMIN"].includes(form.role) &&
-    user?.role === "SUPER_ADMIN";
+  const needsFacility = ["ADMIN"].includes(form.role) && isSuperAdmin();
   const isCcw = form.role === "CCW";
   const isNurse = form.role === "NURSE";
+
+  // Admin assigning a Nurse or Pharmacist to a specific clinic
+  const showAdminFacilityDropdown =
+    user?.role === "ADMIN" && ["NURSE", "PHARMACIST"].includes(form.role);
 
   const validate = (): string | null => {
     if (!form.firstName.trim()) return "First name is required.";
@@ -227,6 +241,7 @@ export default function Users() {
       role: form.role,
       zoneIds: form.selectedZoneIds,
       taIds: form.selectedTaIds,
+      // Pass the chosen facility, or let the backend default to Admin's main hospital
       ...(form.facilityId ? { facilityId: form.facilityId } : {}),
     };
     createMutation.mutate(payload);
@@ -473,7 +488,8 @@ export default function Users() {
               </div>
             )}
 
-            {needsFacility && user?.role === "SUPER_ADMIN" && (
+            {/* SUPER ADMIN: Region -> District -> Facility Cascade */}
+            {needsFacility && isSuperAdmin() && (
               <>
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1.5">
@@ -530,7 +546,7 @@ export default function Users() {
                       }
                       placeholder="Select facility..."
                       options={
-                        facilities?.map((f: any) => ({
+                        superAdminFacilities?.map((f: any) => ({
                           value: f.id,
                           label: `${f.name} — ${f.facilityType?.replace(/_/g, " ")}`,
                         })) || []
@@ -539,6 +555,34 @@ export default function Users() {
                   </div>
                 )}
               </>
+            )}
+
+            {/* ADMIN: Assign Nurse/Pharmacist to a specific Clinic */}
+            {showAdminFacilityDropdown && (
+              <div className="col-span-2 bg-teal-50 border border-teal-200 rounded-lg p-4 mt-2">
+                <label className="block text-sm font-semibold text-teal-900 mb-1.5 flex items-center gap-2">
+                  <Building2 size={16} /> Assign to Facility / Clinic
+                </label>
+                <p className="text-xs text-teal-700 mb-3">
+                  By default, staff are assigned to your main hospital. If you
+                  are creating a staff member for a specific clinic in your
+                  district, select it here.
+                </p>
+                <Select
+                  value={form.facilityId}
+                  onChange={(val) =>
+                    setForm((p) => ({ ...p, facilityId: val }))
+                  }
+                  placeholder="Default to main hospital"
+                  options={[
+                    { value: "", label: "My Main Hospital (Default)" },
+                    ...(adminFacilities?.map((f: any) => ({
+                      value: f.id,
+                      label: f.name,
+                    })) || []),
+                  ]}
+                />
+              </div>
             )}
 
             {isCcw && (
@@ -582,7 +626,9 @@ export default function Users() {
                 </label>
                 <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto p-2 border rounded-lg bg-gray-50">
                   {tas?.length === 0 && (
-                    <p className="text-sm text-gray-500">No TAs found.</p>
+                    <p className="text-sm text-gray-500">
+                      No TAs found. Create them in Geography Setup first.
+                    </p>
                   )}
                   {tas?.map((t: any) => (
                     <label
