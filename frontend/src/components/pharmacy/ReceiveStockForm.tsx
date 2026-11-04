@@ -2,8 +2,8 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PackagePlus } from "lucide-react";
 import api from "../../services/api";
-import Select from "../../components/ui/Select";
-import DatePicker from "../../components/ui/DatePicker";
+import Select from "../ui/Select";
+import DatePicker from "../ui/DatePicker";
 
 const CATEGORIES = [
   "Antibiotics",
