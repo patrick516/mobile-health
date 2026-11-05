@@ -5,7 +5,7 @@ import {
   APP_DOWNLOAD_LINK,
   PORTAL_LINK,
 } from "../../utils/smsService.js";
-import { sendEmail } from "../../utils/emailService.js";
+import { sendEmail, buildEmail, infoBox } from "../../utils/emailService.js";
 
 // ─── USERS
 export const getUsers = async (req, res, next) => {
@@ -138,8 +138,20 @@ export const createUser = async (req, res, next) => {
         });
       }
     } else if (req.user.role === "ADMIN") {
-      // Admin can assign to a specific clinic via facilityId, or defaults to their own hospital
       assignedFacilityId = facilityId || req.user.facilityId;
+    }
+    // ─── LIMIT: maximum 2 admins per facility ───
+    if (role === "ADMIN") {
+      const adminCount = await prisma.user.count({
+        where: { role: "ADMIN", facilityId: assignedFacilityId },
+      });
+      if (adminCount >= 2) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "This facility already has 2 admins. Remove one before adding another.",
+        });
+      }
     }
 
     const user = await prisma.user.create({
@@ -187,12 +199,19 @@ export const createUser = async (req, res, next) => {
         await sendEmail(
           user.email,
           "Welcome to MobileHealth Malawi - Your Account Details",
-          `<h3>Hello ${firstName},</h3>
-           <p>Your account has been created. Use the credentials below to log in:</p>
-           <p><strong>Email:</strong> ${email}</p>
-           <p><strong>Temporary Password:</strong> ${tempPassword}</p>
-           <p>You will be asked to change this password on your first login.</p>
-           <p><a href="${process.env.PORTAL_LINK || "http://localhost:5173"}">Go to Portal</a></p>`,
+          buildEmail({
+            heading: `Hello ${firstName},`,
+            bodyHtml: `
+              <p>Your account has been created. Use the credentials below to log in:</p>
+              ${infoBox([
+                ["Email", user.email],
+                ["Temporary password", tempPassword],
+              ])}
+              <p>You will be asked to change this password on your first login.</p>`,
+            buttonText: "Go to Portal",
+            buttonLink:
+              process.env.PORTAL_LINK || "https://mob-health.vercel.app",
+          }),
         );
       } else {
         await sendSms(
@@ -242,6 +261,37 @@ export const updateUser = async (req, res, next) => {
       role,
       facilityId,
     } = req.body;
+
+    // ─── LIMIT: maximum 2 admins per facility ───
+    const existing = await prisma.user.findUnique({
+      where: { id: req.params.id },
+      select: { role: true, facilityId: true },
+    });
+    if (!existing) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found." });
+    }
+
+    const finalRole = role || existing.role;
+    const finalFacilityId =
+      facilityId !== undefined ? facilityId || null : existing.facilityId;
+
+    if (finalRole === "ADMIN" && finalFacilityId) {
+      const otherAdmins = await prisma.user.count({
+        where: {
+          role: "ADMIN",
+          facilityId: finalFacilityId,
+          id: { not: req.params.id },
+        },
+      });
+      if (otherAdmins >= 2) {
+        return res.status(409).json({
+          success: false,
+          message: "That facility already has 2 admins.",
+        });
+      }
+    }
 
     const user = await prisma.user.update({
       where: { id: req.params.id },
@@ -412,13 +462,17 @@ export const resetUserPin = async (req, res, next) => {
       await sendEmail(
         targetUser.email,
         "MobileHealth Malawi - Password Reset",
-        `<h3>Hello ${targetUser.firstName},</h3>
-         <p>Your password has been reset by an administrator.</p>
-         <p>Use the temporary password below to log in. You will be prompted to change it immediately.</p>
-         <p><strong>Temporary Password:</strong> ${tempPassword}</p>
-         <p><a href="${process.env.PORTAL_LINK || "http://localhost:5173"}">Go to Portal</a></p>`,
+        buildEmail({
+          heading: `Hello ${targetUser.firstName},`,
+          bodyHtml: `
+            <p>Your password has been reset by an administrator.</p>
+            <p>Use the temporary password below to log in. You will be prompted to change it immediately.</p>
+            ${infoBox([["Temporary password", tempPassword]])}`,
+          buttonText: "Go to Portal",
+          buttonLink:
+            process.env.PORTAL_LINK || "https://mob-health.vercel.app",
+        }),
       );
-
       return res.json({
         success: true,
         message: `Temporary password generated and emailed to ${targetUser.email}.`,
