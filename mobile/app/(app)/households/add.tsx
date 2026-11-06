@@ -63,6 +63,12 @@ interface ExistingHousehold {
   village_name: string;
 }
 
+const toStructureType = (wall: string) => {
+  if (wall === "MUD_CLAY") return "MUD";
+  if (wall === "WOOD_TIMBER") return "OTHER";
+  return wall || "OTHER";
+};
+
 const STEPS = ["ID", "Location", "Consent", "Details", "Review"];
 const DRAFT_KEY = "household_add";
 
@@ -449,7 +455,7 @@ export default function AddHouseholdScreen() {
             ? "THUMBPRINT_VERIFIED"
             : signaturePath || null,
           idPreview,
-          structureType || wallMaterial,
+          toStructureType(wallMaterial),
           wallMaterial || null,
           roofMaterial || null,
           floorType || null,
@@ -481,7 +487,7 @@ export default function AddHouseholdScreen() {
             consentGiven,
             consentSignatureUrl: signaturePath || null,
             householdNumber: idPreview,
-            structureType: structureType || wallMaterial,
+            structureType: toStructureType(wallMaterial),
             wallMaterial: wallMaterial || null,
             roofMaterial: roofMaterial || null,
             floorType: floorType || null,
@@ -539,7 +545,7 @@ export default function AddHouseholdScreen() {
             consentGiven,
             consentSignatureUrl: signaturePath || null,
             householdNumber: idPreview,
-            structureType: structureType || wallMaterial,
+            structureType: toStructureType(wallMaterial),
             wallMaterial: wallMaterial || null,
             roofMaterial: roofMaterial || null,
             floorType: floorType || null,
@@ -565,7 +571,7 @@ export default function AddHouseholdScreen() {
           consentGiven,
           consentSignatureUrl: signaturePath || null,
           householdNumber: idPreview,
-          structureType: structureType || wallMaterial,
+          structureType: toStructureType(wallMaterial),
           wallMaterial: wallMaterial || null,
           roofMaterial: roofMaterial || null,
           floorType: floorType || null,
