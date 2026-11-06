@@ -268,16 +268,17 @@ export default function Geography() {
               setForm((p) => ({ ...p, type: val, parentId: "" }))
             }
             placeholder="Select type..."
-            options={[
-              ...(isSuperAdmin
+            options={
+              isSuperAdmin
                 ? [
                     { value: "region", label: "Region" },
                     { value: "district", label: "District" },
                   ]
-                : []),
-              { value: "ta", label: "Traditional Authority" },
-              { value: "zone", label: "Zone" },
-            ]}
+                : [
+                    { value: "ta", label: "Traditional Authority" },
+                    { value: "zone", label: "Zone" },
+                  ]
+            }
           />
         </div>
 

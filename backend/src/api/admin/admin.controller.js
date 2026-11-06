@@ -582,6 +582,12 @@ export const createDistrict = async (req, res, next) => {
 
 export const createTA = async (req, res, next) => {
   try {
+    if (req.user.role !== "ADMIN") {
+      return res.status(403).json({
+        success: false,
+        message: "Only facility admins can create Traditional Authorities.",
+      });
+    }
     const { name, districtId } = req.body;
     if (!name || !districtId)
       return res
@@ -613,6 +619,12 @@ export const createTA = async (req, res, next) => {
 
 export const createZone = async (req, res, next) => {
   try {
+    if (req.user.role !== "ADMIN") {
+      return res.status(403).json({
+        success: false,
+        message: "Only facility admins can create Zones.",
+      });
+    }
     const { name, taId } = req.body;
     if (!name || !taId)
       return res
