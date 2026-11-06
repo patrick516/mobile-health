@@ -315,7 +315,19 @@ export const createHousehold = async (req, res, next) => {
         headNationalId: headNationalId || null,
         consentGiven: consentGiven || false,
         consentSignatureUrl: consentSignatureUrl || null,
-        structureType,
+        structureType: [
+          "BRICK",
+          "MUD",
+          "IRON_SHEET",
+          "GRASS_THATCH",
+          "OTHER",
+        ].includes(
+          { MUD_CLAY: "MUD", WOOD_TIMBER: "OTHER" }[structureType] ??
+            structureType,
+        )
+          ? ({ MUD_CLAY: "MUD", WOOD_TIMBER: "OTHER" }[structureType] ??
+            structureType)
+          : "OTHER",
         wallMaterial: wallMaterial || null,
         roofMaterial: roofMaterial || null,
         floorType: floorType || null,

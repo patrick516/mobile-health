@@ -15,6 +15,20 @@ const resolveMember = async (id) =>
       })
     : null;
 
+// Phones send the wall material code as structureType; map it to a valid enum value
+const STRUCTURE_MAP = { MUD_CLAY: "MUD", WOOD_TIMBER: "OTHER" };
+const VALID_STRUCTURES = [
+  "BRICK",
+  "MUD",
+  "IRON_SHEET",
+  "GRASS_THATCH",
+  "OTHER",
+];
+const toValidStructure = (value) => {
+  const mapped = STRUCTURE_MAP[value] ?? value;
+  return VALID_STRUCTURES.includes(mapped) ? mapped : "OTHER";
+};
+
 const HOUSEHOLD_FIELDS = [
   "householdNumber",
   "villageId",
@@ -210,6 +224,9 @@ export const syncBatch = async (req, res, next) => {
               }
 
               const fields = pick(payload, HOUSEHOLD_FIELDS);
+              fields.structureType = toValidStructure(
+                fields.structureType ?? fields.wallMaterial,
+              );
 
               // Number already used by a DIFFERENT household? Make this one unique.
               const numberOwner = fields.householdNumber
