@@ -116,67 +116,123 @@ export default function Geography() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      {/* Tree View */}
-      <div className="card p-5">
-        <h2 className="font-bold text-gray-900 mb-4">Geographic Hierarchy</h2>
-        <div className="space-y-1 text-sm max-h-[600px] overflow-y-auto">
-          {tree?.map((region) => (
-            <div key={region.id}>
-              <button
-                onClick={() => toggle(region.id)}
-                className="flex items-center gap-2 w-full text-left py-1.5 px-2 rounded hover:bg-gray-50 font-semibold text-gray-800"
-              >
-                <ChevronRight
-                  size={14}
-                  className={`transition-transform ${expanded[region.id] ? "rotate-90" : ""}`}
-                />
-                Region: {region.name}
-              </button>
-              {expanded[region.id] &&
-                region.districts?.map((d) => (
-                  <div key={d.id} className="ml-4">
-                    <button
-                      onClick={() => toggle(d.id)}
-                      className="flex items-center gap-2 w-full text-left py-1.5 px-2 rounded hover:bg-gray-50 text-gray-700"
-                    >
-                      <ChevronRight
-                        size={14}
-                        className={`transition-transform ${expanded[d.id] ? "rotate-90" : ""}`}
-                      />
-                      District: {d.name}
-                    </button>
-                    {expanded[d.id] &&
-                      d.traditionalAuthorities?.map((ta: any) => (
-                        <div key={ta.id} className="ml-4">
-                          <button
-                            onClick={() => toggle(ta.id)}
-                            className="flex items-center gap-2 w-full text-left py-1.5 px-2 rounded hover:bg-gray-50 text-gray-600"
-                          >
-                            <ChevronRight
-                              size={14}
-                              className={`transition-transform ${expanded[ta.id] ? "rotate-90" : ""}`}
-                            />
-                            TA: {ta.name}
-                          </button>
-                          {expanded[ta.id] &&
-                            ta.zones?.map((z: any) => (
-                              <div
-                                key={z.id}
-                                className="ml-4 py-1 px-2 text-gray-500"
-                              >
-                                Zone: {z.name} ({z.villages?.length ?? 0}{" "}
-                                villages)
-                              </div>
-                            ))}
-                        </div>
-                      ))}
-                  </div>
-                ))}
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* ADMIN: only their own district's TAs and Zones */}
+      {isAdmin && !isSuperAdmin && (
+        <div className="card p-5">
+          {(() => {
+            const myDistrict = tree?.flatMap((r) => r.districts ?? [])[0];
+            const myTas = myDistrict?.traditionalAuthorities ?? [];
+            return (
+              <>
+                <h2 className="font-bold text-gray-900">
+                  {myDistrict ? `${myDistrict.name} District` : "Your District"}
+                </h2>
+                <p className="text-xs text-gray-500 mb-4">
+                  Traditional Authorities and Zones in your district
+                </p>
 
+                {myTas.length === 0 ? (
+                  <p className="text-sm text-gray-500 bg-gray-50 rounded-lg px-4 py-6 text-center">
+                    No TAs added yet. Use the form to add your first one.
+                  </p>
+                ) : (
+                  <div className="space-y-3 text-sm max-h-[600px] overflow-y-auto">
+                    {myTas.map((ta: any) => (
+                      <div
+                        key={ta.id}
+                        className="border border-gray-100 rounded-lg p-3"
+                      >
+                        <p className="font-semibold text-gray-800">
+                          TA: {ta.name}
+                        </p>
+                        {ta.zones?.length > 0 ? (
+                          <ul className="mt-2 ml-4 space-y-1 text-gray-600">
+                            {ta.zones.map((z: any) => (
+                              <li key={z.id}>
+                                Zone: {z.name}{" "}
+                                <span className="text-gray-400">
+                                  ({z.villages?.length ?? 0} villages)
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="mt-1 ml-4 text-xs text-gray-400">
+                            No zones yet
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* SUPER ADMIN: full Tree View */}
+      {isSuperAdmin && (
+        <div className="card p-5">
+          <h2 className="font-bold text-gray-900 mb-4">Geographic Hierarchy</h2>
+          <div className="space-y-1 text-sm max-h-[600px] overflow-y-auto">
+            {tree?.map((region) => (
+              <div key={region.id}>
+                <button
+                  onClick={() => toggle(region.id)}
+                  className="flex items-center gap-2 w-full text-left py-1.5 px-2 rounded hover:bg-gray-50 font-semibold text-gray-800"
+                >
+                  <ChevronRight
+                    size={14}
+                    className={`transition-transform ${expanded[region.id] ? "rotate-90" : ""}`}
+                  />
+                  Region: {region.name}
+                </button>
+                {expanded[region.id] &&
+                  region.districts?.map((d) => (
+                    <div key={d.id} className="ml-4">
+                      <button
+                        onClick={() => toggle(d.id)}
+                        className="flex items-center gap-2 w-full text-left py-1.5 px-2 rounded hover:bg-gray-50 text-gray-700"
+                      >
+                        <ChevronRight
+                          size={14}
+                          className={`transition-transform ${expanded[d.id] ? "rotate-90" : ""}`}
+                        />
+                        District: {d.name}
+                      </button>
+                      {expanded[d.id] &&
+                        d.traditionalAuthorities?.map((ta: any) => (
+                          <div key={ta.id} className="ml-4">
+                            <button
+                              onClick={() => toggle(ta.id)}
+                              className="flex items-center gap-2 w-full text-left py-1.5 px-2 rounded hover:bg-gray-50 text-gray-600"
+                            >
+                              <ChevronRight
+                                size={14}
+                                className={`transition-transform ${expanded[ta.id] ? "rotate-90" : ""}`}
+                              />
+                              TA: {ta.name}
+                            </button>
+                            {expanded[ta.id] &&
+                              ta.zones?.map((z: any) => (
+                                <div
+                                  key={z.id}
+                                  className="ml-4 py-1 px-2 text-gray-500"
+                                >
+                                  Zone: {z.name} ({z.villages?.length ?? 0}{" "}
+                                  villages)
+                                </div>
+                              ))}
+                          </div>
+                        ))}
+                    </div>
+                  ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {/* Add Form */}
       <div className="card p-5 space-y-4 h-fit">
         <h2 className="font-bold text-gray-900">Add Geographic Unit</h2>

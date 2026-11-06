@@ -286,25 +286,57 @@ export const createVillage = async (req, res, next) => {
   }
 };
 
-// GET /api/geography/tree — full tree for admin
+// GET /api/geography/tree
+// SUPER_ADMIN → full national tree
+// Everyone else → only their facility's district (same shape, filtered)
 export const getGeographyTree = async (req, res, next) => {
   try {
+    const treeInclude = {
+      traditionalAuthorities: {
+        include: {
+          zones: {
+            include: { villages: true },
+            orderBy: { name: "asc" },
+          },
+        },
+        orderBy: { name: "asc" },
+      },
+    };
+
+    // ─── SUPER ADMIN: full tree ───
+    if (req.user.role === "SUPER_ADMIN") {
+      const regions = await prisma.region.findMany({
+        include: { districts: { include: treeInclude } },
+        orderBy: { name: "asc" },
+      });
+      return res.json({ success: true, data: regions });
+    }
+
+    // ─── EVERYONE ELSE: scope to their facility's district ───
+    let districtId = null;
+    if (req.user.facilityId) {
+      const facility = await prisma.facility.findUnique({
+        where: { id: req.user.facilityId },
+        select: { districtId: true, ta: { select: { districtId: true } } },
+      });
+      districtId = facility?.districtId ?? facility?.ta?.districtId ?? null;
+    }
+
+    if (!districtId) {
+      return res.json({ success: true, data: [] });
+    }
+
     const regions = await prisma.region.findMany({
+      where: { districts: { some: { id: districtId } } },
       include: {
         districts: {
-          include: {
-            traditionalAuthorities: {
-              include: {
-                zones: {
-                  include: { villages: true },
-                },
-              },
-            },
-          },
+          where: { id: districtId },
+          include: treeInclude,
         },
       },
       orderBy: { name: "asc" },
     });
+
     res.json({ success: true, data: regions });
   } catch (err) {
     next(err);

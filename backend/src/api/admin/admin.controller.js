@@ -100,12 +100,7 @@ export const createUser = async (req, res, next) => {
     }
 
     if (req.user.role === "ADMIN") {
-      const allowedRoles = [
-        "CCW",
-        "NURSE",
-        "DISTRICT_OFFICER",
-        "PHARMACIST",
-      ];
+      const allowedRoles = ["CCW", "NURSE", "DISTRICT_OFFICER", "PHARMACIST"];
       if (!allowedRoles.includes(role)) {
         return res.status(403).json({
           success: false,
@@ -524,9 +519,25 @@ export const resetUserPin = async (req, res, next) => {
   }
 };
 
+// ─── Helper: resolve the district an ADMIN is allowed to manage ───
+const getAdminDistrictId = async (req) => {
+  if (!req.user.facilityId) return null;
+  const facility = await prisma.facility.findUnique({
+    where: { id: req.user.facilityId },
+    select: { districtId: true, ta: { select: { districtId: true } } },
+  });
+  return facility?.districtId ?? facility?.ta?.districtId ?? null;
+};
+
 // ─── GEOGRAPHY
 export const createRegion = async (req, res, next) => {
   try {
+    if (req.user.role !== "SUPER_ADMIN") {
+      return res.status(403).json({
+        success: false,
+        message: "Only the Super Admin can create regions.",
+      });
+    }
     const { name } = req.body;
     if (!name)
       return res
@@ -546,6 +557,12 @@ export const createRegion = async (req, res, next) => {
 
 export const createDistrict = async (req, res, next) => {
   try {
+    if (req.user.role !== "SUPER_ADMIN") {
+      return res.status(403).json({
+        success: false,
+        message: "Only the Super Admin can create districts.",
+      });
+    }
     const { name, regionId } = req.body;
     if (!name || !regionId)
       return res
@@ -570,6 +587,16 @@ export const createTA = async (req, res, next) => {
       return res
         .status(400)
         .json({ success: false, message: "name and districtId are required." });
+
+    if (req.user.role === "ADMIN") {
+      const adminDistrictId = await getAdminDistrictId(req);
+      if (!adminDistrictId || adminDistrictId !== districtId) {
+        return res.status(403).json({
+          success: false,
+          message: "You can only add TAs to your own facility's district.",
+        });
+      }
+    }
     const ta = await prisma.traditionalAuthority.create({
       data: { name, districtId },
     });
@@ -591,6 +618,19 @@ export const createZone = async (req, res, next) => {
       return res
         .status(400)
         .json({ success: false, message: "name and taId are required." });
+    if (req.user.role === "ADMIN") {
+      const adminDistrictId = await getAdminDistrictId(req);
+      const ta = await prisma.traditionalAuthority.findUnique({
+        where: { id: taId },
+        select: { districtId: true },
+      });
+      if (!ta || !adminDistrictId || ta.districtId !== adminDistrictId) {
+        return res.status(403).json({
+          success: false,
+          message: "You can only add zones to TAs in your own district.",
+        });
+      }
+    }
     const zone = await prisma.zone.create({ data: { name, taId } });
     res.status(201).json({ success: true, data: zone });
   } catch (err) {
