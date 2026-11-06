@@ -15,7 +15,6 @@ const TABLE_BY_TYPE: Record<string, string> = {
   IMMUNISATION: "immunisations",
   DRUG_DISPENSE: "drug_dispenses",
   STOCK_REQUEST: "stock_requests",
-  ANC_VISIT: "anc_visits",
   PNC_VISIT: "pnc_visits",
   TB_DOT_VISIT: "tb_dot_visits",
   FP_VISIT: "fp_visits",
@@ -161,7 +160,9 @@ const pullFromServer = async () => {
 
         const shouldNotify =
           oldStatus?.status !== r.status &&
-          (r.status === "TREATED" || r.status === "FEEDBACK_SENT");
+          (r.status === "TREATED" ||
+            r.status === "FEEDBACK_SENT" ||
+            r.status === "COMPLETED");
         if (shouldNotify) {
           const memberName = r.member?.fullName || "a patient";
           const message = r.feedbackNote

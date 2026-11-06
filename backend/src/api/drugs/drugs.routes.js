@@ -15,9 +15,17 @@ router.use(authenticate);
 
 router.get("/", getDrugs);
 router.get("/stock", getStock);
-router.patch("/stock/:drugId", updateStock);
+router.patch(
+  "/stock/:drugId",
+  role("SUPER_ADMIN", "ADMIN", "NURSE", "DISTRICT_OFFICER", "PHARMACIST"),
+  updateStock,
+);
 router.post("/requests", createStockRequest);
 router.get("/requests", getStockRequests);
-router.patch("/requests/:id", updateStockRequest);
+router.patch(
+  "/requests/:id",
+  role("SUPER_ADMIN", "ADMIN", "NURSE", "DISTRICT_OFFICER", "PHARMACIST"),
+  updateStockRequest,
+);
 
 export default router;

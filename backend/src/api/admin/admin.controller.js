@@ -100,7 +100,12 @@ export const createUser = async (req, res, next) => {
     }
 
     if (req.user.role === "ADMIN") {
-      const allowedRoles = ["CCW", "NURSE", "PHARMACIST"];
+      const allowedRoles = [
+        "CCW",
+        "NURSE",
+        "DISTRICT_OFFICER",
+        "PHARMACIST",
+      ];
       if (!allowedRoles.includes(role)) {
         return res.status(403).json({
           success: false,
@@ -109,7 +114,12 @@ export const createUser = async (req, res, next) => {
       }
     }
 
-    const isWebUser = ["NURSE", "PHARMACIST", "ADMIN"].includes(role);
+    const isWebUser = [
+      "NURSE",
+      "DISTRICT_OFFICER",
+      "PHARMACIST",
+      "ADMIN",
+    ].includes(role);
     let tempPassword = null;
     let passwordHash = null;
 

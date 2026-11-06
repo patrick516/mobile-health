@@ -1,5 +1,5 @@
 import prisma from "../../config/db.js";
-import { buildVillageScope } from "../../middleware/auth.js";
+import { buildVillageScope, villageInScope } from "../../middleware/auth.js";
 
 // ─── OUTBREAK ALERT SYMPTOMS TO WATCH ───
 const OUTBREAK_SYMPTOMS = [
@@ -93,7 +93,16 @@ const MUAC_STATUS = (mm) => {
 // GET /api/visits?memberId=&chwId=&from=&to=&page=&limit=&taId=
 export const getVisits = async (req, res, next) => {
   try {
-    const { memberId, chwId, from, to, taId, page = 1, limit = 50 } = req.query;
+    const {
+      memberId,
+      chwId,
+      visitType,
+      from,
+      to,
+      taId,
+      page = 1,
+      limit = 50,
+    } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const villageScope = buildVillageScope(req.user, taId);
@@ -103,11 +112,7 @@ export const getVisits = async (req, res, next) => {
       ...(memberId ? { memberId } : {}),
       ...(chwId ? { chwId } : {}),
       ...(visitType ? { visitType } : {}),
-      ...(memberId || chwId
-        ? {}
-        : hasScope
-          ? { member: { household: { village: villageScope } } }
-          : {}),
+      ...(hasScope ? { member: { household: { village: villageScope } } } : {}),
       // CCW sees only visits they personally recorded
       ...(req.user.role === "CCW" ? { chwId: req.user.id } : {}),
     };
@@ -226,6 +231,23 @@ export const createVisit = async (req, res, next) => {
         success: false,
         message:
           "localId, memberId, householdId, visitedAt, and visitType are required.",
+      });
+    }
+
+    // ── Zone allocation: only record visits inside your own zone ──
+    const targetHousehold = await prisma.household.findUnique({
+      where: { id: householdId },
+      select: { villageId: true },
+    });
+    if (!targetHousehold) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Household not found." });
+    }
+    if (!(await villageInScope(req.user, targetHousehold.villageId))) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not allocated to this zone.",
       });
     }
 

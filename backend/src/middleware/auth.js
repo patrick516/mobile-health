@@ -15,6 +15,20 @@ export const authenticate = async (req, res, next) => {
     const token = authHeader.split(" ")[1];
     const decoded = verifyToken(token);
 
+    // Temp-password tokens may ONLY complete the password reset —
+    // they must not work as a general session token.
+    if (decoded.role === "TEMP_PASSWORD_RESET") {
+      const isPasswordReset =
+        req.method === "PATCH" &&
+        req.originalUrl.startsWith("/api/auth/complete-password-reset");
+      if (!isPasswordReset) {
+        return res.status(403).json({
+          success: false,
+          message: "Please set a new password before continuing.",
+        });
+      }
+    }
+
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
       select: {
@@ -58,9 +72,7 @@ export const authenticate = async (req, res, next) => {
       });
     }
 
-    // ─── Compute data scope based on role + facility ───
-    // scopeLevel: "ALL" | "DISTRICT" | "TA" | "ZONE"
-    let scopeLevel = "ALL";
+    let scopeLevel = "NONE";
     let districtId = null;
     let taIds = user.taAllocations.map((a) => a.taId); // legacy fallback
     let zoneIds = user.zoneAllocations.map((a) => a.zoneId);
@@ -129,4 +141,16 @@ export const buildVillageScope = (user, requestedTaId) => {
 
   // No recognizable scope — show nothing rather than leak data
   return { id: "__no_match__" };
+};
+
+// True when the village sits inside the caller's data scope.
+export const villageInScope = async (user, villageId) => {
+  if (!villageId) return false;
+  const scope = buildVillageScope(user);
+  if (Object.keys(scope).length === 0) return true; // scopeLevel ALL
+  const found = await prisma.village.findFirst({
+    where: { id: villageId, ...scope },
+    select: { id: true },
+  });
+  return !!found;
 };

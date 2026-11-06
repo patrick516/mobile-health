@@ -1,5 +1,5 @@
 import prisma from "../../config/db.js";
-import { buildVillageScope } from "../../middleware/auth.js";
+import { buildVillageScope, villageInScope } from "../../middleware/auth.js";
 
 // PNC schedule: day offsets from delivery date
 const PNC_SCHEDULE = [
@@ -26,12 +26,20 @@ export const generatePncSchedule = async (req, res, next) => {
 
     const member = await prisma.householdMember.findUnique({
       where: { id: memberId },
+      include: { household: { select: { villageId: true } } },
     });
 
     if (!member) {
       return res
         .status(404)
         .json({ success: false, message: "Member not found." });
+    }
+
+    if (!(await villageInScope(req.user, member.household.villageId))) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not allocated to this zone.",
+      });
     }
 
     const base = new Date(deliveryDate);
@@ -151,11 +159,25 @@ export const recordPncVisit = async (req, res, next) => {
       });
     }
 
-    const existing = await prisma.pncVisit.findUnique({ where: { id } });
+    const existing = await prisma.pncVisit.findUnique({
+      where: { id },
+      include: {
+        member: { select: { household: { select: { villageId: true } } } },
+      },
+    });
     if (!existing) {
       return res
         .status(404)
         .json({ success: false, message: "PNC visit not found." });
+    }
+
+    if (
+      !(await villageInScope(req.user, existing.member.household.villageId))
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not allocated to this zone.",
+      });
     }
 
     const updated = await prisma.pncVisit.update({
@@ -206,6 +228,22 @@ export const recordPncVisit = async (req, res, next) => {
 export const getMemberPncVisits = async (req, res, next) => {
   try {
     const { memberId } = req.params;
+
+    const member = await prisma.householdMember.findUnique({
+      where: { id: memberId },
+      select: { household: { select: { villageId: true } } },
+    });
+    if (!member) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Member not found." });
+    }
+    if (!(await villageInScope(req.user, member.household.villageId))) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not allocated to this zone.",
+      });
+    }
 
     const visits = await prisma.pncVisit.findMany({
       where: { memberId },

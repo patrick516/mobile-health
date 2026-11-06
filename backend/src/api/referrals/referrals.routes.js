@@ -14,6 +14,10 @@ router.use(authenticate);
 router.get("/", getReferrals);
 router.get("/:id", getReferral);
 router.post("/", createReferral);
-router.patch("/:id", updateReferral); // Nurse only — update status + feedback
+router.patch(
+  "/:id",
+  role("NURSE", "DISTRICT_OFFICER", "ADMIN", "SUPER_ADMIN"),
+  updateReferral,
+);
 
 export default router;

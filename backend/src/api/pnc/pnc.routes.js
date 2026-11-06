@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { authenticate } from "../../middleware/auth.js";
+import { role } from "../../middleware/role.js";
 import {
   generatePncSchedule,
   getPncSchedules,
@@ -11,7 +12,11 @@ const router = Router();
 router.use(authenticate);
 
 // Generate PNC schedule when delivery is recorded
-router.post("/generate/:memberId", generatePncSchedule);
+router.post(
+  "/generate/:memberId",
+  role("CCW", "NURSE", "ADMIN", "SUPER_ADMIN"),
+  generatePncSchedule,
+);
 
 // List schedules (scoped to user's zone/district)
 router.get("/schedules", getPncSchedules);
@@ -20,6 +25,10 @@ router.get("/schedules", getPncSchedules);
 router.get("/member/:memberId", getMemberPncVisits);
 
 // Record an actual PNC visit
-router.patch("/:id/record", recordPncVisit);
+router.patch(
+  "/:id/record",
+  role("CCW", "NURSE", "ADMIN", "SUPER_ADMIN"),
+  recordPncVisit,
+);
 
 export default router;

@@ -1,9 +1,19 @@
 import prisma from "../../config/db.js";
-import { buildVillageScope } from "../../middleware/auth.js";
+import { buildVillageScope, villageInScope } from "../../middleware/auth.js";
 import {
   calculateHouseholdRisk,
   calculateHealthScore,
 } from "../../utils/riskScore.js";
+
+// True if the user is allowed to touch this household (same scope rule as reads)
+const canAccessHousehold = async (user, householdId) => {
+  if (user.scopeLevel === "ALL") return true;
+  const found = await prisma.household.findFirst({
+    where: { id: householdId, village: buildVillageScope(user) },
+    select: { id: true },
+  });
+  return !!found;
+};
 // GET /api/households?zoneId=&villageId=&search=&page=&limit=
 export const getHouseholds = async (req, res, next) => {
   try {
@@ -11,15 +21,16 @@ export const getHouseholds = async (req, res, next) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     // Explicit filters take priority; otherwise fall back to the user's scope
-    let villageFilter = {};
-    if (villageId) {
-      villageFilter = { villageId };
-    } else if (zoneId) {
-      villageFilter = { village: { zoneId } };
-    } else {
-      villageFilter = { village: buildVillageScope(req.user, taId) };
-    }
-
+    // The user's scope ALWAYS applies; villageId / zoneId can only narrow it
+    const villageFilter = {
+      village: {
+        AND: [
+          buildVillageScope(req.user, taId),
+          ...(villageId ? [{ id: villageId }] : []),
+          ...(zoneId ? [{ zoneId }] : []),
+        ],
+      },
+    };
     const where = {
       ...villageFilter,
       status: "ACTIVE",
@@ -280,6 +291,14 @@ export const createHousehold = async (req, res, next) => {
         .json({ success: false, message: "Village not found." });
     }
 
+    // ── Zone allocation: CCW/nurse may only register in their own zone ──
+    if (!(await villageInScope(req.user, villageId))) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not allocated to this zone.",
+      });
+    }
+
     const prefix = village.zone.ta.name.substring(0, 3).toUpperCase();
     const count = await prisma.household.count({
       where: { village: { zoneId: village.zoneId } },
@@ -327,6 +346,12 @@ export const createHousehold = async (req, res, next) => {
 // PATCH /api/households/:id
 export const updateHousehold = async (req, res, next) => {
   try {
+    if (!(await canAccessHousehold(req.user, req.params.id))) {
+      return res.status(403).json({
+        success: false,
+        message: "You do not have access to this household.",
+      });
+    }
     const allowed = [
       "headOfHouseholdName",
       "headPhone",
@@ -374,6 +399,13 @@ export const relocateSameZone = async (req, res, next) => {
   try {
     const { gpsLat, gpsLng, landmark, reason } = req.body;
 
+    if (!(await canAccessHousehold(req.user, req.params.id))) {
+      return res.status(403).json({
+        success: false,
+        message: "You do not have access to this household.",
+      });
+    }
+
     const household = await prisma.household.update({
       where: { id: req.params.id },
       data: {
@@ -404,6 +436,13 @@ export const relocateSameZone = async (req, res, next) => {
 export const relocateNewZone = async (req, res, next) => {
   try {
     const { reason, destinationZoneName } = req.body;
+
+    if (!(await canAccessHousehold(req.user, req.params.id))) {
+      return res.status(403).json({
+        success: false,
+        message: "You do not have access to this household.",
+      });
+    }
 
     const oldHousehold = await prisma.household.findUnique({
       where: { id: req.params.id },
@@ -485,7 +524,7 @@ export const linkRelocation = async (req, res, next) => {
 export const getRelocatedHouseholds = async (req, res, next) => {
   try {
     const households = await prisma.household.findMany({
-      where: { status: "RELOCATED" },
+      where: { status: "RELOCATED", village: buildVillageScope(req.user) },
       include: {
         village: { include: { zone: { include: { ta: true } } } },
         relocatedTo: {

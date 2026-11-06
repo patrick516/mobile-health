@@ -485,7 +485,6 @@ export const backfillSyncedFlags = async (): Promise<void> => {
       IMMUNISATION: "immunisations",
       DRUG_DISPENSE: "drug_dispenses",
       STOCK_REQUEST: "stock_requests",
-      ANC_VISIT: "anc_visits",
       PNC_VISIT: "pnc_visits",
       TB_DOT_VISIT: "tb_dot_visits",
       FP_VISIT: "fp_visits",

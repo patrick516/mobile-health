@@ -50,13 +50,15 @@ export default function Users() {
 
   // 1. Roles allowed to be CREATED by the current user
   const availableRoles =
-    user?.role === "SUPER_ADMIN" ? ["ADMIN"] : ["CCW", "NURSE", "PHARMACIST"];
+    user?.role === "SUPER_ADMIN"
+      ? ["ADMIN"]
+      : ["CCW", "NURSE", "DISTRICT_OFFICER", "PHARMACIST"];
 
   // 2. Roles allowed to be FILTERED by the current user
   const filterRoles =
     user?.role === "SUPER_ADMIN"
       ? ["SUPER_ADMIN", "ADMIN"]
-      : ["CCW", "NURSE", "PHARMACIST"];
+      : ["CCW", "NURSE", "DISTRICT_OFFICER", "PHARMACIST"];
 
   const [showForm, setShowForm] = useState(false);
   const [viewTarget, setViewTarget] = useState<User | null>(null);
@@ -145,14 +147,20 @@ export default function Users() {
     enabled: user?.role === "ADMIN" && !!user?.facility?.districtId,
   });
 
-  const isWebUser = ["NURSE", "PHARMACIST", "ADMIN"].includes(form.role);
+  const isWebUser = [
+    "NURSE",
+    "DISTRICT_OFFICER",
+    "PHARMACIST",
+    "ADMIN",
+  ].includes(form.role);
   const needsFacility = ["ADMIN"].includes(form.role) && isSuperAdmin();
   const isCcw = form.role === "CCW";
   const isNurse = form.role === "NURSE";
 
-  // Admin assigning a Nurse or Pharmacist to a specific clinic
+  // Admin assigning a Nurse, Pharmacist or District Officer to a specific facility
   const showAdminFacilityDropdown =
-    user?.role === "ADMIN" && ["NURSE", "PHARMACIST"].includes(form.role);
+    user?.role === "ADMIN" &&
+    ["NURSE", "DISTRICT_OFFICER", "PHARMACIST"].includes(form.role);
 
   const validate = (): string | null => {
     if (!form.firstName.trim()) return "First name is required.";

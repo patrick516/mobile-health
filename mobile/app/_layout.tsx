@@ -60,13 +60,13 @@ export default function RootLayout() {
         const afterPending = await debugPendingRecords();
         console.log(`📊 Pending after cleanup: ${afterPending?.length || 0}`);
 
-        if (afterPending && afterPending.length > 0) {
-          console.log(
-            `🔧 Force clearing ${afterPending.length} remaining records...`,
-          );
-          const forced = await forceClearSyncQueue();
-          console.log(`🧹 Force cleared ${forced} records`);
-        }
+        // if (afterPending && afterPending.length > 0) {
+        //   console.log(
+        //     `🔧 Force clearing ${afterPending.length} remaining records...`,
+        //   );
+        //   const forced = await forceClearSyncQueue();
+        //   console.log(`🧹 Force cleared ${forced} records`);
+        // }
       } catch (syncError) {
         console.error("Sync cleanup error:", syncError);
       }

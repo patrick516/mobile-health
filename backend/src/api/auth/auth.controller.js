@@ -584,7 +584,29 @@ export const flagLockout = async (req, res, next) => {
     const { phoneNumber: rawPhone, reason, lockedUntil } = req.body;
     const phoneNumber = normalizePhone(rawPhone);
 
-    console.log("📤 Flagging lockout for:", phoneNumber);
+    console.log(" Flagging lockout for:", phoneNumber);
+
+    // SECURITY: this route is public, so it must never touch staff accounts
+    const existingUser = await prisma.user.findUnique({
+      where: { phoneNumber },
+      select: { role: true },
+    });
+    if (existingUser && existingUser.role !== "CCW") {
+      return res
+        .status(403)
+        .json({ success: false, message: "This account cannot be flagged." });
+    }
+
+    // SECURITY: lock end time must be a real date, at most 72 hours ahead
+    const lockEnd = new Date(lockedUntil);
+    if (
+      isNaN(lockEnd.getTime()) ||
+      lockEnd.getTime() - Date.now() > 72 * 60 * 60 * 1000
+    ) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid lock time." });
+    }
 
     let user = await prisma.user.findUnique({
       where: { phoneNumber },

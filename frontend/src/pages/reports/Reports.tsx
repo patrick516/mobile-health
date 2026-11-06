@@ -8,10 +8,12 @@ import {
   Activity,
   Shield,
   Loader2,
+  Lock,
 } from "lucide-react";
 import api from "../../services/api";
 import Select from "../../components/ui/Select";
 import DatePicker from "../../components/ui/DatePicker";
+import { useAuthStore } from "../../store/auth.store";
 
 type ReportType =
   | "households"
@@ -81,6 +83,13 @@ export default function Reports() {
     .toISOString()
     .split("T")[0];
 
+  const { user, isSuperAdmin } = useAuthStore();
+  // Only Super Admin may browse the whole country; everyone else is locked
+  // to the district of their own facility.
+  const isGlobal = isSuperAdmin();
+  const myDistrictId = user?.facility?.districtId || "";
+  const locked = !isGlobal && !!myDistrictId;
+
   const [reportType, setReportType] = useState<ReportType>("referrals");
   const [from, setFrom] = useState(thirtyDaysAgo);
   const [to, setTo] = useState(today);
@@ -89,9 +98,14 @@ export default function Reports() {
   const [zoneId, setZoneId] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // In locked mode every district-based decision uses the user's own district
+  // directly, so no state sync is needed when the session hydrates.
+  const effectiveDistrictId = locked ? myDistrictId : districtId;
+
   const { data: regions } = useQuery({
     queryKey: ["regions"],
     queryFn: () => api.get("/geography/tree").then((r) => r.data.data),
+    enabled: isGlobal,
   });
   const { data: districts } = useQuery({
     queryKey: ["districts"],
@@ -102,6 +116,10 @@ export default function Reports() {
     queryFn: () => api.get("/geography/zones").then((r) => r.data.data),
   });
 
+  const districtName =
+    districts?.find((d: { id: string; name: string }) => d.id === myDistrictId)
+      ?.name || "My District";
+
   const filteredDistricts = districtId
     ? districts
     : regionId
@@ -110,16 +128,27 @@ export default function Reports() {
 
   const filteredZones = zoneId
     ? zones
-    : districtId
-      ? zones?.filter((z: any) => z.ta?.districtId === districtId)
+    : effectiveDistrictId
+      ? zones?.filter((z: any) => z.ta?.districtId === effectiveDistrictId)
       : zones;
+
+  // Geo params sent with every report / export request
+  const geoParams = locked
+    ? { districtId: myDistrictId, ...(zoneId ? { zoneId } : {}) }
+    : {
+        ...(regionId ? { regionId } : {}),
+        ...(districtId ? { districtId } : {}),
+        ...(zoneId ? { zoneId } : {}),
+      };
   const [exporting, setExporting] = useState<"excel" | "pdf" | null>(null);
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
     loadReport();
-  }, [reportType, from, to, regionId, districtId, zoneId]);
+    // myDistrictId: refetch once the session's district is known
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reportType, from, to, regionId, districtId, zoneId, myDistrictId]);
 
   const loadReport = async () => {
     setLoading(true);
@@ -130,9 +159,7 @@ export default function Reports() {
         params: {
           from,
           to,
-          ...(regionId ? { regionId } : {}),
-          ...(districtId ? { districtId } : {}),
-          ...(zoneId ? { zoneId } : {}),
+          ...geoParams,
         },
       });
       setData(res.data);
@@ -158,7 +185,7 @@ export default function Reports() {
     setExporting(format);
     try {
       const res = await api.get(`/reports/export/${format}`, {
-        params: { type: reportType, from, to },
+        params: { type: reportType, from, to, ...geoParams },
         responseType: "blob",
       });
       const ext = format === "excel" ? "xlsx" : "pdf";
@@ -211,6 +238,16 @@ export default function Reports() {
         ))}
       </div>
 
+      {locked && (
+        <div className="flex items-center gap-2 text-xs text-teal-800 bg-teal-50 border border-teal-200 rounded-lg px-3 py-2">
+          <Lock size={13} className="shrink-0" />
+          <span>
+            Reports are limited to your district — <b>{districtName}</b>.
+            Region-wide filters are available to Super Admin only.
+          </span>
+        </div>
+      )}
+
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-wrap items-end gap-4">
         <div className="w-40">
           <label className="block text-xs font-medium text-gray-500 mb-1">
@@ -225,47 +262,61 @@ export default function Reports() {
           <DatePicker value={to} min={from} max={today} onChange={setTo} />
         </div>
 
-        <div className="w-44">
-          <label className="block text-xs font-medium text-gray-500 mb-1">
-            Region
-          </label>
-          <Select
-            value={regionId}
-            onChange={(val) => {
-              setRegionId(val);
-              setDistrictId("");
-              setZoneId("");
-            }}
-            placeholder="All Regions"
-            options={[
-              { value: "", label: "All Regions" },
-              ...(regions || []).map((r: any) => ({
-                value: r.id,
-                label: r.name,
-              })),
-            ]}
-          />
-        </div>
-        <div className="w-44">
-          <label className="block text-xs font-medium text-gray-500 mb-1">
-            District
-          </label>
-          <Select
-            value={districtId}
-            onChange={(val) => {
-              setDistrictId(val);
-              setZoneId("");
-            }}
-            placeholder="All Districts"
-            options={[
-              { value: "", label: "All Districts" },
-              ...(filteredDistricts || []).map((d: any) => ({
-                value: d.id,
-                label: d.name,
-              })),
-            ]}
-          />
-        </div>
+        {isGlobal && (
+          <div className="w-44">
+            <label className="block text-xs font-medium text-gray-500 mb-1">
+              Region
+            </label>
+            <Select
+              value={regionId}
+              onChange={(val) => {
+                setRegionId(val);
+                setDistrictId("");
+                setZoneId("");
+              }}
+              placeholder="All Regions"
+              options={[
+                { value: "", label: "All Regions" },
+                ...(regions || []).map((r: any) => ({
+                  value: r.id,
+                  label: r.name,
+                })),
+              ]}
+            />
+          </div>
+        )}
+        {locked ? (
+          <div className="w-44">
+            <label className="block text-xs font-medium text-gray-500 mb-1">
+              District
+            </label>
+            <div className="w-full flex items-center justify-between gap-2 border border-teal-200 bg-teal-50 rounded-lg px-3 py-2 text-sm text-teal-900">
+              <span className="truncate font-medium">{districtName}</span>
+              <Lock size={14} className="shrink-0 text-teal-600" />
+            </div>
+          </div>
+        ) : (
+          <div className="w-44">
+            <label className="block text-xs font-medium text-gray-500 mb-1">
+              District
+            </label>
+            <Select
+              value={districtId}
+              onChange={(val) => {
+                setDistrictId(val);
+                setZoneId("");
+              }}
+              placeholder="All Districts"
+              options={[
+                { value: "", label: "All Districts" },
+                ...(filteredDistricts || []).map((d: any) => ({
+                  value: d.id,
+                  label: d.name,
+                })),
+              ]}
+            />
+          </div>
+        )}
         <div className="w-44">
           <label className="block text-xs font-medium text-gray-500 mb-1">
             Zone
@@ -273,9 +324,12 @@ export default function Reports() {
           <Select
             value={zoneId}
             onChange={(val) => setZoneId(val)}
-            placeholder="All Zones"
+            placeholder={locked ? `All Zones in ${districtName}` : "All Zones"}
             options={[
-              { value: "", label: "All Zones" },
+              {
+                value: "",
+                label: locked ? `All Zones in ${districtName}` : "All Zones",
+              },
               ...(filteredZones || []).map((z: any) => ({
                 value: z.id,
                 label: z.name,

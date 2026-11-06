@@ -14,13 +14,16 @@ export const getDrugs = async (req, res, next) => {
 
 export const getStock = async (req, res, next) => {
   try {
-    const { userId } = req.query;
-    const targetUser = userId || req.user.id;
-
-    // Admin sees all stock, others see only their own
-    const where = ["ADMIN", "NURSE", "DISTRICT_OFFICER"].includes(req.user.role)
-      ? {} // Admin sees everyone
-      : { userId: req.user.id }; // CCW sees only own
+    // CCW: only their own stock. Super Admin: everything.
+    // Everyone else: stock held by staff of their own facility.
+    const where =
+      req.user.role === "CCW"
+        ? { userId: req.user.id }
+        : req.user.role === "SUPER_ADMIN"
+          ? {}
+          : req.user.facilityId
+            ? { user: { facilityId: req.user.facilityId } }
+            : { userId: req.user.id };
 
     const stock = await prisma.drugStock.findMany({
       where,
@@ -43,9 +46,45 @@ export const updateStock = async (req, res, next) => {
     const { drugId } = req.params;
     const { quantityCurrent, userId } = req.body;
 
-    // Admin can set stock for any user, others only for themselves
-    const targetUserId =
-      req.user.role === "ADMIN" && userId ? userId : req.user.id;
+    if (!Number.isInteger(quantityCurrent) || quantityCurrent < 0)
+      return res.status(400).json({
+        success: false,
+        message: "quantityCurrent must be a whole number, 0 or more.",
+      });
+
+    // Admin can set stock for users in their own facility; others only
+    // for themselves. Super Admin may target anyone.
+    let targetUserId = req.user.id;
+    if (userId && userId !== req.user.id) {
+      const isSuperAdmin = req.user.role === "SUPER_ADMIN";
+      const isAdmin = req.user.role === "ADMIN";
+      if (!isSuperAdmin && !isAdmin) {
+        return res.status(403).json({
+          success: false,
+          message: "You can only update your own stock.",
+        });
+      }
+      if (isAdmin && !isSuperAdmin) {
+        if (!req.user.facilityId) {
+          return res.status(403).json({
+            success: false,
+            message:
+              "You are not assigned to a facility, so you cannot set stock for other users.",
+          });
+        }
+        const target = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { facilityId: true },
+        });
+        if (!target || target.facilityId !== req.user.facilityId) {
+          return res.status(403).json({
+            success: false,
+            message: "You can only set stock for users in your own facility.",
+          });
+        }
+      }
+      targetUserId = userId;
+    }
 
     const stock = await prisma.drugStock.upsert({
       where: { userId_drugId: { userId: targetUserId, drugId } },
@@ -95,9 +134,13 @@ export const getStockRequests = async (req, res, next) => {
     const requests = await prisma.stockRequest.findMany({
       where: {
         ...(status ? { status } : {}),
-        ...(["CCW"].includes(req.user.role)
+        ...(req.user.role === "CCW"
           ? { requestingUserId: req.user.id }
-          : {}),
+          : req.user.role !== "SUPER_ADMIN"
+            ? req.user.facilityId
+              ? { requestingUser: { facilityId: req.user.facilityId } }
+              : { requestingUserId: req.user.id }
+            : {}),
       },
       include: {
         drug: true,
@@ -117,6 +160,31 @@ export const getStockRequests = async (req, res, next) => {
 export const updateStockRequest = async (req, res, next) => {
   try {
     const { status, notes } = req.body;
+    if (!["APPROVED", "FULFILLED", "REJECTED"].includes(status))
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid status." });
+    if (req.user.role === "CCW")
+      return res
+        .status(403)
+        .json({ success: false, message: "Access denied." });
+
+    // Only requests from your own facility's staff (Super Admin: any)
+    if (req.user.role !== "SUPER_ADMIN") {
+      const target = await prisma.stockRequest.findUnique({
+        where: { id: req.params.id },
+        select: { requestingUser: { select: { facilityId: true } } },
+      });
+      if (
+        !target ||
+        !req.user.facilityId ||
+        target.requestingUser.facilityId !== req.user.facilityId
+      ) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Request not found." });
+      }
+    }
     const data = {
       status,
       approvedById: req.user.id,
@@ -138,30 +206,6 @@ export const updateStockRequest = async (req, res, next) => {
         },
       },
     });
-
-    // Create notification if status is FULFILLED or REJECTED
-    if (status === "FULFILLED" || status === "REJECTED") {
-      await prisma.notification.create({
-        data: {
-          id: crypto.randomUUID(),
-          title:
-            status === "FULFILLED"
-              ? "Stock Request Fulfilled"
-              : "Stock Request Rejected",
-          message:
-            status === "FULFILLED"
-              ? `Your request for ${request.quantityRequested} ${request.drug.unit}s of ${request.drug.nameEnglish} has been fulfilled.`
-              : `Your request for ${request.drug.nameEnglish} has been rejected.`,
-          type: "STOCK_REQUEST",
-          relatedId: request.id,
-          userId: request.requestingUserId,
-          isRead: false,
-        },
-      });
-      console.log(
-        `[STOCK] Notification created for user ${request.requestingUserId}`,
-      );
-    }
 
     res.json({ success: true, data: request });
   } catch (err) {

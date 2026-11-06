@@ -17,6 +17,8 @@ import {
   Package,
 } from "lucide-react";
 import { useAuthStore } from "../../store/auth.store";
+import { useQuery } from "@tanstack/react-query";
+import api from "../../services/api";
 import clsx from "clsx";
 
 // We group the navigation items into logical sections
@@ -137,6 +139,18 @@ export default function Sidebar() {
   const { user } = useAuthStore();
   const isPharmacist = user?.role === "PHARMACIST";
 
+  // Number of prescriptions waiting (pharmacists only; shares the dashboard's data)
+  const { data: pendingRequests } = useQuery({
+    queryKey: ["pharmacy-requests-pending"],
+    queryFn: () =>
+      api
+        .get("/pharmacy/requests", { params: { status: "PENDING" } })
+        .then((r) => r.data.data),
+    enabled: isPharmacist,
+    refetchInterval: 10000,
+  });
+  const pendingCount = pendingRequests?.length ?? 0;
+
   return (
     <aside className="w-64 bg-teal-800 flex flex-col h-full">
       {/* Header */}
@@ -201,6 +215,14 @@ export default function Sidebar() {
                       ? "Dashboard"
                       : item.label}
                   </span>
+
+                  {isPharmacist &&
+                    item.to === "/pharmacy" &&
+                    pendingCount > 0 && (
+                      <span className="ml-auto bg-orange-500 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5">
+                        {pendingCount}
+                      </span>
+                    )}
                 </NavLink>
               ))}
             </div>

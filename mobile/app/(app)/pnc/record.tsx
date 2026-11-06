@@ -113,12 +113,20 @@ export default function PncRecordScreen() {
       const row = await db.getFirstAsync<{
         local_id: string;
         member_id: string;
-      }>(`SELECT local_id, member_id FROM pnc_visits WHERE id = ?`, [visitId]);
+        pnc_number: number;
+        expected_date: string;
+      }>(
+        `SELECT local_id, member_id, pnc_number, expected_date FROM pnc_visits WHERE id = ?`,
+        [visitId],
+      );
 
       if (row) {
         await enqueue("PNC_VISIT", {
           localId: row.local_id,
           memberId: row.member_id,
+          pncNumber: row.pnc_number,
+          expectedDate: row.expected_date,
+          status: "ATTENDED",
           visitedDate: now,
           motherTemperature: motherTemp ? parseFloat(motherTemp) : null,
           motherBloodPressure: motherBP || null,

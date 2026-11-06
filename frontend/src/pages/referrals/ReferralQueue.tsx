@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle, Clock, MessageSquare } from "lucide-react";
 import api from "../../services/api";
 import type { Referral, Pagination } from "../../types";
+import { useAuthStore } from "../../store/auth.store";
 
 const STATUS_STYLE: Record<string, string> = {
   PENDING: "badge-yellow",
@@ -37,10 +38,47 @@ const fullName = (p: any) =>
 
 export default function ReferralQueue() {
   const queryClient = useQueryClient();
+  const { user } = useAuthStore();
+  const canPrescribe = user?.role === "NURSE";
   const [filter, setFilter] = useState<string>("ALL");
   const [selected, setSelected] = useState<Referral | null>(null);
   const [feedback, setFeedback] = useState("");
   const [diagnosis, setDiagnosis] = useState("");
+
+  // Medication the nurse prescribes when marking a referral as treated
+  const [meds, setMeds] = useState<
+    { drugName: string; quantity: string; dosage: string }[]
+  >([]);
+
+  // In-date stock at the nurse's facility (the same list the pharmacist dispenses from)
+  const { data: stockBatches } = useQuery<any[]>({
+    queryKey: ["pharmacy-batches-active"],
+    queryFn: () =>
+      api
+        .get("/pharmacy/batches", { params: { status: "ACTIVE" } })
+        .then((r) => r.data.data),
+    enabled: canPrescribe && selected?.status === "ARRIVED",
+  });
+
+  // Add up what is left per drug name, skipping expired or empty batches
+  const availableStock: Record<string, { total: number; unit: string }> = {};
+  (stockBatches || []).forEach((b: any) => {
+    if (new Date(b.expiryDate) <= new Date() || b.quantityRemaining <= 0)
+      return;
+    const entry = availableStock[b.drugName] || { total: 0, unit: b.unit };
+    entry.total += b.quantityRemaining;
+    availableStock[b.drugName] = entry;
+  });
+
+  // Change one field of one medication row
+  const updateMed = (
+    index: number,
+    field: "drugName" | "quantity" | "dosage",
+    value: string,
+  ) =>
+    setMeds((prev) =>
+      prev.map((m, i) => (i === index ? { ...m, [field]: value } : m)),
+    );
 
   const { data, isLoading } = useQuery<{
     data: Referral[];
@@ -64,14 +102,50 @@ export default function ReferralQueue() {
       api.patch(`/referrals/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["referrals"] });
+      queryClient.invalidateQueries({ queryKey: ["pharmacy-requests"] });
+      queryClient.invalidateQueries({
+        queryKey: ["pharmacy-requests-pending"],
+      });
       setSelected(null);
       setFeedback("");
       setDiagnosis("");
+      setMeds([]);
     },
+    onError: (err: any) =>
+      alert(err.response?.data?.message || "Could not update this referral."),
   });
 
   const handleUpdate = (status: string) => {
     if (!selected) return;
+
+    // Only "Treated" carries a prescription
+    let medications: {
+      drugName: string;
+      quantityRequested: number;
+      notes?: string;
+    }[] = [];
+
+    if (status === "TREATED") {
+      for (const m of meds) {
+        if (!m.drugName && !m.quantity) continue; // empty row, ignore
+        const qty = parseInt(m.quantity);
+        if (!m.drugName || !(qty > 0)) {
+          return alert("Choose a drug and enter a quantity for each row.");
+        }
+        const left = availableStock[m.drugName]?.total ?? 0;
+        if (qty > left) {
+          return alert(
+            `Only ${left} of ${m.drugName} in stock. Lower the quantity.`,
+          );
+        }
+        medications.push({
+          drugName: m.drugName,
+          quantityRequested: qty,
+          ...(m.dosage.trim() ? { notes: m.dosage.trim() } : {}),
+        });
+      }
+    }
+
     updateMutation.mutate({
       id: selected.id,
       data: {
@@ -79,15 +153,16 @@ export default function ReferralQueue() {
         ...(diagnosis ? { diagnosis } : {}),
         ...(feedback ? { feedbackNote: feedback } : {}),
         ...(feedback ? { treatmentGiven: feedback } : {}),
+        ...(medications.length > 0 ? { medications } : {}),
       },
     });
   };
-
   const filters = [
     "ALL",
     "PENDING",
     "OVERDUE",
     "ARRIVED",
+    "TREATED",
     "COMPLETED",
     "MISSED",
   ];
@@ -152,7 +227,10 @@ export default function ReferralQueue() {
           return (
             <div
               key={ref.id}
-              onClick={() => setSelected(ref)}
+              onClick={() => {
+                setSelected(ref);
+                setMeds([]);
+              }}
               className={`card p-4 cursor-pointer hover:shadow-md transition-shadow ${selected?.id === ref.id ? "ring-2 ring-teal-500" : ""}`}
             >
               <div className="flex items-start justify-between gap-3">
@@ -354,7 +432,89 @@ export default function ReferralQueue() {
                     onChange={(e) => setFeedback(e.target.value)}
                   />
                 </div>
+                {selected.status === "ARRIVED" && canPrescribe && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs text-gray-500">
+                        Medication for the pharmacist
+                      </label>
+                      <button
+                        type="button"
+                        className="text-xs font-semibold text-teal-700"
+                        onClick={() =>
+                          setMeds((prev) => [
+                            ...prev,
+                            { drugName: "", quantity: "", dosage: "" },
+                          ])
+                        }
+                      >
+                        + Add drug
+                      </button>
+                    </div>
 
+                    {meds.length === 0 && (
+                      <p className="text-xs text-gray-400">
+                        No medication added.
+                      </p>
+                    )}
+
+                    {meds.map((m, i) => (
+                      <div
+                        key={i}
+                        className="border border-gray-100 rounded-lg p-2 space-y-2"
+                      >
+                        <div className="flex gap-2">
+                          <select
+                            className="input text-sm flex-1"
+                            value={m.drugName}
+                            onChange={(e) =>
+                              updateMed(i, "drugName", e.target.value)
+                            }
+                          >
+                            <option value="">Select drug...</option>
+                            {Object.entries(availableStock).map(
+                              ([name, info]) => (
+                                <option key={name} value={name}>
+                                  {name} — {info.total} {info.unit}
+                                </option>
+                              ),
+                            )}
+                          </select>
+                          <input
+                            type="number"
+                            min={1}
+                            className="input text-sm w-20"
+                            placeholder="Qty"
+                            value={m.quantity}
+                            onChange={(e) =>
+                              updateMed(i, "quantity", e.target.value)
+                            }
+                          />
+                          <button
+                            type="button"
+                            className="text-gray-400 hover:text-red-600 px-1"
+                            onClick={() =>
+                              setMeds((prev) =>
+                                prev.filter((_, idx) => idx !== i),
+                              )
+                            }
+                            title="Remove"
+                          >
+                            ×
+                          </button>
+                        </div>
+                        <input
+                          className="input text-sm"
+                          placeholder="Dosage, e.g. 2 tablets twice daily"
+                          value={m.dosage}
+                          onChange={(e) =>
+                            updateMed(i, "dosage", e.target.value)
+                          }
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="flex flex-col gap-2">
                   {selected.status === "PENDING" ||
                   selected.status === "OVERDUE" ? (

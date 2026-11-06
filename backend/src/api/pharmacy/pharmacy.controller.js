@@ -137,6 +137,7 @@ export const dispense = async (req, res, next) => {
       where: {
         facilityId,
         drugName: { equals: drugName, mode: "insensitive" },
+        expiryDate: { gt: new Date() },
         status: "ACTIVE",
         quantityRemaining: { gt: 0 },
       },
@@ -342,40 +343,87 @@ export const fulfillRequest = async (req, res, next) => {
       include: { items: true },
     });
 
-    if (!request)
+    if (!request || request.facilityId !== facilityId)
       return res
         .status(404)
         .json({ success: false, message: "Request not found." });
 
+    // Already dispensed? Stop here so stock is never deducted twice
+    if (request.status !== "PENDING")
+      return res.status(409).json({
+        success: false,
+        message: "This request has already been processed.",
+      });
+
     const { fulfilledItems, notes } = req.body;
     // fulfilledItems: [{ itemId, quantityFulfilled }]
+    if (!Array.isArray(fulfilledItems) || fulfilledItems.length === 0)
+      return res
+        .status(400)
+        .json({ success: false, message: "fulfilledItems is required." });
 
-    let allFulfilled = true;
+    // Check stock for every item first, so nothing is half-dispensed
+    for (const fi of fulfilledItems) {
+      const item = request.items.find((i) => i.id === fi.itemId);
+      if (!item) continue;
+      const wanted = Math.min(
+        Math.max(parseInt(fi.quantityFulfilled) || 0, 0),
+        item.quantityRequested,
+      );
+      if (wanted === 0) continue;
+      const stock = await prisma.drugBatch.aggregate({
+        where: {
+          facilityId,
+          drugName: { equals: item.drugName, mode: "insensitive" },
+          expiryDate: { gt: new Date() },
+          status: "ACTIVE",
+          quantityRemaining: { gt: 0 },
+        },
+        _sum: { quantityRemaining: true },
+      });
+      const available = stock._sum.quantityRemaining || 0;
+      if (available < wanted)
+        return res.status(400).json({
+          success: false,
+          message: `Not enough in-date stock of ${item.drugName}. Available: ${available}, needed: ${wanted}.`,
+        });
+    }
+
+    // Fully fulfilled only if every requested item is listed (checked per item below)
+    let allFulfilled = request.items.every((i) =>
+      fulfilledItems.some((f) => f.itemId === i.id),
+    );
     for (const fi of fulfilledItems) {
       const item = request.items.find((i) => i.id === fi.itemId);
       if (!item) continue;
 
+      // Never more than was requested, never negative
+      const qtyOut = Math.min(
+        Math.max(parseInt(fi.quantityFulfilled) || 0, 0),
+        item.quantityRequested,
+      );
+
       await prisma.pharmacyRequestItem.update({
         where: { id: fi.itemId },
-        data: { quantityFulfilled: parseInt(fi.quantityFulfilled) },
+        data: { quantityFulfilled: qtyOut },
       });
 
-      if (parseInt(fi.quantityFulfilled) < item.quantityRequested)
-        allFulfilled = false;
+      if (qtyOut < item.quantityRequested) allFulfilled = false;
 
       // Dispense stock using FEFO if quantity > 0
-      if (parseInt(fi.quantityFulfilled) > 0) {
+      if (qtyOut > 0) {
         const batches = await prisma.drugBatch.findMany({
           where: {
             facilityId,
             drugName: { equals: item.drugName, mode: "insensitive" },
+            expiryDate: { gt: new Date() },
             status: "ACTIVE",
             quantityRemaining: { gt: 0 },
           },
           orderBy: { expiryDate: "asc" },
         });
 
-        let remaining = parseInt(fi.quantityFulfilled);
+        let remaining = qtyOut;
         for (const batch of batches) {
           if (remaining <= 0) break;
           const deduct = Math.min(remaining, batch.quantityRemaining);
@@ -417,7 +465,16 @@ export const fulfillRequest = async (req, res, next) => {
         notes: notes || request.notes,
       },
     });
-
+    // Close the loop: everything dispensed -> the referral is COMPLETED
+    if (request.referralId && updated.status === "FULFILLED") {
+      await prisma.referral.updateMany({
+        where: {
+          id: request.referralId,
+          status: { notIn: ["COMPLETED", "MISSED"] },
+        },
+        data: { status: "COMPLETED", resolvedAt: new Date() },
+      });
+    }
     res.json({ success: true, data: updated });
   } catch (err) {
     next(err);

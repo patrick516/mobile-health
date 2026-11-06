@@ -200,7 +200,31 @@ export const createReferral = async (req, res, next) => {
 // PATCH /api/referrals/:id — Nurse updates status + sends feedback to CHW
 export const updateReferral = async (req, res, next) => {
   try {
-    const { status, diagnosis, treatmentGiven, feedbackNote } = req.body;
+    const { status, diagnosis, treatmentGiven, feedbackNote, medications } =
+      req.body;
+
+    // Medication the nurse prescribes (blank rows are ignored)
+    const meds = (Array.isArray(medications) ? medications : [])
+      .slice(0, 20)
+      .map((m) => ({
+        drugName: String(m?.drugName || "").trim(),
+        quantityRequested: parseInt(m?.quantityRequested),
+        notes: m?.notes ? String(m.notes).trim().slice(0, 200) : null,
+      }))
+      .filter((m) => m.drugName && m.quantityRequested > 0);
+
+    if (meds.length > 0 && status !== "TREATED")
+      return res.status(400).json({
+        success: false,
+        message:
+          "Medication can only be prescribed when marking the referral as treated.",
+      });
+    if (meds.length > 0 && !req.user.facilityId)
+      return res.status(400).json({
+        success: false,
+        message:
+          "Your account has no facility, so a prescription cannot be sent to a pharmacy.",
+      });
 
     const current = await prisma.referral.findUnique({
       where: { id: req.params.id },
@@ -210,6 +234,27 @@ export const updateReferral = async (req, res, next) => {
         .status(404)
         .json({ success: false, message: "Referral not found." });
 
+    // Scope: the user's area, or the facility the patient was referred to
+    if (req.user.scopeLevel !== "ALL") {
+      const inScope = await prisma.referral.findFirst({
+        where: {
+          id: current.id,
+          OR: [
+            { member: { household: { village: buildVillageScope(req.user) } } },
+            ...(req.user.facilityId
+              ? [{ destinationFacilityId: req.user.facilityId }]
+              : []),
+          ],
+        },
+        select: { id: true },
+      });
+      if (!inScope) {
+        return res.status(403).json({
+          success: false,
+          message: "You do not have access to this referral.",
+        });
+      }
+    }
     const data = {
       ...(status ? { status } : {}),
       ...(diagnosis ? { diagnosis } : {}),
@@ -223,15 +268,50 @@ export const updateReferral = async (req, res, next) => {
         : {}),
     };
 
-    const referral = await prisma.referral.update({
-      where: { id: req.params.id },
-      data,
-      include: {
-        member: true,
-        referringUser: {
-          select: { phoneNumber: true, firstName: true, lastName: true },
+    // Referral update + prescription happen together, or not at all
+    const referral = await prisma.$transaction(async (tx) => {
+      const updated = await tx.referral.update({
+        where: { id: req.params.id },
+        data,
+        include: {
+          member: true,
+          referringUser: {
+            select: { phoneNumber: true, firstName: true, lastName: true },
+          },
         },
-      },
+      });
+
+      if (meds.length > 0) {
+        // Never send a second pending prescription for the same referral
+        const existing = await tx.pharmacyRequest.findFirst({
+          where: { referralId: updated.id, status: "PENDING" },
+          select: { id: true },
+        });
+
+        if (!existing) {
+          const m = updated.member;
+          const patientAge = m.dateOfBirth
+            ? Math.floor(
+                (Date.now() - new Date(m.dateOfBirth).getTime()) /
+                  (365.25 * 24 * 60 * 60 * 1000),
+              )
+            : (m.estimatedAge ?? null);
+
+          await tx.pharmacyRequest.create({
+            data: {
+              facilityId: req.user.facilityId,
+              referralId: updated.id,
+              patientName: `${m.firstName} ${m.lastName}`.trim(),
+              patientAge,
+              diagnosis: diagnosis || updated.diagnosis || null,
+              requestedById: req.user.id,
+              items: { create: meds },
+            },
+          });
+        }
+      }
+
+      return updated;
     });
 
     res.json({ success: true, data: referral });

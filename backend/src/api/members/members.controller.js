@@ -1,5 +1,5 @@
 import prisma from "../../config/db.js";
-import { buildVillageScope } from "../../middleware/auth.js";
+import { buildVillageScope, villageInScope } from "../../middleware/auth.js";
 
 const VACCINE_SCHEDULE = [
   { code: "BCG", dose: 1, weeksAfterBirth: 0 },
@@ -21,6 +21,16 @@ const VACCINE_SCHEDULE = [
   { code: "DEWORM1", dose: 1, weeksAfterBirth: 48 },
 ];
 
+// True if the user may touch this member (same scope rule as reads)
+const canAccessMember = async (user, memberId) => {
+  if (user.scopeLevel === "ALL") return true;
+  const found = await prisma.householdMember.findFirst({
+    where: { id: memberId, household: { village: buildVillageScope(user) } },
+    select: { id: true },
+  });
+  return !!found;
+};
+
 function addWeeks(date, weeks) {
   const d = new Date(date);
   d.setDate(d.getDate() + weeks * 7);
@@ -38,12 +48,16 @@ export const getMembers = async (req, res, next) => {
       where: {
         ...(householdId ? { householdId } : {}),
         status: "ACTIVE",
-        ...(!householdId && hasScope
-          ? { household: { village: villageScope } }
-          : {}),
-        // CCW sees only members in households they registered
-        ...(!householdId && req.user.role === "CCW"
-          ? { household: { registeredByUserId: req.user.id } }
+        // The user's scope always applies; a CCW also sees only households they registered
+        ...(hasScope || req.user.role === "CCW"
+          ? {
+              household: {
+                ...(hasScope ? { village: villageScope } : {}),
+                ...(!householdId && req.user.role === "CCW"
+                  ? { registeredByUserId: req.user.id }
+                  : {}),
+              },
+            }
           : {}),
       },
       include: {
@@ -139,6 +153,23 @@ export const createMember = async (req, res, next) => {
         success: false,
         message:
           "localId, householdId, firstName, lastName, sex, and relationshipToHead are required.",
+      });
+    }
+
+    // ── Zone allocation: only register members into your own zone ──
+    const targetHousehold = await prisma.household.findUnique({
+      where: { id: householdId },
+      select: { villageId: true },
+    });
+    if (!targetHousehold) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Household not found." });
+    }
+    if (!(await villageInScope(req.user, targetHousehold.villageId))) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not allocated to this zone.",
       });
     }
 
@@ -250,6 +281,12 @@ export const createMember = async (req, res, next) => {
 // PATCH /api/members/:id
 export const updateMember = async (req, res, next) => {
   try {
+    if (!(await canAccessMember(req.user, req.params.id))) {
+      return res.status(403).json({
+        success: false,
+        message: "You do not have access to this member.",
+      });
+    }
     const allowed = [
       "firstName",
       "lastName",

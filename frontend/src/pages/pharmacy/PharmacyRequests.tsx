@@ -48,6 +48,7 @@ export default function PharmacyRequests() {
           params: filter !== "ALL" ? { status: filter } : {},
         })
         .then((r) => r.data.data),
+    refetchInterval: 10000, // new prescriptions appear within 10 seconds
   });
 
   const { data: drugs } = useQuery({
@@ -78,10 +79,17 @@ export default function PharmacyRequests() {
       api.patch(`/pharmacy/requests/${id}/fulfill`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pharmacy-requests"] });
+      queryClient.invalidateQueries({
+        queryKey: ["pharmacy-requests-pending"],
+      });
       queryClient.invalidateQueries({ queryKey: ["pharmacy-batches"] });
+      queryClient.invalidateQueries({ queryKey: ["pharmacy-alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["referrals"] });
       setSelected(null);
       setFulfillData({});
     },
+    onError: (err: any) =>
+      alert(err.response?.data?.message || "Could not fulfil this request."),
   });
 
   const handleFulfill = () => {
@@ -159,6 +167,12 @@ export default function PharmacyRequests() {
                     Diagnosis: {r.diagnosis}
                   </p>
                 )}
+
+                {r.referralId && (
+                  <p className="text-xs text-teal-700">
+                    From a referral — dispensing completes it
+                  </p>
+                )}
                 <p className="text-xs text-gray-500">
                   Requested by {r.requestedBy?.firstName}{" "}
                   {r.requestedBy?.lastName} ·{" "}
@@ -170,6 +184,7 @@ export default function PharmacyRequests() {
                       • {item.drugName} — {item.quantityRequested} requested
                       {item.quantityFulfilled > 0 &&
                         `, ${item.quantityFulfilled} fulfilled`}
+                      {item.notes && ` (${item.notes})`}
                     </p>
                   ))}
                 </div>
@@ -312,6 +327,9 @@ export default function PharmacyRequests() {
                     <p className="text-xs text-gray-500">
                       Requested: {item.quantityRequested}
                     </p>
+                    {item.notes && (
+                      <p className="text-xs text-teal-700">{item.notes}</p>
+                    )}
                   </div>
                   <input
                     type="number"

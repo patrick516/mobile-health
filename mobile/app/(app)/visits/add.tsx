@@ -102,7 +102,8 @@ export default function AddVisitScreen() {
   })();
   const isUnderFive = ageMonths !== null && ageMonths < 60;
 
-  // WHO simplified thresholds — weight-for-age Z-score approximation
+  // Growth screening estimate — simplified weight-for-age approximation
+  // (growth screening estimate only; thresholds follow simplified medians)
   const calcGrowthStatus = (): {
     zWfa: number | null;
     zHfa: number | null;
@@ -118,12 +119,12 @@ export default function AddVisitScreen() {
     if (isNaN(w) || isNaN(h) || w <= 0 || h <= 0)
       return { zWfa: null, zHfa: null, zWfh: null, status: null };
 
-    // WHO median weight-for-age (simplified linear approximation)
+    // Simplified median weight-for-age (growth screening estimate)
     const medianWFA = ageM < 12 ? 3.3 + ageM * 0.55 : 9.0 + (ageM - 12) * 0.17;
     const sdWFA = medianWFA * 0.15;
     const zWfa = parseFloat(((w - medianWFA) / sdWFA).toFixed(2));
 
-    // WHO median height-for-age
+    // Simplified median height-for-age (growth screening estimate)
     const medianHFA = ageM < 12 ? 49.9 + ageM * 2.6 : 75.7 + (ageM - 12) * 1.0;
     const sdHFA = medianHFA * 0.04;
     const zHfa = parseFloat(((h - medianHFA) / sdHFA).toFixed(2));
@@ -339,7 +340,15 @@ export default function AddVisitScreen() {
           "UPDATE drug_stock SET quantity_current = quantity_current - ?, updated_at = ? WHERE id = ?",
           [qty, now, drugId],
         );
-        dispensePayloads.push({ localId: dispenseId, drugId, quantity: qty });
+        const stockRow = await db.getFirstAsync<{ drug_id: string }>(
+          "SELECT drug_id FROM drug_stock WHERE id = ?",
+          [drugId],
+        );
+        dispensePayloads.push({
+          localId: dispenseId,
+          drugId: stockRow?.drug_id || drugId,
+          quantity: qty,
+        });
       }
 
       // Enqueue visit for sync
@@ -686,7 +695,8 @@ export default function AddVisitScreen() {
                   Growth Monitoring
                 </Text>
                 <Text style={styles.sectionSub}>
-                  Weight and height for children under 5
+                  Weight and height for children under 5 — growth screening
+                  estimate
                 </Text>
 
                 <Text style={styles.label}>Weight (kg)</Text>
@@ -738,8 +748,8 @@ export default function AddVisitScreen() {
                                   : "⚠ Underweight"}
                       </Text>
                       <Text style={styles.muacRange}>
-                        WFA: {growth.zWfa ?? "—"} | HFA: {growth.zHfa ?? "—"} |
-                        WFH: {growth.zWfh ?? "—"}
+                        Growth estimate — WFA: {growth.zWfa ?? "—"} | HFA:{" "}
+                        {growth.zHfa ?? "—"} | WFH: {growth.zWfh ?? "—"}
                       </Text>
                     </View>
                   </View>

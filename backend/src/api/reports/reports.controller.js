@@ -20,21 +20,50 @@ const fmt = (date) => (date ? new Date(date).toLocaleDateString("en-GB") : "—"
 const fullName = (p) =>
   p ? `${p.firstName || ""} ${p.lastName || ""}`.trim() || "—" : "—";
 
+// ─── HELPER: role-aware village scope for report queries ───────────────────
+// SUPER_ADMIN sees the whole country and may filter by region / district /
+// zone. Every other role is locked to their own district (facility's
+// district) — regionId / districtId from the query are ignored for them so a
+// scoped user can never widen a report beyond their area.
+const reportVillageWhere = (req, q = {}) => {
+  const { zoneId, villageId, districtId, regionId, taId } = q;
+  const user = req.user;
+  const clauses = [];
+
+  const base = buildVillageScope(user, taId);
+  if (Object.keys(base).length > 0) clauses.push(base);
+
+  if (user?.role === "SUPER_ADMIN") {
+    if (zoneId) clauses.push({ zoneId });
+    if (districtId) clauses.push({ zone: { ta: { districtId } } });
+    if (regionId) clauses.push({ zone: { ta: { district: { regionId } } } });
+  } else {
+    const myDistrictId = user?.facility?.districtId || null;
+    if (myDistrictId)
+      clauses.push({ zone: { ta: { districtId: myDistrictId } } });
+    // Zone filter is still allowed, but ANDed with the district lock
+    if (zoneId) clauses.push({ zoneId });
+  }
+
+  if (villageId) clauses.push({ id: villageId });
+
+  if (clauses.length === 0) return {};
+  if (clauses.length === 1) return clauses[0];
+  return { AND: clauses };
+};
+
 // 1. HOUSEHOLD REPORT
 
 export const getHouseholdReport = async (req, res, next) => {
   try {
-    const { from, to, zoneId, villageId, taId } = req.query;
+    const { from, to } = req.query;
     const { fromDate, toDate } = getDateRange(from, to);
-    const villageScope = buildVillageScope(req.user, taId);
-    const hasScope = Object.keys(villageScope).length > 0;
+    const villageWhere = reportVillageWhere(req, req.query);
 
     const households = await prisma.household.findMany({
       where: {
         createdAt: { gte: fromDate, lte: toDate },
-        ...(villageId ? { villageId } : {}),
-        ...(zoneId ? { village: { zoneId } } : {}),
-        ...(!villageId && !zoneId && hasScope ? { village: villageScope } : {}),
+        ...(Object.keys(villageWhere).length ? { village: villageWhere } : {}),
       },
       include: {
         village: {
@@ -74,20 +103,17 @@ export const getHouseholdReport = async (req, res, next) => {
 
 export const getReferralReport = async (req, res, next) => {
   try {
-    const { from, to, zoneId, status, taId } = req.query;
+    const { from, to, status } = req.query;
     const { fromDate, toDate } = getDateRange(from, to);
-    const villageScope = buildVillageScope(req.user, taId);
-    const hasScope = Object.keys(villageScope).length > 0;
+    const villageWhere = reportVillageWhere(req, req.query);
 
     const referrals = await prisma.referral.findMany({
       where: {
         createdAt: { gte: fromDate, lte: toDate },
         ...(status ? { status } : {}),
-        ...(zoneId
-          ? { member: { household: { village: { zoneId } } } }
-          : hasScope
-            ? { member: { household: { village: villageScope } } }
-            : {}),
+        ...(Object.keys(villageWhere).length
+          ? { member: { household: { village: villageWhere } } }
+          : {}),
       },
       include: {
         member: {
@@ -161,18 +187,17 @@ export const getReferralReport = async (req, res, next) => {
 
 export const getVisitReport = async (req, res, next) => {
   try {
-    const { from, to, chwId, visitType, taId } = req.query;
+    const { from, to, chwId, visitType } = req.query;
     const { fromDate, toDate } = getDateRange(from, to);
-    const villageScope = buildVillageScope(req.user, taId);
-    const hasScope = Object.keys(villageScope).length > 0;
+    const villageWhere = reportVillageWhere(req, req.query);
 
     const visits = await prisma.visit.findMany({
       where: {
         visitedAt: { gte: fromDate, lte: toDate },
         ...(chwId ? { chwId } : {}),
         ...(visitType ? { visitType } : {}),
-        ...(hasScope
-          ? { member: { household: { village: villageScope } } }
+        ...(Object.keys(villageWhere).length
+          ? { member: { household: { village: villageWhere } } }
           : {}),
       },
       include: {
@@ -222,19 +247,16 @@ export const getVisitReport = async (req, res, next) => {
 
 export const getImmunisationReport = async (req, res, next) => {
   try {
-    const { from, to, zoneId, taId } = req.query;
+    const { from, to } = req.query;
     const { fromDate, toDate } = getDateRange(from, to);
-    const villageScope = buildVillageScope(req.user, taId);
-    const hasScope = Object.keys(villageScope).length > 0;
+    const villageWhere = reportVillageWhere(req, req.query);
 
     const schedules = await prisma.immunisationSchedule.findMany({
       where: {
         dueDate: { gte: fromDate, lte: toDate },
-        ...(zoneId
-          ? { member: { household: { village: { zoneId } } } }
-          : hasScope
-            ? { member: { household: { village: villageScope } } }
-            : {}),
+        ...(Object.keys(villageWhere).length
+          ? { member: { household: { village: villageWhere } } }
+          : {}),
       },
       include: {
         member: {
@@ -285,6 +307,8 @@ export const exportReportExcel = async (req, res, next) => {
   try {
     const { type, from, to } = req.query;
     const { fromDate, toDate } = getDateRange(from, to);
+    const villageWhere = reportVillageWhere(req, req.query);
+    const scoped = Object.keys(villageWhere).length > 0;
     const wb = new ExcelJS.Workbook();
     wb.creator = "MobileHealth Malawi";
     wb.created = new Date();
@@ -308,7 +332,10 @@ export const exportReportExcel = async (req, res, next) => {
 
     if (type === "households") {
       const households = await prisma.household.findMany({
-        where: { createdAt: { gte: fromDate, lte: toDate } },
+        where: {
+          createdAt: { gte: fromDate, lte: toDate },
+          ...(scoped ? { village: villageWhere } : {}),
+        },
         include: {
           village: { include: { zone: { include: { ta: true } } } },
           members: true,
@@ -381,7 +408,12 @@ export const exportReportExcel = async (req, res, next) => {
 
     if (type === "referrals") {
       const referrals = await prisma.referral.findMany({
-        where: { createdAt: { gte: fromDate, lte: toDate } },
+        where: {
+          createdAt: { gte: fromDate, lte: toDate },
+          ...(scoped
+            ? { member: { household: { village: villageWhere } } }
+            : {}),
+        },
         include: {
           member: { include: { household: { include: { village: true } } } },
           referringUser: { select: { firstName: true, lastName: true } },
@@ -427,7 +459,12 @@ export const exportReportExcel = async (req, res, next) => {
 
     if (type === "visits") {
       const visits = await prisma.visit.findMany({
-        where: { visitedAt: { gte: fromDate, lte: toDate } },
+        where: {
+          visitedAt: { gte: fromDate, lte: toDate },
+          ...(scoped
+            ? { member: { household: { village: villageWhere } } }
+            : {}),
+        },
         include: {
           member: { include: { household: { include: { village: true } } } },
           chw: { select: { firstName: true, lastName: true } },
@@ -478,7 +515,12 @@ export const exportReportExcel = async (req, res, next) => {
 
     if (type === "immunisations") {
       const schedules = await prisma.immunisationSchedule.findMany({
-        where: { dueDate: { gte: fromDate, lte: toDate } },
+        where: {
+          dueDate: { gte: fromDate, lte: toDate },
+          ...(scoped
+            ? { member: { household: { village: villageWhere } } }
+            : {}),
+        },
         include: {
           member: { include: { household: { include: { village: true } } } },
         },
@@ -533,6 +575,8 @@ export const exportReportPDF = async (req, res, next) => {
   try {
     const { type, from, to } = req.query;
     const { fromDate, toDate } = getDateRange(from, to);
+    const villageWhere = reportVillageWhere(req, req.query);
+    const scoped = Object.keys(villageWhere).length > 0;
 
     const doc = new PDFDocument({ margin: 40, size: "A4" });
     res.setHeader("Content-Type", "application/pdf");
@@ -561,7 +605,12 @@ export const exportReportPDF = async (req, res, next) => {
 
     if (type === "referrals") {
       const referrals = await prisma.referral.findMany({
-        where: { createdAt: { gte: fromDate, lte: toDate } },
+        where: {
+          createdAt: { gte: fromDate, lte: toDate },
+          ...(scoped
+            ? { member: { household: { village: villageWhere } } }
+            : {}),
+        },
         include: {
           member: { include: { household: { include: { village: true } } } },
           referringUser: { select: { firstName: true, lastName: true } },
@@ -649,7 +698,10 @@ export const exportReportPDF = async (req, res, next) => {
 
     if (type === "households") {
       const households = await prisma.household.findMany({
-        where: { createdAt: { gte: fromDate, lte: toDate } },
+        where: {
+          createdAt: { gte: fromDate, lte: toDate },
+          ...(scoped ? { village: villageWhere } : {}),
+        },
         include: {
           village: { include: { zone: true } },
           members: true,
@@ -746,39 +798,17 @@ export const exportReportPDF = async (req, res, next) => {
 // 7. PREGNANT WOMEN & ANC REPORT
 export const getAncReport = async (req, res, next) => {
   try {
-    const { from, to, zoneId, districtId, regionId, taId } = req.query;
+    const { from, to } = req.query;
     const { fromDate, toDate } = getDateRange(from, to);
-    const villageScope = buildVillageScope(req.user, taId);
-    const hasScope = Object.keys(villageScope).length > 0;
-
-    const manualFilter =
-      zoneId || districtId || regionId
-        ? {
-            village: {
-              ...(zoneId ? { zoneId } : {}),
-              ...(districtId || regionId
-                ? {
-                    zone: {
-                      ta: {
-                        ...(districtId ? { districtId } : {}),
-                        ...(regionId ? { district: { regionId } } : {}),
-                      },
-                    },
-                  }
-                : {}),
-            },
-          }
-        : hasScope
-          ? { village: villageScope }
-          : {};
+    const villageWhere = reportVillageWhere(req, req.query);
 
     const members = await prisma.householdMember.findMany({
       where: {
         isPregnant: true,
         status: "ACTIVE",
         createdAt: { gte: fromDate, lte: toDate },
-        ...(Object.keys(manualFilter).length > 0
-          ? { household: manualFilter }
+        ...(Object.keys(villageWhere).length
+          ? { household: { village: villageWhere } }
           : {}),
       },
       include: {
@@ -830,34 +860,12 @@ export const getAncReport = async (req, res, next) => {
 // 8. CHILDREN UNDER 5 REPORT
 export const getChildrenUnder5Report = async (req, res, next) => {
   try {
-    const { from, to, zoneId, districtId, regionId, taId } = req.query;
+    const { from, to } = req.query;
     const { fromDate, toDate } = getDateRange(from, to);
-    const villageScope = buildVillageScope(req.user, taId);
-    const hasScope = Object.keys(villageScope).length > 0;
+    const villageWhere = reportVillageWhere(req, req.query);
 
     const fiveYearsAgo = new Date();
     fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 5);
-
-    const manualFilter =
-      zoneId || districtId || regionId
-        ? {
-            village: {
-              ...(zoneId ? { zoneId } : {}),
-              ...(districtId || regionId
-                ? {
-                    zone: {
-                      ta: {
-                        ...(districtId ? { districtId } : {}),
-                        ...(regionId ? { district: { regionId } } : {}),
-                      },
-                    },
-                  }
-                : {}),
-            },
-          }
-        : hasScope
-          ? { village: villageScope }
-          : {};
 
     const members = await prisma.householdMember.findMany({
       where: {
@@ -867,8 +875,8 @@ export const getChildrenUnder5Report = async (req, res, next) => {
           { estimatedAge: { lte: 5 } },
         ],
         createdAt: { gte: fromDate, lte: toDate },
-        ...(Object.keys(manualFilter).length > 0
-          ? { household: manualFilter }
+        ...(Object.keys(villageWhere).length
+          ? { household: { village: villageWhere } }
           : {}),
       },
       include: {

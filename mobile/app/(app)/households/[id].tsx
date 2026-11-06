@@ -18,6 +18,9 @@ import { COLORS, SIZES, SHADOWS } from "../../../constants/theme";
 import { getDb } from "../../../src/db/schema";
 import { useAppStore } from "../../../src/store";
 import api from "../../../src/services/api";
+import { enqueue } from "../../../src/db/sync-queue";
+import * as Crypto from "expo-crypto";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import NetInfo from "@react-native-community/netinfo";
 import * as Location from "expo-location";
 
@@ -90,6 +93,7 @@ export default function HouseholdDetailScreen() {
   const [washLatrine, setWashLatrine] = useState<string>("NO");
   const [washHandwashing, setWashHandwashing] = useState<string>("NO");
   const [washWaterSource, setWashWaterSource] = useState<string>("BOREHOLE");
+  const [deliveryMember, setDeliveryMember] = useState<Member | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -230,6 +234,67 @@ export default function HouseholdDetailScreen() {
       Alert.alert("Error", "Failed to update WASH data.");
     } finally {
       setWashSaving(false);
+    }
+  };
+
+  // Postnatal visits: day 1, day 3, day 7 and week 6 after delivery
+  const PNC_DAYS = [
+    { number: 1, days: 1 },
+    { number: 2, days: 3 },
+    { number: 3, days: 7 },
+    { number: 4, days: 42 },
+  ];
+
+  const createPncSchedule = async (m: Member, deliveredOn: Date) => {
+    try {
+      const db = await getDb();
+      let created = 0;
+
+      for (const p of PNC_DAYS) {
+        // Already scheduled? Skip it, so running this twice is harmless
+        const existing = await db.getFirstAsync<{ id: string }>(
+          "SELECT id FROM pnc_visits WHERE member_id = ? AND pnc_number = ?",
+          [m.id, p.number],
+        );
+        if (existing) continue;
+
+        const localId = Crypto.randomUUID(); // unique id made on the phone
+        const expected = new Date(deliveredOn);
+        expected.setDate(expected.getDate() + p.days); // due date = delivery + N days
+
+        // 1) Save on the phone, so it works offline
+        await db.runAsync(
+          `INSERT INTO pnc_visits (id, local_id, member_id, pnc_number, expected_date, status, synced)
+           VALUES (?,?,?,?,?,'SCHEDULED',0)`,
+          [localId, localId, m.id, p.number, expected.toISOString()],
+        );
+
+        // 2) Queue it so it goes to the server when there is network
+        await enqueue("PNC_VISIT", {
+          localId,
+          memberId: m.id,
+          pncNumber: p.number,
+          expectedDate: expected.toISOString(),
+          status: "SCHEDULED",
+        });
+        created++;
+      }
+
+      // She has delivered, so she is no longer pregnant
+      await db.runAsync("UPDATE members SET is_pregnant = 0 WHERE id = ?", [
+        m.id,
+      ]);
+
+      Alert.alert(
+        "Delivery Recorded",
+        created > 0
+          ? `${created} postnatal visits scheduled for ${memberName(m)}.`
+          : "Postnatal visits were already scheduled.",
+      );
+      load(); // refresh the screen
+    } catch (err) {
+      console.error("[PNC] Create schedule error:", err);
+      Alert.alert("Error", "Failed to record delivery.");
     }
   };
 
@@ -522,6 +587,12 @@ export default function HouseholdDetailScreen() {
               color: COLORS.warning,
               route: "/(app)/drugs/index",
             },
+            {
+              icon: "happy-outline",
+              label: "PNC",
+              color: "#0D9488",
+              route: "/(app)/pnc/index",
+            },
           ].map((a) => (
             <TouchableOpacity
               key={a.label}
@@ -645,6 +716,19 @@ export default function HouseholdDetailScreen() {
                             Pregnant
                           </Text>
                         </View>
+                      )}
+
+                      {m.is_pregnant === 1 && (
+                        <TouchableOpacity
+                          style={[styles.tag, { backgroundColor: "#DB2777" }]}
+                          onPress={() => setDeliveryMember(m)}
+                        >
+                          <Text
+                            style={[styles.tagText, { color: COLORS.white }]}
+                          >
+                            Record delivery
+                          </Text>
+                        </TouchableOpacity>
                       )}
                       {m.has_disability === 1 && (
                         <View
@@ -856,6 +940,28 @@ export default function HouseholdDetailScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {deliveryMember && (
+        <DateTimePicker
+          value={new Date()}
+          mode="date"
+          display="default"
+          maximumDate={new Date()}
+          onChange={(event, date) => {
+            const m = deliveryMember;
+            setDeliveryMember(null); // hide the picker
+            if (event.type !== "set" || !date || !m) return; // she cancelled
+            Alert.alert(
+              "Confirm Delivery",
+              `${memberName(m)} delivered on ${date.toLocaleDateString("en-GB")}? This schedules 4 postnatal visits.`,
+              [
+                { text: "Cancel", style: "cancel" },
+                { text: "Confirm", onPress: () => createPncSchedule(m, date) },
+              ],
+            );
+          }}
+        />
+      )}
 
       <Modal
         visible={showWashModal}

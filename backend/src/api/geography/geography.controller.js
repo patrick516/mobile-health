@@ -244,7 +244,12 @@ export const createVillage = async (req, res, next) => {
         message: "Village name and zoneId are required.",
       });
     }
-
+    if (req.user.role === "CCW" && !req.user.zoneIds.includes(zoneId)) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not allocated to this zone.",
+      });
+    }
     // Check for potential duplicates in this zone
     const existingVillages = await prisma.village.findMany({
       where: { zoneId, canonicalVillageId: null },
@@ -327,7 +332,16 @@ export const deleteVillage = async (req, res, next) => {
         message: "Village not found",
       });
     }
-
+    // Only admins, or the CCW who added an unverified village, may delete it
+    const isAdmin = ["ADMIN", "SUPER_ADMIN"].includes(req.user.role);
+    const isOwnUnverified =
+      village.createdByUserId === req.user.id && !village.isVerified;
+    if (!isAdmin && !isOwnUnverified) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only remove villages you added yourself.",
+      });
+    }
     // Check if village has households
     const householdCount = village.households?.length || 0;
 

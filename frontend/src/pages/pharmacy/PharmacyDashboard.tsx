@@ -30,6 +30,7 @@ export default function PharmacyDashboard() {
       api
         .get("/pharmacy/requests", { params: { status: "PENDING" } })
         .then((r) => r.data.data),
+    refetchInterval: 10000, // keep the waiting list fresh
   });
 
   const { data: batches } = useQuery({
@@ -97,6 +98,52 @@ export default function PharmacyDashboard() {
           Drug stock management and dispensing
         </p>
       </div>
+
+      {/* Patients waiting for medication (refreshes every 10 seconds) */}
+      {pendingRequests > 0 && (
+        <div className="card p-5 border-l-4 border-orange-400">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-bold text-gray-900 flex items-center gap-2">
+              <ClipboardList size={16} className="text-orange-600" /> Patients
+              waiting for medication
+            </h2>
+            <Link
+              to="/pharmacy/requests"
+              className="text-xs text-teal-600 hover:underline"
+            >
+              Open requests
+            </Link>
+          </div>
+          <div className="space-y-2">
+            {requests?.slice(0, 5).map((r: any) => (
+              <div
+                key={r.id}
+                className="py-2 border-b border-gray-50 last:border-0"
+              >
+                <p className="text-sm font-semibold text-gray-900">
+                  {r.patientName}
+                  {r.patientAge != null && (
+                    <span className="font-normal text-gray-500">
+                      {" "}
+                      · {r.patientAge} yrs
+                    </span>
+                  )}
+                </p>
+                {r.diagnosis && (
+                  <p className="text-xs text-gray-500">
+                    Diagnosis: {r.diagnosis}
+                  </p>
+                )}
+                <p className="text-xs text-gray-700 mt-1">
+                  {r.items
+                    ?.map((i: any) => `${i.drugName} × ${i.quantityRequested}`)
+                    .join(", ")}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
