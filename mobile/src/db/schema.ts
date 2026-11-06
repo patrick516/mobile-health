@@ -88,6 +88,7 @@ export const initDb = async (): Promise<void> => {
     await addColumnIfMissing("cached_users", "facility", "TEXT DEFAULT NULL");
     await addColumnIfMissing("notifications", "user_id", "TEXT");
     await addColumnIfMissing("households", "registered_by_name", "TEXT");
+    await addColumnIfMissing("households", "registered_by_user_id", "TEXT");
     await addColumnIfMissing("households", "wall_material", "TEXT");
     await addColumnIfMissing("households", "roof_material", "TEXT");
     await addColumnIfMissing("households", "floor_type", "TEXT");
@@ -127,7 +128,9 @@ export const initDb = async (): Promise<void> => {
         head_phone TEXT,
         head_national_id TEXT,
         consent_given INTEGER DEFAULT 0,
-        consent_signature_url TEXT,
+               consent_signature_url TEXT,
+        registered_by_name TEXT,
+        registered_by_user_id TEXT,
         household_number TEXT,
         structure_type TEXT,
         wall_material TEXT,

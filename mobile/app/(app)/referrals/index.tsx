@@ -67,7 +67,7 @@ export default function ReferralsScreen() {
          FROM referrals r
          LEFT JOIN members m ON m.id = r.member_id
          LEFT JOIN households h ON m.household_id = h.id
-         WHERE h.registered_by_user_id = ?
+        WHERE (h.registered_by_user_id = ? OR h.registered_by_user_id IS NULL)
          ORDER BY r.created_at DESC`,
         [uid],
       );
@@ -78,7 +78,7 @@ export default function ReferralsScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [userId]);
 
   useFocusEffect(
     useCallback(() => {
