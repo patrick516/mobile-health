@@ -658,7 +658,7 @@ export default function AddHouseholdScreen() {
     if (step === 2) {
       const verified =
         verifyMethod === "thumbprint" ? thumbprintCaptured : !signatureEmpty;
-      return consentGiven && verified;
+      return consentGiven && verified && headNationalId.trim() !== "";
     }
     if (step === 3)
       return (
@@ -1109,7 +1109,7 @@ export default function AddHouseholdScreen() {
                 }
               }}
               label="Head of Household National ID"
-              required={false}
+              required={true}
             />
 
             <Text style={styles.label}>Identity Confirmation *</Text>
