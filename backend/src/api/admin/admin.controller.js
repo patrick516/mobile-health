@@ -218,6 +218,7 @@ export const createUser = async (req, res, next) => {
               process.env.PORTAL_LINK || "https://mob-health.vercel.app",
           }),
         );
+        console.log(`📧 Welcome email sent to ${user.email}`);
       } else {
         await sendSms(
           user.phoneNumber,
