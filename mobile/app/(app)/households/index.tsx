@@ -327,14 +327,14 @@ export default function HouseholdsScreen() {
           <Text style={styles.emptyText}>
             {language === "en"
               ? "Tap + to register your first household"
-              : "Dina + kuyandikitsa nyumba"}
+              : "Dina + kulembetsa nyumba"}
           </Text>
           <TouchableOpacity
             style={styles.emptyBtn}
             onPress={() => router.push("/(app)/households/add")}
           >
             <Text style={styles.emptyBtnText}>
-              {language === "en" ? "Register Household" : "Yandikitsa Nyumba"}
+              {language === "en" ? "Register Household" : "Kulembetsa Nyumba"}
             </Text>
           </TouchableOpacity>
         </View>

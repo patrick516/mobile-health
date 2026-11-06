@@ -33,7 +33,7 @@ const NAV_BUTTONS = [
   },
   {
     label: "Immunisations",
-    labelNy: "Mvaccination",
+    labelNy: "vaccination",
     icon: "shield-checkmark",
     route: "/(app)/immunisations/",
     color: "#7C3AED",
@@ -75,7 +75,7 @@ const NAV_BUTTONS = [
   },
   {
     label: "Notifications",
-    labelNy: "Zindikirani",
+    labelNy: "Uthenga",
     icon: "notifications",
     route: "/(app)/notifications/",
     color: "#0284C7",
