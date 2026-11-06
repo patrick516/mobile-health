@@ -407,8 +407,8 @@ export default function AddHouseholdScreen() {
       return showError("Required", "Head of household name is required.");
     if (!selectedVillageId)
       return showError("Required", "Please select or add a village.");
-    if (!structureType)
-      return showError("Required", "Please select structure type.");
+    // if (!structureType)
+    //   return showError("Required", "Please select structure type.");
     if (!waterSource)
       return showError("Required", "Please select water source.");
     if (!distanceToFacility)
