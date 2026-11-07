@@ -362,10 +362,19 @@ export const fulfillRequest = async (req, res, next) => {
         .status(400)
         .json({ success: false, message: "fulfilledItems is required." });
 
-    // Check stock for every item first, so nothing is half-dispensed
+    // Check stock for every item first, so nothing is half-dispensed.
+    // The pharmacist may substitute a different in-stock drug per item.
     for (const fi of fulfilledItems) {
       const item = request.items.find((i) => i.id === fi.itemId);
       if (!item) continue;
+      const override = fi.drugName ? String(fi.drugName).trim() : "";
+      if (override && override !== item.drugName) {
+        await prisma.pharmacyRequestItem.update({
+          where: { id: item.id },
+          data: { drugName: override },
+        });
+        item.drugName = override;
+      }
       const wanted = Math.min(
         Math.max(parseInt(fi.quantityFulfilled) || 0, 0),
         item.quantityRequested,
@@ -465,14 +474,17 @@ export const fulfillRequest = async (req, res, next) => {
         notes: notes || request.notes,
       },
     });
-    // Close the loop: everything dispensed -> the referral is COMPLETED
+    // Closing the loop: the pharmacist handing over the drugs IS the
+    // treatment — the referral flips to TREATED automatically (never
+    // silently COMPLETED; the feedback/closure step still belongs to
+    // the nurse and the CCW).
     if (request.referralId && updated.status === "FULFILLED") {
       await prisma.referral.updateMany({
         where: {
           id: request.referralId,
           status: { notIn: ["COMPLETED", "MISSED"] },
         },
-        data: { status: "COMPLETED", resolvedAt: new Date() },
+        data: { status: "TREATED", treatedAt: new Date() },
       });
     }
     res.json({ success: true, data: updated });

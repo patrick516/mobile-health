@@ -147,7 +147,7 @@ export default function Sidebar() {
         .get("/pharmacy/requests", { params: { status: "PENDING" } })
         .then((r) => r.data.data),
     enabled: isPharmacist,
-    refetchInterval: 10000,
+    refetchInterval: 5000,
   });
   const pendingCount = pendingRequests?.length ?? 0;
 

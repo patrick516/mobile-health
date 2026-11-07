@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ClipboardList, Plus, X } from "lucide-react";
+import { ClipboardList, Plus } from "lucide-react";
 import api from "../../services/api";
 import Select from "../../components/ui/Select";
 import { useAuthStore } from "../../store/auth.store";
+import WalkInEncounter from "../../components/encounters/WalkInEncounter";
 
 const STATUS_COLORS: Record<string, string> = {
   PENDING: "bg-yellow-100 text-yellow-700",
@@ -24,21 +25,20 @@ export default function PharmacyRequests() {
   const { user } = useAuthStore();
 
   const isPharmacist = user?.role === "PHARMACIST";
-  const canCreateRequest = ["NURSE", "ADMIN", "DISTRICT_OFFICER"].includes(
-    user?.role || "",
-  );
+  const canCreateRequest = [
+    "NURSE",
+    "ADMIN",
+    "DISTRICT_OFFICER",
+    "SUPER_ADMIN",
+  ].includes(user?.role || "");
 
   const [filter, setFilter] = useState("PENDING");
   const [selected, setSelected] = useState<any>(null);
   const [fulfillData, setFulfillData] = useState<Record<string, string>>({});
+  // Per-item drug substitution chosen by the pharmacist at fulfil time
+  const [substitute, setSubstitute] = useState<Record<string, string>>({});
 
   const [showForm, setShowForm] = useState(false);
-  const [newRequest, setNewRequest] = useState({
-    patientName: "",
-    diagnosis: "",
-    drugName: "",
-    quantity: "",
-  });
 
   const { data: requests, isLoading } = useQuery({
     queryKey: ["pharmacy-requests", filter],
@@ -48,34 +48,41 @@ export default function PharmacyRequests() {
           params: filter !== "ALL" ? { status: filter } : {},
         })
         .then((r) => r.data.data),
-    refetchInterval: 10000, // new prescriptions appear within 10 seconds
+    refetchInterval: 5000, // new prescriptions appear within seconds
   });
 
-  const { data: drugs } = useQuery({
-    queryKey: ["drugs-formulary"],
-    queryFn: () => api.get("/drugs").then((r) => r.data.data),
-    enabled: showForm,
+  // In-date stock at this facility — shown while fulfilling so the
+  // pharmacist can see what is actually available before dispensing
+  const { data: stockBatches } = useQuery<any[]>({
+    queryKey: ["pharmacy-batches-active"],
+    queryFn: () =>
+      api
+        .get("/pharmacy/batches", { params: { status: "ACTIVE" } })
+        .then((r) => r.data.data),
+    enabled: !!selected,
   });
 
-  const createMutation = useMutation({
-    mutationFn: (data: any) => api.post("/pharmacy/requests", data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["pharmacy-requests"] });
-      setShowForm(false);
-      setNewRequest({
-        patientName: "",
-        diagnosis: "",
-        drugName: "",
-        quantity: "",
-      });
-      alert("Drug request sent to Pharmacist successfully!");
-    },
-    onError: (err: any) =>
-      alert(err.response?.data?.message || "Failed to create request"),
+  const availableStock: Record<
+    string,
+    { total: number; unit: string; earliest: string | null }
+  > = {};
+  (stockBatches || []).forEach((b: any) => {
+    if (new Date(b.expiryDate) <= new Date() || b.quantityRemaining <= 0)
+      return;
+    const entry = availableStock[b.drugName] || {
+      total: 0,
+      unit: b.unit,
+      earliest: null,
+    };
+    entry.total += b.quantityRemaining;
+    if (!entry.earliest || new Date(b.expiryDate) < new Date(entry.earliest)) {
+      entry.earliest = b.expiryDate;
+    }
+    availableStock[b.drugName] = entry;
   });
 
   const fulfillMutation = useMutation({
-    mutationFn: ({ id, data }: any) =>
+    mutationFn: ({ id, data }: { id: string; data: any }) =>
       api.patch(`/pharmacy/requests/${id}/fulfill`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pharmacy-requests"] });
@@ -83,10 +90,12 @@ export default function PharmacyRequests() {
         queryKey: ["pharmacy-requests-pending"],
       });
       queryClient.invalidateQueries({ queryKey: ["pharmacy-batches"] });
+      queryClient.invalidateQueries({ queryKey: ["pharmacy-batches-active"] });
       queryClient.invalidateQueries({ queryKey: ["pharmacy-alerts"] });
       queryClient.invalidateQueries({ queryKey: ["referrals"] });
       setSelected(null);
       setFulfillData({});
+      setSubstitute({});
     },
     onError: (err: any) =>
       alert(err.response?.data?.message || "Could not fulfil this request."),
@@ -94,31 +103,27 @@ export default function PharmacyRequests() {
 
   const handleFulfill = () => {
     if (!selected) return;
-    const fulfilledItems = selected.items.map((item: any) => ({
-      itemId: item.id,
-      quantityFulfilled: parseInt(fulfillData[item.id] || "0"),
-    }));
+    const fulfilledItems = selected.items.map((item: any) => {
+      const chosen = substitute[item.id];
+      return {
+        itemId: item.id,
+        quantityFulfilled: parseInt(fulfillData[item.id] || "0"),
+        ...(chosen && chosen !== item.drugName ? { drugName: chosen } : {}),
+      };
+    });
     fulfillMutation.mutate({ id: selected.id, data: { fulfilledItems } });
   };
 
-  const handleCreate = () => {
-    if (
-      !newRequest.patientName ||
-      !newRequest.drugName ||
-      !newRequest.quantity
-    ) {
-      return alert("Please fill in Patient Name, Drug, and Quantity.");
-    }
-    createMutation.mutate({
-      patientName: newRequest.patientName,
-      diagnosis: newRequest.diagnosis,
-      items: [
-        {
-          drugName: newRequest.drugName,
-          quantityRequested: parseInt(newRequest.quantity),
-        },
-      ],
+  const openFulfill = (r: any) => {
+    setSelected(r);
+    const init: Record<string, string> = {};
+    const subs: Record<string, string> = {};
+    r.items.forEach((i: any) => {
+      init[i.id] = String(i.quantityRequested);
+      subs[i.id] = i.drugName;
     });
+    setFulfillData(init);
+    setSubstitute(subs);
   };
 
   return (
@@ -137,7 +142,7 @@ export default function PharmacyRequests() {
               onClick={() => setShowForm(true)}
               className="btn-primary flex items-center gap-2"
             >
-              <Plus size={16} /> New Prescription
+              <Plus size={16} /> New Walk-in Encounter
             </button>
           )}
 
@@ -152,6 +157,8 @@ export default function PharmacyRequests() {
         </div>
       </div>
 
+      <WalkInEncounter open={showForm} onClose={() => setShowForm(false)} />
+
       {isLoading && (
         <p className="text-sm text-gray-400 text-center py-8">Loading...</p>
       )}
@@ -162,16 +169,24 @@ export default function PharmacyRequests() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="font-semibold text-gray-900">{r.patientName}</p>
+                {r.patientAge != null && (
+                  <p className="text-xs text-gray-400">{r.patientAge} yrs</p>
+                )}
                 {r.diagnosis && (
                   <p className="text-xs text-gray-500">
                     Diagnosis: {r.diagnosis}
                   </p>
                 )}
+                {r.notes && (
+                  <p className="text-xs text-gray-400">Signs: {r.notes}</p>
+                )}
 
-                {r.referralId && (
+                {r.referralId ? (
                   <p className="text-xs text-teal-700">
-                    From a referral — dispensing completes it
+                    From a referral — dispensing marks it TREATED
                   </p>
+                ) : (
+                  <p className="text-xs text-gray-400">Walk-in encounter</p>
                 )}
                 <p className="text-xs text-gray-500">
                   Requested by {r.requestedBy?.firstName}{" "}
@@ -197,14 +212,7 @@ export default function PharmacyRequests() {
                 </span>
                 {isPharmacist && r.status === "PENDING" && (
                   <button
-                    onClick={() => {
-                      setSelected(r);
-                      const init: Record<string, string> = {};
-                      r.items.forEach((i: any) => {
-                        init[i.id] = String(i.quantityRequested);
-                      });
-                      setFulfillData(init);
-                    }}
+                    onClick={() => openFulfill(r)}
                     className="text-xs bg-teal-600 text-white px-3 py-1 rounded-lg hover:bg-teal-700"
                   >
                     Fulfill
@@ -221,133 +229,104 @@ export default function PharmacyRequests() {
         )}
       </div>
 
-      {showForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4">
-            <div className="flex justify-between items-center">
-              <h3 className="font-bold text-gray-900">
-                New Patient Prescription
-              </h3>
-              <button onClick={() => setShowForm(false)}>
-                <X size={20} className="text-gray-400" />
-              </button>
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Patient Name
-              </label>
-              <input
-                className="input"
-                value={newRequest.patientName}
-                onChange={(e) =>
-                  setNewRequest({ ...newRequest, patientName: e.target.value })
-                }
-                placeholder="e.g. John Doe"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Diagnosis (Optional)
-              </label>
-              <input
-                className="input"
-                value={newRequest.diagnosis}
-                onChange={(e) =>
-                  setNewRequest({ ...newRequest, diagnosis: e.target.value })
-                }
-                placeholder="e.g. Severe Malaria"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Drug
-              </label>
-              <Select
-                value={newRequest.drugName}
-                onChange={(val) =>
-                  setNewRequest({ ...newRequest, drugName: val })
-                }
-                placeholder="Select drug..."
-                options={
-                  drugs?.map((d: any) => ({
-                    value: d.nameEnglish,
-                    label: d.nameEnglish,
-                  })) || []
-                }
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Quantity
-              </label>
-              <input
-                className="input"
-                type="number"
-                value={newRequest.quantity}
-                onChange={(e) =>
-                  setNewRequest({ ...newRequest, quantity: e.target.value })
-                }
-                placeholder="0"
-              />
-            </div>
-
-            <button
-              onClick={handleCreate}
-              disabled={createMutation.isPending}
-              className="btn-primary w-full"
-            >
-              {createMutation.isPending ? "Sending..." : "Send to Pharmacist"}
-            </button>
-          </div>
-        </div>
-      )}
-
       {selected && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4">
-            <h3 className="font-bold text-gray-900">
-              Fulfill Prescription — {selected.patientName}
-            </h3>
-            <p className="text-sm text-gray-500">
-              Enter quantity to dispense for each item. Stock will deduct using
-              FEFO.
-            </p>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-lg space-y-4 max-h-[90vh] overflow-y-auto">
+            <div>
+              <h3 className="font-bold text-gray-900">
+                Dispense — {selected.patientName}
+              </h3>
+              <p className="text-sm text-gray-500">
+                Available stock is shown per drug. Adjust quantities or
+                substitute an in-stock alternative, then dispense (FEFO).
+              </p>
+            </div>
             <div className="space-y-3">
-              {selected.items.map((item: any) => (
-                <div
-                  key={item.id}
-                  className="flex items-center justify-between gap-3"
-                >
-                  <div>
-                    <p className="text-sm font-medium">{item.drugName}</p>
-                    <p className="text-xs text-gray-500">
-                      Requested: {item.quantityRequested}
-                    </p>
-                    {item.notes && (
-                      <p className="text-xs text-teal-700">{item.notes}</p>
-                    )}
+              {selected.items.map((item: any) => {
+                const chosen = substitute[item.id] || item.drugName;
+                const info = availableStock[chosen];
+                return (
+                  <div
+                    key={item.id}
+                    className="border border-gray-100 rounded-lg p-3 space-y-2"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <select
+                          className="input text-sm w-full"
+                          value={chosen}
+                          onChange={(e) =>
+                            setSubstitute((p) => ({
+                              ...p,
+                              [item.id]: e.target.value,
+                            }))
+                          }
+                        >
+                          {![chosen].some((n) =>
+                            Object.keys(availableStock).includes(n),
+                          ) && (
+                            <option value={item.drugName}>
+                              {item.drugName}
+                            </option>
+                          )}
+                          {Object.entries(availableStock).map(([name, s]) => (
+                            <option key={name} value={name}>
+                              {name} — {s.total} {s.unit} in stock
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Requested: {item.quantityRequested}
+                          {item.notes && (
+                            <span className="text-teal-700">
+                              {" "}
+                              · {item.notes}
+                            </span>
+                          )}
+                          {info ? (
+                            <span className="text-teal-700">
+                              {" "}
+                              · FEFO: earliest expiry{" "}
+                              {info.earliest
+                                ? new Date(info.earliest).toLocaleDateString(
+                                    "en-GB",
+                                  )
+                                : "—"}
+                            </span>
+                          ) : (
+                            <span className="text-red-600">
+                              {" "}
+                              · no in-date stock
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      <input
+                        type="number"
+                        className="input w-24 text-center"
+                        value={fulfillData[item.id] || ""}
+                        onChange={(e) =>
+                          setFulfillData((p) => ({
+                            ...p,
+                            [item.id]: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
                   </div>
-                  <input
-                    type="number"
-                    className="input w-24 text-center"
-                    value={fulfillData[item.id] || ""}
-                    onChange={(e) =>
-                      setFulfillData((p) => ({
-                        ...p,
-                        [item.id]: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-              ))}
+                );
+              })}
+            </div>
+            <div className="bg-teal-50 border border-teal-100 rounded-lg px-3 py-2 text-xs text-teal-800">
+              Dispensing completes the loop: the linked referral is marked
+              <b> TREATED</b> automatically, and the CHW sees it on next sync.
             </div>
             <div className="flex gap-3">
               <button
-                onClick={() => setSelected(null)}
+                onClick={() => {
+                  setSelected(null);
+                  setSubstitute({});
+                }}
                 className="flex-1 border border-gray-200 text-gray-600 py-2 rounded-lg text-sm"
               >
                 Cancel

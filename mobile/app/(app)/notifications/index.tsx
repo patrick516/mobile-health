@@ -112,7 +112,10 @@ export default function NotificationsScreen() {
       await markAsRead(n.id);
     }
 
-    if (n.type === "REFERRAL" || n.related_id) {
+    if (n.type === "ANC") {
+      // Open the ANC schedule so the CCW can act on the reminder
+      router.push("/(app)/anc/index" as any);
+    } else if (n.type === "REFERRAL" || n.related_id) {
       // Use correct route path
       router.push("/referrals");
     } else {

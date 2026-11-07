@@ -1,20 +1,29 @@
 import { useState } from "react";
-import { Stethoscope, Shield, Baby, Pill, HeartHandshake } from "lucide-react";
+import {
+  Stethoscope,
+  Shield,
+  Baby,
+  Pill,
+  HeartHandshake,
+  CalendarHeart,
+} from "lucide-react";
 
 import ReferralQueue from "../referrals/ReferralQueue";
 import ImmunisationTracker from "../immunisations/ImmunisationTracker";
+import AncTracker from "../anc/AncTracker";
 import PncTracker from "../pnc/PncTracker";
 import TbTracker from "../tb/TbTracker";
 import FpTracker from "../fp/FpTracker";
 
 export default function ClinicalPrograms() {
   const [activeTab, setActiveTab] = useState<
-    "referrals" | "immunisations" | "pnc" | "tb" | "fp"
+    "referrals" | "immunisations" | "anc" | "pnc" | "tb" | "fp"
   >("referrals");
 
   const TABS = [
     { id: "referrals", label: "Referrals", icon: Stethoscope },
     { id: "immunisations", label: "Immunisations", icon: Shield },
+    { id: "anc", label: "Antenatal Care (ANC)", icon: CalendarHeart },
     { id: "pnc", label: "Postnatal Care (PNC)", icon: Baby },
     { id: "tb", label: "TB Follow-up", icon: Pill },
     { id: "fp", label: "Family Planning", icon: HeartHandshake },
@@ -44,6 +53,7 @@ export default function ClinicalPrograms() {
       <div className="animate-in fade-in duration-300">
         {activeTab === "referrals" && <ReferralQueue />}
         {activeTab === "immunisations" && <ImmunisationTracker />}
+        {activeTab === "anc" && <AncTracker />}
         {activeTab === "pnc" && <PncTracker />}
         {activeTab === "tb" && <TbTracker />}
         {activeTab === "fp" && <FpTracker />}

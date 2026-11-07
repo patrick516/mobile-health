@@ -764,27 +764,37 @@ export const allocateUserToTA = async (req, res, next) => {
   }
 };
 
+// Resolve the district an ADMIN is allocated to (via their facility, or its TA)
+const resolveAdminDistrict = async (facilityId) => {
+  const facility = await prisma.facility.findUnique({
+    where: { id: facilityId },
+    select: { id: true, districtId: true, taId: true },
+  });
+  if (!facility) return null;
+  if (facility.districtId) return facility.districtId;
+  if (facility.taId) {
+    const ta = await prisma.traditionalAuthority.findUnique({
+      where: { id: facility.taId },
+      select: { districtId: true },
+    });
+    if (ta?.districtId) return ta.districtId;
+  }
+  return null;
+};
+
 export const getFacilities = async (req, res, next) => {
   try {
     const { facilityType, districtId, taId } = req.query;
 
+    // ADMIN: fail-closed — only facilities in their allocated district
     let scopeFilter = {};
-    if (req.user.role === "ADMIN" && req.user.facilityId) {
-      const adminFacility = await prisma.facility.findUnique({
-        where: { id: req.user.facilityId },
-        select: { districtId: true, taId: true },
-      });
-      if (adminFacility?.districtId) {
-        scopeFilter = { districtId: adminFacility.districtId };
-      } else if (adminFacility?.taId) {
-        const ta = await prisma.traditionalAuthority.findUnique({
-          where: { id: adminFacility.taId },
-          select: { districtId: true },
-        });
-        if (ta?.districtId) {
-          scopeFilter = { districtId: ta.districtId };
-        }
-      }
+    if (req.user.role === "ADMIN") {
+      const adminDistrictId = req.user.facilityId
+        ? await resolveAdminDistrict(req.user.facilityId)
+        : null;
+      scopeFilter = adminDistrictId
+        ? { districtId: adminDistrictId }
+        : { id: "__no_match__" };
     }
 
     const facilities = await prisma.facility.findMany({
@@ -826,6 +836,34 @@ export const createFacility = async (req, res, next) => {
         success: false,
         message: "Facility name and type are required.",
       });
+    }
+
+    // ── Scope: an ADMIN works only inside their allocated district ──
+    const isSuper = req.user.role === "SUPER_ADMIN";
+    let adminDistrictId = null;
+    if (!isSuper) {
+      if (!req.user.facilityId) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Your account has no facility allocation. A Super Admin must assign your district before you can add facilities.",
+        });
+      }
+      if (facilityType === "DISTRICT_HOSPITAL") {
+        return res.status(403).json({
+          success: false,
+          message:
+            "District Hospitals are created by the Super Admin. You can add TA Hospitals and Clinics in your own district.",
+        });
+      }
+      adminDistrictId = await resolveAdminDistrict(req.user.facilityId);
+      if (!adminDistrictId) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Your allocated facility has no district — ask the Super Admin to fix your facility.",
+        });
+      }
     }
 
     if (facilityType === "DISTRICT_HOSPITAL") {
@@ -870,6 +908,13 @@ export const createFacility = async (req, res, next) => {
         return res.status(400).json({
           success: false,
           message: "Parent facility must be a District Hospital.",
+        });
+      }
+      if (adminDistrictId && parent.districtId !== adminDistrictId) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "You can only attach TA Hospitals to a District Hospital in your own district.",
         });
       }
 
@@ -930,11 +975,24 @@ export const createFacility = async (req, res, next) => {
           message: "Traditional Authority not found.",
         });
       }
+      if (adminDistrictId && ta.districtId !== adminDistrictId) {
+        return res.status(403).json({
+          success: false,
+          message: "You can only add Clinics in your own district.",
+        });
+      }
 
-      // NEW: Auto-attach the clinic to the Admin's parent hospital
+      // Auto-attach: ADMIN clinics link to the District Hospital of their district
       let linkedHospitalId = parentDistrictHospitalId || null;
-      if (req.user.role === "ADMIN" && req.user.facilityId) {
-        linkedHospitalId = req.user.facilityId;
+      if (adminDistrictId) {
+        const dh = await prisma.facility.findFirst({
+          where: {
+            facilityType: "DISTRICT_HOSPITAL",
+            districtId: adminDistrictId,
+          },
+          select: { id: true },
+        });
+        linkedHospitalId = dh?.id || null;
       }
 
       const facility = await prisma.facility.create({

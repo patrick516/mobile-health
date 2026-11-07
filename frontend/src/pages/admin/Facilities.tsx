@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Building2, Plus } from "lucide-react";
+import { Building2, MapPin, Plus } from "lucide-react";
 import api from "../../services/api";
 import Select from "../../components/ui/Select";
+import { useAuthStore } from "../../store/auth.store";
 
 const FACILITY_TYPES = [
   { value: "DISTRICT_HOSPITAL", label: "District Hospital" },
@@ -12,6 +13,9 @@ const FACILITY_TYPES = [
 
 export default function Facilities() {
   const queryClient = useQueryClient();
+  const user = useAuthStore((s) => s.user);
+  const isSuperAdmin = user?.role === "SUPER_ADMIN";
+  const myDistrictId = user?.facility?.districtId || "";
   const [form, setForm] = useState({
     name: "",
     facilityType: "",
@@ -29,12 +33,22 @@ export default function Facilities() {
   const { data: districts } = useQuery({
     queryKey: ["districts"],
     queryFn: () => api.get("/geography/districts").then((r) => r.data.data),
+    enabled: isSuperAdmin,
   });
 
   const { data: tas } = useQuery({
     queryKey: ["tas"],
     queryFn: () => api.get("/geography/tas").then((r) => r.data.data),
   });
+
+  const facilityTypeOptions = isSuperAdmin
+    ? FACILITY_TYPES
+    : FACILITY_TYPES.filter((t) => t.value !== "DISTRICT_HOSPITAL");
+
+  const myDistrictName = (
+    facilities as
+      Array<{ id: string; district?: { name?: string } }> | undefined
+  )?.find((f) => f.id === user?.facility?.id)?.district?.name;
 
   const createMutation = useMutation({
     mutationFn: (data: object) => api.post("/admin/facilities", data),
@@ -69,6 +83,15 @@ export default function Facilities() {
           <h2 className="font-bold text-gray-900">Add Health Facility</h2>
         </div>
 
+        {!isSuperAdmin && (
+          <p className="flex items-center gap-1.5 text-xs font-medium text-teal-700 bg-teal-50 px-3 py-2 rounded-lg">
+            <MapPin size={13} className="shrink-0" />
+            {myDistrictId
+              ? `Scoped to ${myDistrictName || "your district"} — TA Hospitals and Clinics only`
+              : "TA Hospitals and Clinics only"}
+          </p>
+        )}
+
         {error && (
           <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">
             {error}
@@ -91,7 +114,7 @@ export default function Facilities() {
               }))
             }
             placeholder="Select type..."
-            options={FACILITY_TYPES}
+            options={facilityTypeOptions}
           />
         </div>
 
@@ -201,7 +224,9 @@ export default function Facilities() {
 
       {/* Facility list */}
       <div className="card p-5">
-        <h2 className="font-bold text-gray-900 mb-4">All Facilities</h2>
+        <h2 className="font-bold text-gray-900 mb-4">
+          {isSuperAdmin ? "All Facilities" : "Facilities in your district"}
+        </h2>
         <div className="space-y-3 max-h-[600px] overflow-y-auto">
           {isLoading && (
             <p className="text-sm text-gray-400 text-center py-8">Loading...</p>

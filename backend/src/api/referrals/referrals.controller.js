@@ -213,11 +213,13 @@ export const updateReferral = async (req, res, next) => {
       }))
       .filter((m) => m.drugName && m.quantityRequested > 0);
 
-    if (meds.length > 0 && status !== "TREATED")
+    // A prescription is sent the moment the patient arrives (or refined
+    // while still ARRIVED) — the pharmacist's queue is the treatment trail
+    if (meds.length > 0 && !["ARRIVED", "TREATED"].includes(status))
       return res.status(400).json({
         success: false,
         message:
-          "Medication can only be prescribed when marking the referral as treated.",
+          "A prescription can only be sent once the patient has arrived.",
       });
     if (meds.length > 0 && !req.user.facilityId)
       return res.status(400).json({
@@ -260,8 +262,12 @@ export const updateReferral = async (req, res, next) => {
       ...(diagnosis ? { diagnosis } : {}),
       ...(treatmentGiven ? { treatmentGiven } : {}),
       ...(feedbackNote ? { feedbackNote } : {}),
-      ...(status === "ARRIVED" ? { arrivedAt: new Date() } : {}),
-      ...(status === "TREATED" ? { treatedAt: new Date() } : {}),
+      ...(status === "ARRIVED" && !current.arrivedAt
+        ? { arrivedAt: new Date() }
+        : {}),
+      ...(status === "TREATED" && !current.treatedAt
+        ? { treatedAt: new Date() }
+        : {}),
       ...(status === "FEEDBACK_SENT" ? {} : {}),
       ...(["COMPLETED", "MISSED"].includes(status)
         ? { resolvedAt: new Date() }
@@ -282,13 +288,24 @@ export const updateReferral = async (req, res, next) => {
       });
 
       if (meds.length > 0) {
-        // Never send a second pending prescription for the same referral
         const existing = await tx.pharmacyRequest.findFirst({
           where: { referralId: updated.id, status: "PENDING" },
           select: { id: true },
         });
 
-        if (!existing) {
+        if (existing) {
+          // Prescription edited before the pharmacist acted — replace items
+          await tx.pharmacyRequestItem.deleteMany({
+            where: { requestId: existing.id },
+          });
+          await tx.pharmacyRequest.update({
+            where: { id: existing.id },
+            data: {
+              diagnosis: diagnosis || updated.diagnosis || null,
+              items: { create: meds },
+            },
+          });
+        } else {
           const m = updated.member;
           const patientAge = m.dateOfBirth
             ? Math.floor(

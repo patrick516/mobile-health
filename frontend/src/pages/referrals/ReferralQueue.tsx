@@ -1,9 +1,16 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle, Clock, MessageSquare } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle,
+  Clock,
+  MessageSquare,
+  UserPlus,
+} from "lucide-react";
 import api from "../../services/api";
 import type { Referral, Pagination } from "../../types";
 import { useAuthStore } from "../../store/auth.store";
+import WalkInEncounter from "../../components/encounters/WalkInEncounter";
 
 const STATUS_STYLE: Record<string, string> = {
   PENDING: "badge-yellow",
@@ -39,13 +46,26 @@ const fullName = (p: any) =>
 export default function ReferralQueue() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
-  const canPrescribe = user?.role === "NURSE";
+  const canPrescribe = [
+    "NURSE",
+    "DISTRICT_OFFICER",
+    "ADMIN",
+    "SUPER_ADMIN",
+  ].includes(user?.role || "");
+  const canRecordWalkIn = [
+    "NURSE",
+    "ADMIN",
+    "DISTRICT_OFFICER",
+    "SUPER_ADMIN",
+  ].includes(user?.role || "");
   const [filter, setFilter] = useState<string>("ALL");
   const [selected, setSelected] = useState<Referral | null>(null);
   const [feedback, setFeedback] = useState("");
   const [diagnosis, setDiagnosis] = useState("");
+  const [walkInOpen, setWalkInOpen] = useState(false);
 
-  // Medication the nurse prescribes when marking a referral as treated
+  // Medication the nurse prescribes when the patient arrives (or while
+  // still ARRIVED) — it lands in the pharmacist queue immediately
   const [meds, setMeds] = useState<
     { drugName: string; quantity: string; dosage: string }[]
   >([]);
@@ -57,7 +77,10 @@ export default function ReferralQueue() {
       api
         .get("/pharmacy/batches", { params: { status: "ACTIVE" } })
         .then((r) => r.data.data),
-    enabled: canPrescribe && selected?.status === "ARRIVED",
+    enabled:
+      canPrescribe &&
+      !!selected &&
+      ["PENDING", "OVERDUE", "ARRIVED"].includes(selected.status),
   });
 
   // Add up what is left per drug name, skipping expired or empty batches
@@ -118,14 +141,15 @@ export default function ReferralQueue() {
   const handleUpdate = (status: string) => {
     if (!selected) return;
 
-    // Only "Treated" carries a prescription
+    // Arrival (and any refinement while ARRIVED) may carry a prescription —
+    // it creates/updates the PENDING PharmacyRequest the pharmacist sees
     let medications: {
       drugName: string;
       quantityRequested: number;
       notes?: string;
     }[] = [];
 
-    if (status === "TREATED") {
+    if (status === "ARRIVED" || status === "TREATED") {
       for (const m of meds) {
         if (!m.drugName && !m.quantity) continue; // empty row, ignore
         const qty = parseInt(m.quantity);
@@ -144,6 +168,12 @@ export default function ReferralQueue() {
           ...(m.dosage.trim() ? { notes: m.dosage.trim() } : {}),
         });
       }
+    }
+
+    if (status === "COMPLETED" && !feedback.trim()) {
+      return alert(
+        "Write a short feedback note for the CHW before closing the loop.",
+      );
     }
 
     updateMutation.mutate({
@@ -170,21 +200,35 @@ export default function ReferralQueue() {
   return (
     <div className="flex gap-6 h-full">
       <div className="flex-1 space-y-4 min-w-0">
-        <div className="card p-1 flex gap-1">
-          {filters.map((f) => (
+        <div className="flex items-center justify-between gap-3">
+          <div className="card p-1 flex gap-1 flex-1">
+            {filters.map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`flex-1 text-xs font-semibold py-2 rounded-lg transition-colors ${
+                  filter === f
+                    ? "bg-teal-700 text-white"
+                    : "text-gray-500 hover:bg-gray-100"
+                }`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+          {canRecordWalkIn && (
             <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`flex-1 text-xs font-semibold py-2 rounded-lg transition-colors ${
-                filter === f
-                  ? "bg-teal-700 text-white"
-                  : "text-gray-500 hover:bg-gray-100"
-              }`}
+              className="btn-primary text-sm flex items-center gap-2 shrink-0"
+              onClick={() => setWalkInOpen(true)}
             >
-              {f}
+              <UserPlus size={15} /> New Walk-in Patient
             </button>
-          ))}
+          )}
         </div>
+        <WalkInEncounter
+          open={walkInOpen}
+          onClose={() => setWalkInOpen(false)}
+        />
 
         {(() => {
           const overdueCount =
@@ -269,12 +313,16 @@ export default function ReferralQueue() {
                         ].includes(ref.status),
                       },
                       {
-                        label: "Treated",
+                        label: "Dispensed",
                         done: [
                           "TREATED",
                           "FEEDBACK_SENT",
                           "COMPLETED",
                         ].includes(ref.status),
+                      },
+                      {
+                        label: "Closed",
+                        done: ["COMPLETED"].includes(ref.status),
                       },
                     ].map((step, i) => (
                       <span
@@ -402,146 +450,187 @@ export default function ReferralQueue() {
               ))}
             </div>
 
-            {["PENDING", "OVERDUE", "ARRIVED"].includes(selected.status) && (
-              <div className="space-y-3 pt-2 border-t border-gray-100">
-                <p className="text-xs font-semibold text-gray-700">
-                  Update Status
-                </p>
+            <div className="space-y-3 pt-2 border-t border-gray-100">
+              {["PENDING", "OVERDUE", "ARRIVED"].includes(selected.status) && (
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold text-gray-700">
+                    {selected.status === "ARRIVED"
+                      ? "Clinical Record & Prescription"
+                      : "Record Arrival & Prescription"}
+                  </p>
 
-                <div>
-                  <label className="text-xs text-gray-500 mb-1 block">
-                    Diagnosis
-                  </label>
-                  <input
-                    className="input text-sm"
-                    placeholder="e.g. Severe malaria"
-                    value={diagnosis}
-                    onChange={(e) => setDiagnosis(e.target.value)}
-                  />
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">
+                      Diagnosis
+                    </label>
+                    <input
+                      className="input text-sm"
+                      placeholder="e.g. Severe malaria"
+                      value={diagnosis}
+                      onChange={(e) => setDiagnosis(e.target.value)}
+                    />
+                  </div>
+
+                  {canPrescribe && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs text-gray-500">
+                          Prescription → pharmacist queue
+                        </label>
+                        <button
+                          type="button"
+                          className="text-xs font-semibold text-teal-700"
+                          onClick={() =>
+                            setMeds((prev) => [
+                              ...prev,
+                              { drugName: "", quantity: "", dosage: "" },
+                            ])
+                          }
+                        >
+                          + Add drug
+                        </button>
+                      </div>
+
+                      {meds.length === 0 && (
+                        <p className="text-xs text-gray-400">
+                          No medication added.
+                        </p>
+                      )}
+
+                      {meds.map((m, i) => (
+                        <div
+                          key={i}
+                          className="border border-gray-100 rounded-lg p-2 space-y-2"
+                        >
+                          <div className="flex gap-2">
+                            <select
+                              className="input text-sm flex-1"
+                              value={m.drugName}
+                              onChange={(e) =>
+                                updateMed(i, "drugName", e.target.value)
+                              }
+                            >
+                              <option value="">Search drug…</option>
+                              {Object.entries(availableStock).map(
+                                ([name, info]) => (
+                                  <option key={name} value={name}>
+                                    {name} — {info.total} {info.unit}
+                                  </option>
+                                ),
+                              )}
+                            </select>
+                            <input
+                              type="number"
+                              min={1}
+                              className="input text-sm w-20"
+                              placeholder="Qty"
+                              value={m.quantity}
+                              onChange={(e) =>
+                                updateMed(i, "quantity", e.target.value)
+                              }
+                            />
+                            <button
+                              type="button"
+                              className="text-gray-400 hover:text-red-600 px-1"
+                              onClick={() =>
+                                setMeds((prev) =>
+                                  prev.filter((_, idx) => idx !== i),
+                                )
+                              }
+                              title="Remove"
+                            >
+                              ×
+                            </button>
+                          </div>
+                          <input
+                            className="input text-sm"
+                            placeholder="Dosage, e.g. 2 tablets twice daily"
+                            value={m.dosage}
+                            onChange={(e) =>
+                              updateMed(i, "dosage", e.target.value)
+                            }
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
+              )}
 
+              {["TREATED", "FEEDBACK_SENT", "COMPLETED"].includes(
+                selected.status,
+              ) && (
                 <div>
-                  <label className="text-xs text-gray-500 mb-1 block">
-                    Feedback / Treatment given
-                  </label>
+                  <p className="text-xs font-semibold text-gray-700 mb-1">
+                    Feedback to the CHW
+                  </p>
                   <textarea
                     className="input text-sm resize-none"
                     rows={3}
-                    placeholder="Write feedback for the CHW..."
+                    placeholder="What should the CHW know for follow-up?"
                     value={feedback}
                     onChange={(e) => setFeedback(e.target.value)}
                   />
                 </div>
-                {selected.status === "ARRIVED" && canPrescribe && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs text-gray-500">
-                        Medication for the pharmacist
-                      </label>
-                      <button
-                        type="button"
-                        className="text-xs font-semibold text-teal-700"
-                        onClick={() =>
-                          setMeds((prev) => [
-                            ...prev,
-                            { drugName: "", quantity: "", dosage: "" },
-                          ])
-                        }
-                      >
-                        + Add drug
-                      </button>
-                    </div>
+              )}
 
-                    {meds.length === 0 && (
-                      <p className="text-xs text-gray-400">
-                        No medication added.
-                      </p>
-                    )}
-
-                    {meds.map((m, i) => (
-                      <div
-                        key={i}
-                        className="border border-gray-100 rounded-lg p-2 space-y-2"
-                      >
-                        <div className="flex gap-2">
-                          <select
-                            className="input text-sm flex-1"
-                            value={m.drugName}
-                            onChange={(e) =>
-                              updateMed(i, "drugName", e.target.value)
-                            }
-                          >
-                            <option value="">Select drug...</option>
-                            {Object.entries(availableStock).map(
-                              ([name, info]) => (
-                                <option key={name} value={name}>
-                                  {name} — {info.total} {info.unit}
-                                </option>
-                              ),
-                            )}
-                          </select>
-                          <input
-                            type="number"
-                            min={1}
-                            className="input text-sm w-20"
-                            placeholder="Qty"
-                            value={m.quantity}
-                            onChange={(e) =>
-                              updateMed(i, "quantity", e.target.value)
-                            }
-                          />
-                          <button
-                            type="button"
-                            className="text-gray-400 hover:text-red-600 px-1"
-                            onClick={() =>
-                              setMeds((prev) =>
-                                prev.filter((_, idx) => idx !== i),
-                              )
-                            }
-                            title="Remove"
-                          >
-                            ×
-                          </button>
-                        </div>
-                        <input
-                          className="input text-sm"
-                          placeholder="Dosage, e.g. 2 tablets twice daily"
-                          value={m.dosage}
-                          onChange={(e) =>
-                            updateMed(i, "dosage", e.target.value)
-                          }
-                        />
-                      </div>
-                    ))}
+              {["PENDING", "OVERDUE", "ARRIVED"].includes(selected.status) &&
+                !["TREATED", "FEEDBACK_SENT", "COMPLETED"].includes(
+                  selected.status,
+                ) && (
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">
+                      Notes for the CHW (optional)
+                    </label>
+                    <textarea
+                      className="input text-sm resize-none"
+                      rows={2}
+                      placeholder="Write feedback for the CHW..."
+                      value={feedback}
+                      onChange={(e) => setFeedback(e.target.value)}
+                    />
                   </div>
                 )}
-                <div className="flex flex-col gap-2">
-                  {selected.status === "PENDING" ||
-                  selected.status === "OVERDUE" ? (
-                    <button
-                      className="btn-secondary text-sm"
-                      onClick={() => handleUpdate("ARRIVED")}
-                    >
-                      Mark Arrived
-                    </button>
-                  ) : null}
-                  {selected.status === "ARRIVED" ? (
-                    <button
-                      className="btn-primary text-sm"
-                      onClick={() => handleUpdate("TREATED")}
-                    >
-                      Mark Treated + Send Feedback
-                    </button>
-                  ) : null}
+
+              <div className="flex flex-col gap-2">
+                {["PENDING", "OVERDUE"].includes(selected.status) && (
+                  <button
+                    className="btn-primary text-sm"
+                    onClick={() => handleUpdate("ARRIVED")}
+                  >
+                    {meds.length > 0
+                      ? "Mark Arrived & Send to Pharmacy"
+                      : "Mark Arrived"}
+                  </button>
+                )}
+                {selected.status === "ARRIVED" ? (
+                  <button
+                    className="btn-primary text-sm"
+                    onClick={() => handleUpdate("ARRIVED")}
+                  >
+                    {meds.length > 0
+                      ? "Send / Update Prescription"
+                      : "Save Details"}
+                  </button>
+                ) : null}
+                {["TREATED", "FEEDBACK_SENT"].includes(selected.status) ? (
+                  <button
+                    className="btn-primary text-sm"
+                    onClick={() => handleUpdate("COMPLETED")}
+                  >
+                    Close Loop — Mark Completed
+                  </button>
+                ) : null}
+                {!["COMPLETED"].includes(selected.status) && (
                   <button
                     className="btn-danger text-sm"
                     onClick={() => handleUpdate("MISSED")}
                   >
                     Mark Missed
                   </button>
-                </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
         </div>
       )}

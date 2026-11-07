@@ -52,7 +52,7 @@ router.get(
 );
 router.post(
   "/requests",
-  role("SUPER_ADMIN", "ADMIN", "NURSE", "PHARMACIST"),
+  role("SUPER_ADMIN", "ADMIN", "DISTRICT_OFFICER", "NURSE", "PHARMACIST"),
   createRequest,
 );
 router.patch(

@@ -219,6 +219,7 @@ export const createHousehold = async (req, res, next) => {
       headOfHouseholdName,
       headPhone,
       headNationalId,
+      householdNumber: clientHouseholdNumber,
       consentGiven,
       consentSignatureUrl,
       structureType,
@@ -277,9 +278,11 @@ export const createHousehold = async (req, res, next) => {
       }
     }
 
-    // Generate household number: first 3 letters of village + timestamp suffix
-
-    // Generate household number: first 3 letters of village + timestamp suffix
+    // ── Household number ──
+    // The mobile app lets the CCW choose a memorable prefix (e.g. MKTHA-0001)
+    // and submits it with the record — honour it so the ID is identical on
+    // mobile and the portal. Fall back to TA-based generation only when no
+    // valid number was provided (legacy/other API clients).
     const village = await prisma.village.findUnique({
       where: { id: villageId },
       include: { zone: { include: { ta: true } } },
@@ -299,55 +302,92 @@ export const createHousehold = async (req, res, next) => {
       });
     }
 
-    const prefix = village.zone.ta.name.substring(0, 3).toUpperCase();
-    const count = await prisma.household.count({
-      where: { village: { zoneId: village.zoneId } },
-    });
-    const householdNumber = `${prefix}-${String(count + 1).padStart(5, "0")}`;
+    const provided =
+      typeof clientHouseholdNumber === "string"
+        ? clientHouseholdNumber.trim().toUpperCase()
+        : "";
+    const useProvided =
+      provided.length >= 3 &&
+      provided.length <= 24 &&
+      /^[A-Z0-9]+(?:-[A-Z0-9]+)+$/.test(provided);
 
-    const household = await prisma.household.create({
-      data: {
-        localId,
-        householdNumber,
-        villageId,
-        headOfHouseholdName,
-        headPhone: headPhone || null,
-        headNationalId: headNationalId || null,
-        consentGiven: consentGiven || false,
-        consentSignatureUrl: consentSignatureUrl || null,
-        structureType: [
-          "BRICK",
-          "MUD",
-          "IRON_SHEET",
-          "GRASS_THATCH",
-          "OTHER",
-        ].includes(
-          { MUD_CLAY: "MUD", WOOD_TIMBER: "OTHER" }[structureType] ??
-            structureType,
-        )
-          ? ({ MUD_CLAY: "MUD", WOOD_TIMBER: "OTHER" }[structureType] ??
-            structureType)
-          : "OTHER",
-        wallMaterial: wallMaterial || null,
-        roofMaterial: roofMaterial || null,
-        floorType: floorType || null,
-        hasElectricity: hasElectricity || false,
-        waterSource,
-        latrinePresent,
-        latrineType: latrinePresent ? latrineType : null,
-        handwashingFacility,
-        handwashingWithSoap: handwashingFacility ? handwashingWithSoap : null,
-        distanceToFacility,
-        mosquitoNets: mosquitoNets || null,
-        numberOfRooms: numberOfRooms || null,
-        landmark: landmark || null,
-        gpsLat: gpsLat || null,
-        gpsLng: gpsLng || null,
-        registeredByUserId: req.user.id,
-        syncedAt: new Date(),
-      },
-      include: { village: true },
-    });
+    let householdNumber;
+    if (useProvided) {
+      const taken = await prisma.household.findUnique({
+        where: { householdNumber: provided },
+        select: { id: true, localId: true, headOfHouseholdName: true },
+      });
+      if (taken && taken.localId !== localId) {
+        return res.status(409).json({
+          success: false,
+          duplicateNumber: true,
+          message: `Household ID ${provided} is already used by ${taken.headOfHouseholdName}. Check for an existing record or choose a different prefix.`,
+        });
+      }
+      householdNumber = provided;
+    } else {
+      const prefix = village.zone.ta.name.substring(0, 3).toUpperCase();
+      const count = await prisma.household.count({
+        where: { village: { zoneId: village.zoneId } },
+      });
+      householdNumber = `${prefix}-${String(count + 1).padStart(5, "0")}`;
+    }
+
+    let household;
+    try {
+      household = await prisma.household.create({
+        data: {
+          localId,
+          householdNumber,
+          villageId,
+          headOfHouseholdName,
+          headPhone: headPhone || null,
+          headNationalId: headNationalId || null,
+          consentGiven: consentGiven || false,
+          consentSignatureUrl: consentSignatureUrl || null,
+          structureType: [
+            "BRICK",
+            "MUD",
+            "IRON_SHEET",
+            "GRASS_THATCH",
+            "OTHER",
+          ].includes(
+            { MUD_CLAY: "MUD", WOOD_TIMBER: "OTHER" }[structureType] ??
+              structureType,
+          )
+            ? ({ MUD_CLAY: "MUD", WOOD_TIMBER: "OTHER" }[structureType] ??
+              structureType)
+            : "OTHER",
+          wallMaterial: wallMaterial || null,
+          roofMaterial: roofMaterial || null,
+          floorType: floorType || null,
+          hasElectricity: hasElectricity || false,
+          waterSource,
+          latrinePresent,
+          latrineType: latrinePresent ? latrineType : null,
+          handwashingFacility,
+          handwashingWithSoap: handwashingFacility ? handwashingWithSoap : null,
+          distanceToFacility,
+          mosquitoNets: mosquitoNets || null,
+          numberOfRooms: numberOfRooms || null,
+          landmark: landmark || null,
+          gpsLat: gpsLat || null,
+          gpsLng: gpsLng || null,
+          registeredByUserId: req.user.id,
+          syncedAt: new Date(),
+        },
+        include: { village: true },
+      });
+    } catch (err) {
+      if (err?.code === "P2002" && useProvided) {
+        return res.status(409).json({
+          success: false,
+          duplicateNumber: true,
+          message: `Household ID ${householdNumber} already exists. Check for an existing record or choose a different prefix.`,
+        });
+      }
+      throw err;
+    }
 
     res.status(201).json({ success: true, data: household });
   } catch (err) {

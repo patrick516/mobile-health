@@ -209,6 +209,52 @@ const pullFromServer = async () => {
             a.notes || null,
           ],
         );
+
+        // ── No date memorisation: remind the CCW when a contact is due
+        //    soon (≤3 days) or already overdue. Deduped by related_id,
+        //    and cleared once the contact is attended.
+        if (a.status === "ATTENDED") {
+          await db.runAsync(
+            `DELETE FROM notifications WHERE related_id = ? AND type = 'ANC'`,
+            [a.id],
+          );
+          continue;
+        }
+        const dueSoon =
+          a.status === "OVERDUE" ||
+          (a.status === "SCHEDULED" &&
+            new Date(a.expectedDate).getTime() - Date.now() <=
+              3 * 24 * 60 * 60 * 1000);
+        if (dueSoon) {
+          const already = await db.getFirstAsync<{ id: string }>(
+            `SELECT id FROM notifications WHERE related_id = ? AND type = 'ANC'`,
+            [a.id],
+          );
+          if (!already) {
+            const mother = a.memberName || "A pregnant woman";
+            const when = new Date(a.expectedDate).toLocaleDateString("en-GB", {
+              day: "numeric",
+              month: "short",
+            });
+            const message =
+              a.status === "OVERDUE"
+                ? `ANC ${a.ancNumber} for ${mother} is OVERDUE (due ${when}) — follow up today`
+                : `ANC ${a.ancNumber} for ${mother} is due ${when} — remind her at the next household visit`;
+            await db.runAsync(
+              `INSERT INTO notifications (id, title, message, type, related_id, user_id, is_read, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                Crypto.randomUUID(),
+                "ANC Follow-up Reminder",
+                message,
+                "ANC",
+                a.id,
+                useAppStore.getState().user?.id || null,
+                0,
+                new Date().toISOString(),
+              ],
+            );
+          }
+        }
       }
     } catch (ancErr) {
       console.log("[SYNC] ANC pull skipped");
