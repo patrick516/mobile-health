@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { goBack } from "../../../src/utils/nav";
 import { Ionicons } from "@expo/vector-icons";
 import * as Crypto from "expo-crypto";
 import { getDb } from "../../../src/db/schema";
@@ -126,7 +127,7 @@ export default function TbRecordScreen() {
         dotStatus === "MISSED"
           ? "Missed dose recorded. Please follow up with the patient."
           : "Observed dose recorded successfully.",
-        [{ text: "OK", onPress: () => router.back() }],
+        [{ text: "OK", onPress: () => goBack() }],
       );
     } catch (e) {
       console.error("[TB] Save DOT error:", e);
@@ -140,7 +141,7 @@ export default function TbRecordScreen() {
     <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => goBack()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color={COLORS.white} />
         </TouchableOpacity>
         <View style={styles.headerInfo}>

@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { goBack } from "../../../src/utils/nav";
 import { getDb } from "../../../src/db/schema";
 import { enqueue } from "../../../src/db/sync-queue";
 
@@ -148,7 +149,7 @@ export default function PncRecordScreen() {
       }
 
       Alert.alert("Saved", "PNC visit recorded successfully.", [
-        { text: "OK", onPress: () => router.back() },
+        { text: "OK", onPress: () => goBack() },
       ]);
     } catch (e) {
       console.error("[PNC] Save error:", e);

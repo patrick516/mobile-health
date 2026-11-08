@@ -66,9 +66,9 @@ router.post("/allocations/ta", role("SUPER_ADMIN", "ADMIN"), allocateUserToTA);
 router.get("/facilities", role("SUPER_ADMIN", "ADMIN"), getFacilities);
 router.post("/facilities", role("SUPER_ADMIN", "ADMIN"), createFacility);
 
-// Drugs — SUPER_ADMIN manages drug catalogue
-router.post("/drugs", role("SUPER_ADMIN"), createDrug);
-router.patch("/drugs/:id", role("SUPER_ADMIN"), updateDrug);
+// Drugs — catalogue managed by admins (formulary tab uses isAdmin() gate)
+router.post("/drugs", role("SUPER_ADMIN", "ADMIN"), createDrug);
+router.patch("/drugs/:id", role("SUPER_ADMIN", "ADMIN"), updateDrug);
 
 // Security — SUPER_ADMIN only
 router.get("/security/alerts", role("SUPER_ADMIN"), getSecurityAlerts);

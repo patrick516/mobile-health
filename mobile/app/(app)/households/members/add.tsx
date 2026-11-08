@@ -12,6 +12,7 @@ import {
   Switch,
 } from "react-native";
 import { router } from "expo-router";
+import { goBack } from "../../../../src/utils/nav";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as Crypto from "expo-crypto";
@@ -335,7 +336,7 @@ export default function AddMemberScreen() {
               setNationalId("");
             },
           },
-          { text: "Done", onPress: () => router.back() },
+          { text: "Done", onPress: () => goBack() },
         ],
       );
     } catch (err) {
@@ -361,7 +362,7 @@ export default function AddMemberScreen() {
     <View style={styles.container}>
       <StatusBar backgroundColor={COLORS.primary} barStyle="light-content" />
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => goBack()}>
           <Ionicons name="arrow-back" size={24} color={COLORS.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>

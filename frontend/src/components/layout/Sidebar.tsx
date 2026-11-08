@@ -65,7 +65,7 @@ const NAV_GROUPS = [
         to: "/drugs",
         icon: FlaskConical,
         label: "CHW Drug Kits",
-        roles: ["DISTRICT_OFFICER", "NURSE", "SUPER_ADMIN"],
+        roles: ["DISTRICT_OFFICER", "NURSE", "ADMIN", "SUPER_ADMIN"],
       },
       {
         to: "/pharmacy",

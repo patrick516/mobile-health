@@ -40,10 +40,6 @@ export default function Select({
   );
 
   useEffect(() => {
-    if (!open) setQuery("");
-  }, [open]);
-
-  useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
         setOpen(false);
@@ -57,7 +53,10 @@ export default function Select({
     <div ref={rootRef} className={`relative ${className}`}>
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          if (!open) setQuery("");
+          setOpen((o) => !o);
+        }}
         className="w-full flex items-center justify-between border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-left focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent hover:border-gray-300 transition-colors"
       >
         <span className={selected ? "text-gray-900" : "text-gray-400"}>

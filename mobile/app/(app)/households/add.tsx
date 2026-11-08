@@ -14,6 +14,7 @@ import {
   Animated,
 } from "react-native";
 import { router } from "expo-router";
+import { goBack } from "../../../src/utils/nav";
 import { Ionicons } from "@expo/vector-icons";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
@@ -696,7 +697,7 @@ export default function AddHouseholdScreen() {
             text: "Done",
             onPress: () => {
               resetForm();
-              router.back();
+              goBack();
             },
           },
         ],
@@ -748,7 +749,7 @@ export default function AddHouseholdScreen() {
 
       <View style={styles.header}>
         <TouchableOpacity
-          onPress={() => (step === 0 ? router.back() : setStep((s) => s - 1))}
+          onPress={() => (step === 0 ? goBack() : setStep((s) => s - 1))}
         >
           <Ionicons name="arrow-back" size={24} color={COLORS.white} />
         </TouchableOpacity>

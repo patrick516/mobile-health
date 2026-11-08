@@ -8,6 +8,7 @@ import {
   StatusBar,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
+import { goBack } from "../../../src/utils/nav";
 import { Ionicons } from "@expo/vector-icons";
 import { COLORS, SIZES, SHADOWS } from "../../../constants/theme";
 import { getDb } from "../../../src/db/schema";
@@ -102,7 +103,7 @@ export default function VisitDetailScreen() {
     return (
       <View style={styles.center}>
         <Text style={{ color: COLORS.textMuted }}>Visit not found</Text>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => goBack()}>
           <Text style={{ color: COLORS.primary, marginTop: SIZES.md }}>
             Go back
           </Text>
@@ -117,7 +118,7 @@ export default function VisitDetailScreen() {
     <View style={styles.container}>
       <StatusBar backgroundColor={COLORS.primary} barStyle="light-content" />
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => goBack()}>
           <Ionicons name="arrow-back" size={24} color={COLORS.white} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>

@@ -11,6 +11,7 @@ import {
   StatusBar,
 } from "react-native";
 import { router } from "expo-router";
+import { goBack } from "../../../src/utils/nav";
 import { Ionicons } from "@expo/vector-icons";
 import * as Crypto from "expo-crypto";
 import { COLORS, SIZES, SHADOWS } from "../../../constants/theme";
@@ -28,6 +29,53 @@ import { showSuccess, showError, showInfo } from "../../../src/utils/toast";
 
 const DRAFT_KEY = "referral_add";
 
+const getAge = (p: Patient) => {
+  if (p.estimated_age) return `${p.estimated_age}y`;
+  if (p.date_of_birth) {
+    const age = Math.floor(
+      (Date.now() - new Date(p.date_of_birth).getTime()) /
+        (1000 * 60 * 60 * 24 * 365),
+    );
+    return `${age}y`;
+  }
+  return "";
+};
+
+function PatientRow({
+  p,
+  selected,
+  onPress,
+}: {
+  p: Patient;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.patientRow, selected && styles.patientRowSelected]}
+      onPress={onPress}
+    >
+      <View style={styles.patientAvatar}>
+        <Ionicons name="person" size={18} color={COLORS.primary} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.rowName}>{p.full_name}</Text>
+        <Text style={styles.rowSub}>
+          {[getAge(p), p.sex, p.household_number || "No ID"]
+            .filter(Boolean)
+            .join(" · ")}
+        </Text>
+        {p.head_of_household_name ? (
+          <Text style={styles.rowHead}>Head: {p.head_of_household_name}</Text>
+        ) : null}
+      </View>
+      {selected && (
+        <Ionicons name="checkmark-circle" size={22} color={COLORS.primary} />
+      )}
+    </TouchableOpacity>
+  );
+}
+
 interface Facility {
   id: string;
   name: string;
@@ -41,9 +89,20 @@ interface Patient {
   estimated_age: number | null;
   date_of_birth: string | null;
   relationship_to_head: string | null;
+  household_id: string | null;
   household_number: string | null;
   head_of_household_name: string | null;
 }
+
+interface Household {
+  id: string;
+  local_id: string;
+  household_number: string | null;
+  head_of_household_name: string | null;
+  member_count: number;
+}
+
+const PAGE_SIZE = 20;
 
 export default function AddReferralScreen() {
   const language = useAppStore((s) => s.language);
@@ -51,6 +110,9 @@ export default function AddReferralScreen() {
   const [patientId, setPatientId] = useState("");
   const [patientQuery, setPatientQuery] = useState("");
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [households, setHouseholds] = useState<Household[]>([]);
+  const [browseHhId, setBrowseHhId] = useState<string | null>(null);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [memberName, setMemberName] = useState("");
   const [lastVisitId, setLastVisitId] = useState("");
   const [reason, setReason] = useState("");
@@ -90,19 +152,37 @@ export default function AddReferralScreen() {
     resolveVisit(p.id, p.local_id);
   };
 
+  const clearPatient = () => {
+    setPatientId("");
+    setMemberName("");
+    setLastVisitId("");
+    useAppStore.getState().setSelectedMember(null);
+  };
+
   const loadContext = async () => {
     try {
       const db = await getDb();
 
       const rows = await db.getAllAsync<Patient>(
         `SELECT m.id, m.local_id, m.full_name, m.sex, m.estimated_age, m.date_of_birth,
-                m.relationship_to_head, h.household_number, h.head_of_household_name
+                m.relationship_to_head, m.household_id,
+                h.household_number, h.head_of_household_name
          FROM members m
          LEFT JOIN households h ON m.household_id = h.id OR m.household_id = h.local_id
          WHERE m.status = 'ACTIVE'
          ORDER BY h.head_of_household_name ASC, m.full_name ASC`,
       );
       setPatients(rows);
+
+      const hhRows = await db.getAllAsync<Household>(
+        `SELECT h.id, h.local_id, h.household_number, h.head_of_household_name,
+                (SELECT COUNT(*) FROM members m
+                  WHERE (m.household_id = h.id OR m.household_id = h.local_id)
+                    AND m.status = 'ACTIVE') AS member_count
+         FROM households h
+         ORDER BY h.head_of_household_name ASC`,
+      );
+      setHouseholds(hhRows);
 
       const draft = await loadDraft<any>(DRAFT_KEY);
       const storedId = useAppStore.getState().selectedMemberId;
@@ -236,7 +316,7 @@ export default function AddReferralScreen() {
           ? "🚨 Emergency Referral Created"
           : "Referral Created ✓",
         `Referral for ${memberName} has been saved.\n\nDue: ${dueBy.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}\n\nIt will be sent to the clinic when you sync.`,
-        [{ text: "OK", onPress: () => router.back() }],
+        [{ text: "OK", onPress: () => goBack() }],
       );
     } catch (err) {
       console.error("Save referral error:", err);
@@ -270,35 +350,38 @@ export default function AddReferralScreen() {
     },
   ];
 
-  const getAge = (p: Patient) => {
-    if (p.estimated_age) return `${p.estimated_age}y`;
-    if (p.date_of_birth) {
-      const age = Math.floor(
-        (Date.now() - new Date(p.date_of_birth).getTime()) /
-          (1000 * 60 * 60 * 24 * 365),
-      );
-      return `${age}y`;
-    }
-    return "";
-  };
-
   const q = patientQuery.trim().toLowerCase();
-  const filteredPatients = q
+  const searchResults = q
     ? patients.filter(
         (p) =>
           p.full_name.toLowerCase().includes(q) ||
           (p.household_number || "").toLowerCase().includes(q) ||
           (p.head_of_household_name || "").toLowerCase().includes(q),
       )
-    : patients;
-  const visiblePatients = filteredPatients.slice(0, 50);
+    : null;
+  const browseHh = browseHhId
+    ? households.find((h) => h.id === browseHhId || h.local_id === browseHhId)
+    : undefined;
+  const browseMembers = browseHh
+    ? patients.filter(
+        (p) =>
+          p.household_id === browseHh.id ||
+          p.household_id === browseHh.local_id,
+      )
+    : [];
+  // Search mode → matched members; household browse → its members;
+  // otherwise → households list to start from
+  const listItems = searchResults ?? browseMembers;
+  const visibleItems = listItems.slice(0, visibleCount);
+
+  const resetPaging = () => setVisibleCount(PAGE_SIZE);
 
   return (
     <View style={styles.container}>
       <StatusBar backgroundColor={COLORS.primary} barStyle="light-content" />
 
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => goBack()}>
           <Ionicons name="arrow-back" size={24} color={COLORS.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Create Referral</Text>
@@ -318,6 +401,17 @@ export default function AddReferralScreen() {
                 <Text style={styles.patientName}>{memberName}</Text>
                 <Text style={styles.patientSub}>Patient being referred</Text>
               </View>
+              <TouchableOpacity
+                style={styles.clearBtn}
+                onPress={clearPatient}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons
+                  name="close-circle"
+                  size={24}
+                  color={COLORS.textMuted}
+                />
+              </TouchableOpacity>
             </View>
           ) : (
             <View style={styles.patientCard}>
@@ -327,7 +421,7 @@ export default function AddReferralScreen() {
                 color={COLORS.textMuted}
               />
               <Text style={{ color: COLORS.textMuted, fontSize: SIZES.fontSm }}>
-                Search below and tap a patient to refer
+                Tap a household below to find the patient
               </Text>
             </View>
           )}
@@ -338,14 +432,22 @@ export default function AddReferralScreen() {
             <TextInput
               style={styles.searchInput}
               value={patientQuery}
-              onChangeText={setPatientQuery}
+              onChangeText={(t) => {
+                setPatientQuery(t);
+                resetPaging();
+              }}
               placeholder="Search household ID, head name, or member name..."
               placeholderTextColor={COLORS.placeholder}
               autoCapitalize="none"
               autoCorrect={false}
             />
             {patientQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setPatientQuery("")}>
+              <TouchableOpacity
+                onPress={() => {
+                  setPatientQuery("");
+                  resetPaging();
+                }}
+              >
                 <Ionicons
                   name="close-circle"
                   size={18}
@@ -355,59 +457,122 @@ export default function AddReferralScreen() {
             )}
           </View>
 
-          {/* Patient list */}
+          {/* Picker: search results, household members, or household list */}
           <View style={styles.patientList}>
-            {patients.length === 0 ? (
+            {patients.length === 0 && households.length === 0 ? (
               <Text style={styles.emptyListText}>
                 No members found on this device
               </Text>
-            ) : filteredPatients.length === 0 ? (
+            ) : searchResults !== null ? (
+              // ── Search mode ──
+              searchResults.length === 0 ? (
+                <Text style={styles.emptyListText}>
+                  No matches for "{patientQuery}"
+                </Text>
+              ) : (
+                visibleItems.map((p) => (
+                  <PatientRow
+                    key={p.local_id}
+                    p={p}
+                    selected={patientId === p.id || patientId === p.local_id}
+                    onPress={() => choosePatient(p)}
+                  />
+                ))
+              )
+            ) : browseHhId ? (
+              // ── Members of one household ──
+              <>
+                <TouchableOpacity
+                  style={styles.backRow}
+                  onPress={() => {
+                    setBrowseHhId(null);
+                    resetPaging();
+                  }}
+                >
+                  <Ionicons
+                    name="arrow-back"
+                    size={16}
+                    color={COLORS.primary}
+                  />
+                  <Text style={styles.backRowText}>All households</Text>
+                </TouchableOpacity>
+                {browseMembers.length === 0 ? (
+                  <Text style={styles.emptyListText}>
+                    No active members in this household
+                  </Text>
+                ) : (
+                  visibleItems.map((p) => (
+                    <PatientRow
+                      key={p.local_id}
+                      p={p}
+                      selected={patientId === p.id || patientId === p.local_id}
+                      onPress={() => choosePatient(p)}
+                    />
+                  ))
+                )}
+              </>
+            ) : // ── Household list (default when no search) ──
+            households.length === 0 ? (
               <Text style={styles.emptyListText}>
-                No matches for "{patientQuery}"
+                No households found on this device
               </Text>
             ) : (
-              visiblePatients.map((p) => {
-                const isSelected =
-                  patientId === p.id || patientId === p.local_id;
-                return (
+              <>
+                {households.slice(0, visibleCount).map((h) => (
                   <TouchableOpacity
-                    key={p.local_id}
-                    style={[
-                      styles.patientRow,
-                      isSelected && styles.patientRowSelected,
-                    ]}
-                    onPress={() => choosePatient(p)}
+                    key={h.local_id}
+                    style={styles.patientRow}
+                    onPress={() => {
+                      setBrowseHhId(h.id);
+                      resetPaging();
+                    }}
                   >
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.rowName}>{p.full_name}</Text>
-                      <Text style={styles.rowSub}>
-                        {[getAge(p), p.sex, p.household_number || "No ID"]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </Text>
-                      {p.head_of_household_name ? (
-                        <Text style={styles.rowHead}>
-                          Head: {p.head_of_household_name}
-                        </Text>
-                      ) : null}
-                    </View>
-                    {isSelected && (
+                    <View style={styles.patientAvatar}>
                       <Ionicons
-                        name="checkmark-circle"
-                        size={22}
+                        name="home-outline"
+                        size={18}
                         color={COLORS.primary}
                       />
-                    )}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.rowName}>
+                        {h.head_of_household_name || "Household"}
+                      </Text>
+                      <Text style={styles.rowSub}>
+                        {h.household_number || "No ID"} · {h.member_count}{" "}
+                        member
+                        {h.member_count === 1 ? "" : "s"}
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={18}
+                      color={COLORS.textMuted}
+                    />
                   </TouchableOpacity>
-                );
-              })
+                ))}
+              </>
             )}
-            {filteredPatients.length > visiblePatients.length && (
-              <Text style={styles.emptyListText}>
-                Showing first {visiblePatients.length} of{" "}
-                {filteredPatients.length} — refine your search
-              </Text>
+
+            {/* Load more */}
+            {listItems.length > visibleItems.length && (
+              <TouchableOpacity
+                style={styles.loadMoreBtn}
+                onPress={() => setVisibleCount((c) => c + PAGE_SIZE)}
+              >
+                <Text style={styles.loadMoreText}>
+                  Show more ({listItems.length - visibleItems.length} left)
+                </Text>
+              </TouchableOpacity>
             )}
+            {searchResults === null &&
+              !browseHhId &&
+              households.length > visibleCount && (
+                <Text style={styles.emptyListText}>
+                  Showing {Math.min(visibleCount, households.length)} of{" "}
+                  {households.length} households
+                </Text>
+              )}
           </View>
 
           {/* Urgency */}
@@ -593,6 +758,34 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
   patientSub: { fontSize: SIZES.fontXs, color: COLORS.textMuted },
+  clearBtn: { padding: 4 },
+  backRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: SIZES.md,
+    paddingVertical: SIZES.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border + "66",
+    backgroundColor: COLORS.primaryLight,
+  },
+  backRowText: {
+    fontSize: SIZES.fontSm,
+    fontWeight: "600",
+    color: COLORS.primary,
+  },
+  loadMoreBtn: {
+    alignItems: "center",
+    paddingVertical: SIZES.sm + 2,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border + "66",
+    backgroundColor: COLORS.background,
+  },
+  loadMoreText: {
+    fontSize: SIZES.fontSm,
+    fontWeight: "600",
+    color: COLORS.primary,
+  },
   searchBox: {
     flexDirection: "row",
     alignItems: "center",

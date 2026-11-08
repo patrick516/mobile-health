@@ -12,6 +12,7 @@ import {
   Switch,
 } from "react-native";
 import { router } from "expo-router";
+import { goBack } from "../../../src/utils/nav";
 import { Ionicons } from "@expo/vector-icons";
 import * as Crypto from "expo-crypto";
 import { COLORS, SIZES, SHADOWS } from "../../../constants/theme";
@@ -60,6 +61,7 @@ export default function AddVisitScreen() {
 
   const [members, setMembers] = useState<Member[]>([]);
   const [selectedMemberId, setSelectedMemberId] = useState("");
+  const [memberVisibleCount, setMemberVisibleCount] = useState(20);
   const [visitType, setVisitType] = useState("ROUTINE");
   const [symptoms, setSymptoms] = useState<string[]>([]);
   const [dangerSigns, setDangerSigns] = useState<string[]>([]);
@@ -401,12 +403,12 @@ export default function AddVisitScreen() {
               style: "destructive",
               onPress: () => router.replace("/(app)/referrals/add" as any),
             },
-            { text: "Later", onPress: () => router.back() },
+            { text: "Later", onPress: () => goBack() },
           ],
         );
       } else {
         Alert.alert("Visit Saved ✓", "Visit recorded successfully.", [
-          { text: "OK", onPress: () => router.back() },
+          { text: "OK", onPress: () => goBack() },
         ]);
       }
     } catch (err) {
@@ -448,7 +450,7 @@ export default function AddVisitScreen() {
 
       <View style={styles.header}>
         <TouchableOpacity
-          onPress={() => (step === 0 ? router.back() : setStep((s) => s - 1))}
+          onPress={() => (step === 0 ? goBack() : setStep((s) => s - 1))}
         >
           <Ionicons name="arrow-back" size={24} color={COLORS.white} />
         </TouchableOpacity>
@@ -499,49 +501,83 @@ export default function AddVisitScreen() {
                 </TouchableOpacity>
               </View>
             ) : (
-              members.map((m) => (
-                <TouchableOpacity
-                  key={m.local_id}
-                  style={[
-                    styles.memberCard,
-                    selectedMemberId === m.local_id &&
-                      styles.memberCardSelected,
-                  ]}
-                  onPress={() => setSelectedMemberId(m.local_id)}
-                >
-                  <View
-                    style={[
-                      styles.memberAvatar,
-                      {
-                        backgroundColor:
-                          m.sex === "FEMALE" ? "#FDF2F8" : "#EFF6FF",
-                      },
-                    ]}
+              <>
+                {members.slice(0, memberVisibleCount).map((m) => {
+                  const isSelected = selectedMemberId === m.local_id;
+                  return (
+                    <TouchableOpacity
+                      key={m.local_id}
+                      style={[
+                        styles.memberCard,
+                        isSelected && styles.memberCardSelected,
+                      ]}
+                      onPress={() => setSelectedMemberId(m.local_id)}
+                    >
+                      <View
+                        style={[
+                          styles.memberAvatar,
+                          {
+                            backgroundColor:
+                              m.sex === "FEMALE" ? "#FDF2F8" : "#EFF6FF",
+                          },
+                        ]}
+                      >
+                        <Ionicons
+                          name={
+                            m.sex === "FEMALE" ? "woman-outline" : "man-outline"
+                          }
+                          size={20}
+                          color={
+                            m.sex === "FEMALE" ? "#DB2777" : COLORS.secondary
+                          }
+                        />
+                      </View>
+                      <View style={styles.memberInfo}>
+                        <Text style={styles.memberName}>{m.full_name}</Text>
+                        <Text style={styles.memberAge}>
+                          {getRelation(m) ? `${getRelation(m)} · ` : ""}
+                          {m.sex} · {getAge(m)}
+                        </Text>
+                      </View>
+                      {isSelected && (
+                        <>
+                          <TouchableOpacity
+                            style={styles.clearSelBtn}
+                            onPress={() => setSelectedMemberId("")}
+                            hitSlop={{
+                              top: 10,
+                              bottom: 10,
+                              left: 10,
+                              right: 10,
+                            }}
+                          >
+                            <Ionicons
+                              name="close-circle"
+                              size={22}
+                              color={COLORS.textMuted}
+                            />
+                          </TouchableOpacity>
+                          <Ionicons
+                            name="checkmark-circle"
+                            size={24}
+                            color={COLORS.primary}
+                          />
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+                {members.length > memberVisibleCount && (
+                  <TouchableOpacity
+                    style={styles.loadMoreBtn}
+                    onPress={() => setMemberVisibleCount((c) => c + 20)}
                   >
-                    <Ionicons
-                      name={
-                        m.sex === "FEMALE" ? "woman-outline" : "man-outline"
-                      }
-                      size={20}
-                      color={m.sex === "FEMALE" ? "#DB2777" : COLORS.secondary}
-                    />
-                  </View>
-                  <View style={styles.memberInfo}>
-                    <Text style={styles.memberName}>{m.full_name}</Text>
-                    <Text style={styles.memberAge}>
-                      {getRelation(m) ? `${getRelation(m)} · ` : ""}
-                      {m.sex} · {getAge(m)}
+                    <Text style={styles.loadMoreText}>
+                      Show more ({members.length - memberVisibleCount} left)
                     </Text>
-                  </View>
-                  {selectedMemberId === m.local_id && (
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={24}
-                      color={COLORS.primary}
-                    />
-                  )}
-                </TouchableOpacity>
-              ))
+                  </TouchableOpacity>
+                )}
+              </>
             )}
 
             <Text style={styles.label}>Visit Type</Text>
@@ -1138,6 +1174,21 @@ const styles = StyleSheet.create({
   memberInfo: { flex: 1 },
   memberName: { fontSize: SIZES.fontMd, fontWeight: "600", color: COLORS.text },
   memberAge: { fontSize: SIZES.fontXs, color: COLORS.textMuted },
+  clearSelBtn: { padding: 4 },
+  loadMoreBtn: {
+    alignItems: "center",
+    paddingVertical: SIZES.sm + 2,
+    backgroundColor: COLORS.white,
+    borderRadius: SIZES.radiusMd,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderStyle: "dashed",
+  },
+  loadMoreText: {
+    fontSize: SIZES.fontSm,
+    fontWeight: "600",
+    color: COLORS.primary,
+  },
   optionGrid: {
     flexDirection: "row",
     flexWrap: "wrap",

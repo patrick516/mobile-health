@@ -9,6 +9,7 @@ import {
   RefreshControl,
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
+import { goBack } from "../../../src/utils/nav";
 import { Ionicons } from "@expo/vector-icons";
 import { COLORS, SIZES, SHADOWS } from "../../../constants/theme";
 import { getDb } from "../../../src/db/schema";
@@ -102,7 +103,7 @@ export default function ANCScreen() {
       <StatusBar backgroundColor={COLORS.primary} barStyle="light-content" />
 
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => goBack()}>
           <Ionicons name="arrow-back" size={24} color={COLORS.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>ANC Tracker</Text>
