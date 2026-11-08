@@ -95,6 +95,13 @@ export default function DatePicker({
   for (let i = 0; i < startWeekday; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
 
+  const thisYear = new Date().getFullYear();
+  const startYear = Math.min(thisYear - 15, year);
+  const endYear = Math.max(thisYear + 15, year);
+  const years = Array.from(
+    { length: endYear - startYear + 1 },
+    (_, i) => startYear + i,
+  );
   const selectedISO = value || "";
   const todayISO = toISO(new Date());
 
@@ -122,9 +129,34 @@ export default function DatePicker({
             >
               <ChevronLeft size={16} />
             </button>
-            <span className="text-sm font-semibold text-gray-800">
-              {MONTH_NAMES[month]} {year}
-            </span>
+            <div className="flex items-center gap-1">
+              <select
+                value={month}
+                onChange={(e) =>
+                  setViewDate(new Date(year, Number(e.target.value), 1))
+                }
+                className="text-sm font-semibold text-gray-800 bg-transparent cursor-pointer focus:outline-none"
+              >
+                {MONTH_NAMES.map((name, i) => (
+                  <option key={name} value={i}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={year}
+                onChange={(e) =>
+                  setViewDate(new Date(Number(e.target.value), month, 1))
+                }
+                className="text-sm font-semibold text-gray-800 bg-transparent cursor-pointer focus:outline-none"
+              >
+                {years.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </div>
             <button
               type="button"
               onClick={() => setViewDate(new Date(year, month + 1, 1))}

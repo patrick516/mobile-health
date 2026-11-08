@@ -11,6 +11,7 @@ import api from "../../services/api";
 import type { Referral, Pagination } from "../../types";
 import { useAuthStore } from "../../store/auth.store";
 import WalkInEncounter from "../../components/encounters/WalkInEncounter";
+import Select from "../../components/ui/Select";
 
 const STATUS_STYLE: Record<string, string> = {
   PENDING: "badge-yellow",
@@ -503,22 +504,21 @@ export default function ReferralQueue() {
                           className="border border-gray-100 rounded-lg p-2 space-y-2"
                         >
                           <div className="flex gap-2">
-                            <select
-                              className="input text-sm flex-1"
-                              value={m.drugName}
-                              onChange={(e) =>
-                                updateMed(i, "drugName", e.target.value)
-                              }
-                            >
-                              <option value="">Search drug…</option>
-                              {Object.entries(availableStock).map(
-                                ([name, info]) => (
-                                  <option key={name} value={name}>
-                                    {name} — {info.total} {info.unit}
-                                  </option>
-                                ),
-                              )}
-                            </select>
+                            <div className="flex-1 min-w-0">
+                              <Select
+                                value={m.drugName}
+                                onChange={(val) =>
+                                  updateMed(i, "drugName", val)
+                                }
+                                placeholder="Search drug…"
+                                options={Object.entries(availableStock).map(
+                                  ([name, info]) => ({
+                                    value: name,
+                                    label: `${name} — ${info.total} ${info.unit}`,
+                                  }),
+                                )}
+                              />
+                            </div>
                             <input
                               type="number"
                               min={1}
