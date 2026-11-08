@@ -13,6 +13,7 @@ interface SelectProps {
   options: SelectOption[];
   placeholder?: string;
   className?: string;
+  searchable?: boolean;
 }
 
 // Drop-in replacement for native <select>. Built from plain styled divs
@@ -26,11 +27,21 @@ export default function Select({
   options,
   placeholder = "Select...",
   className = "",
+  searchable = false,
 }: SelectProps) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
 
   const selected = options.find((o) => o.value === value);
+
+  const visibleOptions = options.filter((o) =>
+    o.label.toLowerCase().includes(query.toLowerCase()),
+  );
+
+  useEffect(() => {
+    if (!open) setQuery("");
+  }, [open]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -59,9 +70,21 @@ export default function Select({
       </button>
 
       {open && (
-        <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg">
+        <div className="absolute z-50 mt-1 w-full min-w-[16rem] bg-white border border-gray-200 rounded-lg shadow-lg">
+          {searchable && (
+            <div className="p-1.5 border-b border-gray-100">
+              <input
+                autoFocus
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Type to search..."
+                className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              />
+            </div>
+          )}
           <div className="max-h-60 overflow-auto p-1.5 space-y-0.5">
-            {options.map((opt) => {
+            {visibleOptions.map((opt) => {
               const isSelected = opt.value === value;
               return (
                 <button
@@ -86,6 +109,9 @@ export default function Select({
                 </button>
               );
             })}
+            {visibleOptions.length === 0 && (
+              <p className="px-3 py-2 text-sm text-gray-400">No match found.</p>
+            )}
           </div>
         </div>
       )}

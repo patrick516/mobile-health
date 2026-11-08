@@ -511,6 +511,7 @@ export default function ReferralQueue() {
                                   updateMed(i, "drugName", val)
                                 }
                                 placeholder="Search drug…"
+                                searchable
                                 options={Object.entries(availableStock).map(
                                   ([name, info]) => ({
                                     value: name,
