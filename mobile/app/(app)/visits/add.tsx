@@ -22,6 +22,7 @@ import {
   SYMPTOMS,
   DANGER_SIGNS,
   VISIT_TYPES,
+  RELATIONSHIP_OPTIONS,
 } from "../../../constants/diseases";
 import {
   saveDraft,
@@ -40,6 +41,7 @@ interface Member {
   sex: string;
   estimated_age: number;
   date_of_birth: string;
+  relationship_to_head: string;
 }
 
 interface Drug {
@@ -173,7 +175,6 @@ export default function AddVisitScreen() {
     const draft = await loadDraft<any>(DRAFT_KEY);
     if (!draft) return;
     if (draft.householdId !== selectedHouseholdId) return;
-    if (draft.selectedMemberId) setSelectedMemberId(draft.selectedMemberId);
     if (draft.visitType) setVisitType(draft.visitType);
     if (draft.symptoms) setSymptoms(draft.symptoms);
     if (draft.dangerSigns) setDangerSigns(draft.dangerSigns);
@@ -185,7 +186,6 @@ export default function AddVisitScreen() {
     if (draft.dispensed) setDispensed(draft.dispensed);
     if (draft.weightKg) setWeightKg(draft.weightKg);
     if (draft.heightCm) setHeightCm(draft.heightCm);
-    if (typeof draft.step === "number") setStep(draft.step);
     showInfo("Draft Restored", "Continuing your previous visit entry.");
   };
 
@@ -194,7 +194,6 @@ export default function AddVisitScreen() {
     const timer = setTimeout(() => {
       saveDraft(DRAFT_KEY, {
         householdId: selectedHouseholdId,
-        selectedMemberId,
         visitType,
         symptoms,
         dangerSigns,
@@ -203,7 +202,6 @@ export default function AddVisitScreen() {
         referralNeeded,
         notes,
         dispensed,
-        step,
         weightKg,
         heightCm,
       });
@@ -211,7 +209,6 @@ export default function AddVisitScreen() {
     return () => clearTimeout(timer);
   }, [
     selectedHouseholdId,
-    selectedMemberId,
     visitType,
     symptoms,
     dangerSigns,
@@ -220,7 +217,8 @@ export default function AddVisitScreen() {
     referralNeeded,
     notes,
     dispensed,
-    step,
+    weightKg,
+    heightCm,
   ]);
 
   useEffect(() => {
@@ -230,9 +228,13 @@ export default function AddVisitScreen() {
   const loadMembers = async () => {
     if (!selectedHouseholdId) return;
     const db = await getDb();
+    const hh = await db.getFirstAsync<{ id: string; local_id: string }>(
+      "SELECT id, local_id FROM households WHERE id = ? OR local_id = ?",
+      [selectedHouseholdId, selectedHouseholdId],
+    );
     const rows = await db.getAllAsync<Member>(
-      `SELECT * FROM members WHERE household_id = ? AND status = 'ACTIVE' ORDER BY full_name ASC`,
-      [selectedHouseholdId],
+      `SELECT * FROM members WHERE (household_id = ? OR household_id = ?) AND status = 'ACTIVE' ORDER BY full_name ASC`,
+      hh ? [hh.id, hh.local_id] : [selectedHouseholdId, selectedHouseholdId],
     );
     setMembers(rows);
     if (rows.length === 1) setSelectedMemberId(rows[0].local_id);
@@ -432,6 +434,14 @@ export default function AddVisitScreen() {
     return "";
   };
 
+  const getRelation = (m: Member) => {
+    const opt = RELATIONSHIP_OPTIONS.find(
+      (o) => o.code === m.relationship_to_head,
+    );
+    if (!opt) return "";
+    return opt.code === "HEAD" ? "Head" : opt.labelEn;
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar backgroundColor={COLORS.primary} barStyle="light-content" />
@@ -519,6 +529,7 @@ export default function AddVisitScreen() {
                   <View style={styles.memberInfo}>
                     <Text style={styles.memberName}>{m.full_name}</Text>
                     <Text style={styles.memberAge}>
+                      {getRelation(m) ? `${getRelation(m)} · ` : ""}
                       {m.sex} · {getAge(m)}
                     </Text>
                   </View>

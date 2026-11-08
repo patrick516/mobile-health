@@ -33,20 +33,24 @@ interface Facility {
   name: string;
 }
 
+interface Patient {
+  id: string;
+  local_id: string;
+  full_name: string;
+  sex: string;
+  estimated_age: number | null;
+  date_of_birth: string | null;
+  relationship_to_head: string | null;
+  household_number: string | null;
+  head_of_household_name: string | null;
+}
+
 export default function AddReferralScreen() {
   const language = useAppStore((s) => s.language);
 
-  // ─── FIX: Read from getState() directly to avoid race condition ───
-  // useAppStore hook may not reflect latest Zustand state when this screen
-  // first mounts immediately after router.push() from member detail screen.
-  // getState() always returns the current value synchronously.
-  const selectedMemberId =
-    useAppStore((s) => s.selectedMemberId) ??
-    useAppStore.getState().selectedMemberId;
-  const selectedVisitId =
-    useAppStore((s) => s.selectedVisitId) ??
-    useAppStore.getState().selectedVisitId;
-
+  const [patientId, setPatientId] = useState("");
+  const [patientQuery, setPatientQuery] = useState("");
+  const [patients, setPatients] = useState<Patient[]>([]);
   const [memberName, setMemberName] = useState("");
   const [lastVisitId, setLastVisitId] = useState("");
   const [reason, setReason] = useState("");
@@ -60,68 +64,80 @@ export default function AddReferralScreen() {
 
   useEffect(() => {
     loadContext();
-    restoreDraft();
-  }, [selectedMemberId]); // ─── FIX: re-run if selectedMemberId changes
+  }, []);
 
-  const restoreDraft = async () => {
-    const draft = await loadDraft<any>(DRAFT_KEY);
-    if (!draft) return;
-    const memberId =
-      selectedMemberId ?? useAppStore.getState().selectedMemberId;
-    if (draft.memberId !== memberId) return;
-    if (draft.reason) setReason(draft.reason);
-    if (draft.urgency) setUrgency(draft.urgency);
-    if (draft.selectedFacilityId)
-      setSelectedFacilityId(draft.selectedFacilityId);
-    if (draft.notes) setNotes(draft.notes);
-    showInfo("Draft Restored", "Continuing your previous referral entry.");
+  const resolveVisit = async (
+    memberId: string,
+    memberLocalId: string,
+    preferVisitId?: string | null,
+  ) => {
+    if (preferVisitId) {
+      setLastVisitId(preferVisitId);
+      return;
+    }
+    const db = await getDb();
+    const v = await db.getFirstAsync<{ id: string }>(
+      `SELECT id FROM visits WHERE member_id = ? OR member_id = ? ORDER BY visited_at DESC LIMIT 1`,
+      [memberId, memberLocalId],
+    );
+    setLastVisitId(v?.id || "");
   };
 
-  // Auto-save draft (debounced 800ms)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const memberId =
-        selectedMemberId ?? useAppStore.getState().selectedMemberId;
-      saveDraft(DRAFT_KEY, {
-        memberId,
-        reason,
-        urgency,
-        selectedFacilityId,
-        notes,
-      });
-    }, 800);
-    return () => clearTimeout(timer);
-  }, [selectedMemberId, reason, urgency, selectedFacilityId, notes]);
+  const choosePatient = (p: Patient) => {
+    setPatientId(p.id);
+    setMemberName(p.full_name);
+    useAppStore.getState().setSelectedMember(p.id);
+    resolveVisit(p.id, p.local_id);
+  };
+
   const loadContext = async () => {
     try {
       const db = await getDb();
 
-      // ─── FIX: Re-read from store at call time in case hook value is stale
-      const memberId =
-        selectedMemberId ?? useAppStore.getState().selectedMemberId;
-      const visitId = selectedVisitId ?? useAppStore.getState().selectedVisitId;
+      const rows = await db.getAllAsync<Patient>(
+        `SELECT m.id, m.local_id, m.full_name, m.sex, m.estimated_age, m.date_of_birth,
+                m.relationship_to_head, h.household_number, h.head_of_household_name
+         FROM members m
+         LEFT JOIN households h ON m.household_id = h.id OR m.household_id = h.local_id
+         WHERE m.status = 'ACTIVE'
+         ORDER BY h.head_of_household_name ASC, m.full_name ASC`,
+      );
+      setPatients(rows);
 
-      if (memberId) {
-        const m = await db.getFirstAsync<{ full_name: string; id: string }>(
-          "SELECT id, full_name FROM members WHERE id = ? OR local_id = ?",
-          [memberId, memberId],
+      const draft = await loadDraft<any>(DRAFT_KEY);
+      const storedId = useAppStore.getState().selectedMemberId;
+      const storedVisitId = useAppStore.getState().selectedVisitId;
+      const find = (id?: string | null) =>
+        id ? rows.find((r) => r.id === id || r.local_id === id) : undefined;
+
+      const fromDraft = find(draft?.memberId);
+      const initial = fromDraft ?? find(storedId);
+      if (initial) {
+        setPatientId(initial.id);
+        setMemberName(initial.full_name);
+        const matchesStore =
+          storedId &&
+          (initial.id === storedId || initial.local_id === storedId);
+        resolveVisit(
+          initial.id,
+          initial.local_id,
+          matchesStore ? storedVisitId : null,
         );
-        if (m) {
-          setMemberName(m.full_name);
+      }
 
-          if (visitId) {
-            // Visit ID passed directly from visit flow
-            setLastVisitId(visitId);
-          } else {
-            // Fallback: find most recent visit for this member
-            const v = await db.getFirstAsync<{ id: string }>(
-              `SELECT id FROM visits WHERE member_id = ? ORDER BY visited_at DESC LIMIT 1`,
-              [m.id],
-            );
-            if (v) setLastVisitId(v.id);
-            // If still no visit — that is fine, visit_id is now optional
-          }
-        }
+      if (
+        draft &&
+        (draft.reason ||
+          draft.notes ||
+          draft.selectedFacilityId ||
+          draft.memberId)
+      ) {
+        if (draft.reason) setReason(draft.reason);
+        if (draft.urgency) setUrgency(draft.urgency);
+        if (draft.selectedFacilityId)
+          setSelectedFacilityId(draft.selectedFacilityId);
+        if (draft.notes) setNotes(draft.notes);
+        showInfo("Draft Restored", "Continuing your previous referral entry.");
       }
 
       // Load facilities (non-blocking — failure is acceptable offline)
@@ -136,15 +152,25 @@ export default function AddReferralScreen() {
     }
   };
 
-  const handleSave = async () => {
-    // ─── FIX: Re-read from store directly at save time — belt and braces
-    const memberId =
-      selectedMemberId ?? useAppStore.getState().selectedMemberId;
+  // Auto-save draft (debounced 800ms)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      saveDraft(DRAFT_KEY, {
+        memberId: patientId || null,
+        reason,
+        urgency,
+        selectedFacilityId,
+        notes,
+      });
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [patientId, reason, urgency, selectedFacilityId, notes]);
 
-    if (!memberId) {
+  const handleSave = async () => {
+    if (!patientId) {
       return showError(
         "No Patient Selected",
-        "Go back and tap a patient, then tap Refer.",
+        "Search and select the patient for this referral.",
       );
     }
     if (!reason) {
@@ -164,7 +190,7 @@ export default function AddReferralScreen() {
 
       const member = await db.getFirstAsync<{ id: string }>(
         "SELECT id FROM members WHERE id = ? OR local_id = ?",
-        [memberId, memberId],
+        [patientId, patientId],
       );
       if (!member) throw new Error("Member not found in local database.");
 
@@ -244,6 +270,29 @@ export default function AddReferralScreen() {
     },
   ];
 
+  const getAge = (p: Patient) => {
+    if (p.estimated_age) return `${p.estimated_age}y`;
+    if (p.date_of_birth) {
+      const age = Math.floor(
+        (Date.now() - new Date(p.date_of_birth).getTime()) /
+          (1000 * 60 * 60 * 24 * 365),
+      );
+      return `${age}y`;
+    }
+    return "";
+  };
+
+  const q = patientQuery.trim().toLowerCase();
+  const filteredPatients = q
+    ? patients.filter(
+        (p) =>
+          p.full_name.toLowerCase().includes(q) ||
+          (p.household_number || "").toLowerCase().includes(q) ||
+          (p.head_of_household_name || "").toLowerCase().includes(q),
+      )
+    : patients;
+  const visiblePatients = filteredPatients.slice(0, 50);
+
   return (
     <View style={styles.container}>
       <StatusBar backgroundColor={COLORS.primary} barStyle="light-content" />
@@ -258,25 +307,108 @@ export default function AddReferralScreen() {
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
-          {/* Patient info */}
+          {/* Selected patient */}
+          <Text style={styles.label}>Patient *</Text>
           {memberName ? (
             <View style={styles.patientCard}>
               <View style={styles.patientAvatar}>
                 <Ionicons name="person" size={20} color={COLORS.primary} />
               </View>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.patientName}>{memberName}</Text>
                 <Text style={styles.patientSub}>Patient being referred</Text>
               </View>
             </View>
           ) : (
-            <View style={[styles.patientCard, { borderColor: COLORS.danger }]}>
-              <Ionicons name="alert-circle" size={20} color={COLORS.danger} />
-              <Text style={{ color: COLORS.danger, fontSize: SIZES.fontSm }}>
-                No patient selected — go back and tap a patient first
+            <View style={styles.patientCard}>
+              <Ionicons
+                name="person-outline"
+                size={20}
+                color={COLORS.textMuted}
+              />
+              <Text style={{ color: COLORS.textMuted, fontSize: SIZES.fontSm }}>
+                Search below and tap a patient to refer
               </Text>
             </View>
           )}
+
+          {/* Instant search */}
+          <View style={styles.searchBox}>
+            <Ionicons name="search" size={18} color={COLORS.textMuted} />
+            <TextInput
+              style={styles.searchInput}
+              value={patientQuery}
+              onChangeText={setPatientQuery}
+              placeholder="Search household ID, head name, or member name..."
+              placeholderTextColor={COLORS.placeholder}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {patientQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setPatientQuery("")}>
+                <Ionicons
+                  name="close-circle"
+                  size={18}
+                  color={COLORS.textMuted}
+                />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Patient list */}
+          <View style={styles.patientList}>
+            {patients.length === 0 ? (
+              <Text style={styles.emptyListText}>
+                No members found on this device
+              </Text>
+            ) : filteredPatients.length === 0 ? (
+              <Text style={styles.emptyListText}>
+                No matches for "{patientQuery}"
+              </Text>
+            ) : (
+              visiblePatients.map((p) => {
+                const isSelected =
+                  patientId === p.id || patientId === p.local_id;
+                return (
+                  <TouchableOpacity
+                    key={p.local_id}
+                    style={[
+                      styles.patientRow,
+                      isSelected && styles.patientRowSelected,
+                    ]}
+                    onPress={() => choosePatient(p)}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.rowName}>{p.full_name}</Text>
+                      <Text style={styles.rowSub}>
+                        {[getAge(p), p.sex, p.household_number || "No ID"]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </Text>
+                      {p.head_of_household_name ? (
+                        <Text style={styles.rowHead}>
+                          Head: {p.head_of_household_name}
+                        </Text>
+                      ) : null}
+                    </View>
+                    {isSelected && (
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={22}
+                        color={COLORS.primary}
+                      />
+                    )}
+                  </TouchableOpacity>
+                );
+              })
+            )}
+            {filteredPatients.length > visiblePatients.length && (
+              <Text style={styles.emptyListText}>
+                Showing first {visiblePatients.length} of{" "}
+                {filteredPatients.length} — refine your search
+              </Text>
+            )}
+          </View>
 
           {/* Urgency */}
           <Text style={styles.label}>Urgency Level *</Text>
@@ -461,6 +593,58 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
   patientSub: { fontSize: SIZES.fontXs, color: COLORS.textMuted },
+  searchBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: COLORS.white,
+    borderRadius: SIZES.radiusMd,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: SIZES.md,
+    paddingVertical: 10,
+    marginBottom: SIZES.sm,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: SIZES.fontSm,
+    color: COLORS.text,
+    padding: 0,
+  },
+  patientList: {
+    backgroundColor: COLORS.white,
+    borderRadius: SIZES.radiusMd,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    overflow: "hidden",
+    maxHeight: 260,
+  },
+  patientRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SIZES.sm,
+    paddingHorizontal: SIZES.md,
+    paddingVertical: SIZES.sm + 2,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border + "66",
+  },
+  patientRowSelected: {
+    backgroundColor: COLORS.primaryLight,
+    borderColor: COLORS.primary,
+  },
+  rowName: {
+    fontSize: SIZES.fontSm,
+    fontWeight: "600",
+    color: COLORS.text,
+  },
+  rowSub: { fontSize: SIZES.fontXs, color: COLORS.textMuted, marginTop: 1 },
+  rowHead: { fontSize: SIZES.fontXs, color: COLORS.textMuted, marginTop: 1 },
+  emptyListText: {
+    fontSize: SIZES.fontXs,
+    color: COLORS.textMuted,
+    textAlign: "center",
+    padding: SIZES.md,
+  },
   label: {
     fontSize: SIZES.fontSm,
     fontWeight: "600",
