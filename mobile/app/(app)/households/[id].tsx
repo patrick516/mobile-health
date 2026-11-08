@@ -22,7 +22,7 @@ import { enqueue } from "../../../src/db/sync-queue";
 import * as Crypto from "expo-crypto";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import NetInfo from "@react-native-community/netinfo";
-import * as Location from "expo-location";
+import { captureCoordinates } from "../../../src/utils/gps";
 
 interface Household {
   id: string;
@@ -310,20 +310,16 @@ export default function HouseholdDetailScreen() {
           onPress: async () => {
             setRelocating(true);
             try {
-              const { status } =
-                await Location.requestForegroundPermissionsAsync();
-              if (status !== "granted") {
+              const coords = await captureCoordinates();
+              if (!coords) {
                 Alert.alert(
-                  "Permission Needed",
-                  "Location permission is required.",
+                  "No GPS Fix",
+                  "Could not get a GPS position. Move outdoors with a clear sky view and try again — no internet is required.",
                 );
                 return;
               }
-              const loc = await Location.getCurrentPositionAsync({
-                accuracy: Location.Accuracy.High,
-              });
-              const newLat = loc.coords.latitude;
-              const newLng = loc.coords.longitude;
+              const newLat = coords.latitude;
+              const newLng = coords.longitude;
               const db = await getDb();
               await db.runAsync(
                 "UPDATE households SET gps_lat = ?, gps_lng = ?, synced = 0 WHERE id = ? OR local_id = ?",

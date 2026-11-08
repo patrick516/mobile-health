@@ -86,7 +86,7 @@ export default function RecordImmunisationScreen() {
     try {
       const localId = Crypto.randomUUID();
       const db = await getDb();
-     // Try direct match first, then fall back to finding any member
+      // Try direct match first, then fall back to finding any member
       // whose schedules match (handles server ID mismatch after sync)
       let member = await db.getFirstAsync<{ id: string }>(
         "SELECT id FROM members WHERE id = ? OR local_id = ?",

@@ -14,7 +14,6 @@ import {
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Crypto from "expo-crypto";
-import * as Location from "expo-location";
 import { COLORS, SIZES, SHADOWS } from "../../../constants/theme";
 import { useAppStore } from "../../../src/store";
 import { getDb } from "../../../src/db/schema";
@@ -30,6 +29,7 @@ import {
   clearDraft,
 } from "../../../src/utils/draftStorage";
 import { showSuccess, showError, showInfo } from "../../../src/utils/toast";
+import { captureCoordinates } from "../../../src/utils/gps";
 
 const DRAFT_KEY = "visit_add";
 
@@ -247,15 +247,11 @@ export default function AddVisitScreen() {
   };
 
   const captureGps = async () => {
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") return;
-      const loc = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      setGpsLat(loc.coords.latitude);
-      setGpsLng(loc.coords.longitude);
-    } catch {}
+    const coords = await captureCoordinates();
+    if (coords) {
+      setGpsLat(coords.latitude);
+      setGpsLng(coords.longitude);
+    }
   };
 
   const toggleSymptom = (code: string) => {

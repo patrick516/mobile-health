@@ -15,7 +15,6 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import * as Location from "expo-location";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import { COLORS, SIZES, SHADOWS } from "../../../constants/theme";
@@ -36,6 +35,7 @@ import {
   clearDraft,
 } from "../../../src/utils/draftStorage";
 import { showSuccess, showError, showInfo } from "../../../src/utils/toast";
+import { captureCoordinates } from "../../../src/utils/gps";
 import {
   WATER_SOURCES,
   STRUCTURE_TYPES,
@@ -282,14 +282,11 @@ export default function AddHouseholdScreen() {
   const captureGps = async () => {
     setGpsLoading(true);
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") return;
-      const loc = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
-      setGpsLat(loc.coords.latitude);
-      setGpsLng(loc.coords.longitude);
-    } catch {
+      const coords = await captureCoordinates();
+      if (coords) {
+        setGpsLat(coords.latitude);
+        setGpsLng(coords.longitude);
+      }
     } finally {
       setGpsLoading(false);
     }
@@ -353,10 +350,62 @@ export default function AddHouseholdScreen() {
 
   const handleAddVillage = async () => {
     if (!newVillageName.trim()) return;
+    const name = newVillageName.trim();
+
+    // ── Offline path: create the village on-device and queue it for sync ──
+    const createOffline = async () => {
+      const newId = Crypto.randomUUID();
+      const db = await getDb();
+      const dup = await db.getAllAsync<{ id: string }>(
+        "SELECT id FROM villages WHERE zone_id = ? AND LOWER(name) = LOWER(?) LIMIT 1",
+        [selectedZoneId, name],
+      );
+      if (dup.length > 0) {
+        Alert.alert(
+          "Village Already Exists",
+          `"${name}" is already in this list. Please use the existing village.`,
+        );
+        setSelectedVillageId(dup[0].id);
+        setShowNewVillage(false);
+        setNewVillageName("");
+        return;
+      }
+      await db.runAsync(
+        "INSERT OR REPLACE INTO villages (id, name, zone_id, zone_name) VALUES (?,?,?,?)",
+        [newId, name, selectedZoneId, ""],
+      );
+      await enqueue("VILLAGE", {
+        localId: newId,
+        id: newId,
+        name,
+        zoneId: selectedZoneId,
+        gpsLat,
+        gpsLng,
+      });
+      setVillages((p) =>
+        p.some((existing) => existing.id === newId)
+          ? p
+          : [...p, { id: newId, name, zone_id: selectedZoneId, zone_name: "" }],
+      );
+      setLocallyAddedVillageIds((p) => [...p, newId]);
+      setSelectedVillageId(newId);
+      setShowNewVillage(false);
+      setNewVillageName("");
+      showInfo(
+        "Saved offline",
+        `"${name}" will sync automatically when you're back online.`,
+      );
+    };
 
     try {
+      const net = await NetInfo.fetch();
+      if (!net.isConnected) {
+        await createOffline();
+        return;
+      }
+
       const res = await api.post("/geography/villages", {
-        name: newVillageName.trim(),
+        name,
         zoneId: selectedZoneId,
         gpsLat,
         gpsLng,
@@ -403,8 +452,24 @@ export default function AddHouseholdScreen() {
       setSelectedVillageId(v.id);
       setShowNewVillage(false);
       setNewVillageName("");
-    } catch {
-      showError("Error", "Could not add village. Check your connection.");
+    } catch (err) {
+      const response = (err as { response?: { data?: { message?: string } } })
+        .response;
+      // No response = the request never reached the server (offline/flaky) —
+      // fall back to creating the village on-device instead of failing.
+      if (!response) {
+        try {
+          await createOffline();
+          return;
+        } catch {
+          // fall through to the error below
+        }
+      }
+      showError(
+        "Error",
+        response?.data?.message ||
+          "Could not add village. Check your connection.",
+      );
     }
   };
 
@@ -855,7 +920,7 @@ export default function AddHouseholdScreen() {
                   ? "Capturing GPS..."
                   : gpsLat
                     ? `GPS: ${gpsLat.toFixed(5)}, ${gpsLng?.toFixed(5)}`
-                    : "GPS not captured"}
+                    : "GPS not captured — optional"}
               </Text>
               {!gpsLat && !gpsLoading && (
                 <TouchableOpacity onPress={captureGps}>
