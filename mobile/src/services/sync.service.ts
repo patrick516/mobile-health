@@ -289,8 +289,7 @@ const pullFromServer = async () => {
         if (
           meId &&
           s.user?.id === meId &&
-          prev &&
-          s.quantityCurrent > prev.quantity_current
+          (!prev || s.quantityCurrent > prev.quantity_current)
         ) {
           pickedUp.push(s.drug.nameEnglish);
           pickupFacility = pickupFacility || s.user?.facility?.name || "";

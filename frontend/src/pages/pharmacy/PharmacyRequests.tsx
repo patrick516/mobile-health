@@ -5,6 +5,7 @@ import api from "../../services/api";
 import Select from "../../components/ui/Select";
 import { useAuthStore } from "../../store/auth.store";
 import WalkInEncounter from "../../components/encounters/WalkInEncounter";
+import { useDialog } from "../../components/ui/dialog-context";
 
 const STATUS_COLORS: Record<string, string> = {
   PENDING: "bg-yellow-100 text-yellow-700",
@@ -23,6 +24,7 @@ const STATUS_OPTIONS = [
 export default function PharmacyRequests() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
+  const { alert } = useDialog();
 
   const isPharmacist = user?.role === "PHARMACIST";
   const canCreateRequest = [
@@ -97,8 +99,15 @@ export default function PharmacyRequests() {
       setFulfillData({});
       setSubstitute({});
     },
-    onError: (err: any) =>
-      alert(err.response?.data?.message || "Could not fulfil this request."),
+    onError: (err: any) => {
+      alert({
+        title: "Could not fulfil this request",
+        message:
+          err.response?.data?.message ||
+          "Something went wrong. Please try again.",
+        variant: "danger",
+      });
+    },
   });
 
   const handleFulfill = () => {

@@ -12,6 +12,7 @@ import {
 import api from "../../services/api";
 import { useAuthStore } from "../../store/auth.store";
 import Select from "../../components/ui/Select";
+import { useDialog } from "../../components/ui/dialog-context";
 
 interface Drug {
   id: string;
@@ -75,6 +76,7 @@ const userLabel = (u?: {
 export default function DrugStock() {
   const queryClient = useQueryClient();
   const { isAdmin, user } = useAuthStore();
+  const { confirm } = useDialog();
   const canHandleRequests = ["ADMIN", "NURSE", "PHARMACIST"].includes(
     user?.role || "",
   );
@@ -985,12 +987,14 @@ export default function DrugStock() {
                           Reject
                         </button>
                         <button
-                          onClick={() => {
-                            if (
-                              window.confirm(
-                                `Pharmacy is short for ${req.drug.nameEnglish}. Raise a supply request and mark this one as escalated?`,
-                              )
-                            ) {
+                          onClick={async () => {
+                            const confirmed = await confirm({
+                              title: "Escalate short supply?",
+                              message: `Pharmacy is short for ${req.drug.nameEnglish}. Raise a supply request and mark this one as escalated?`,
+                              confirmLabel: "Escalate",
+                              variant: "danger",
+                            });
+                            if (confirmed) {
                               escalateMutation.mutate(req);
                             }
                           }}

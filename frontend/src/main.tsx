@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "@fontsource-variable/plus-jakarta-sans";
 import "./index.css";
 import App from "./App.tsx";
+import { DialogProvider } from "./components/ui/Dialog";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -18,7 +19,9 @@ const queryClient = new QueryClient({
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <DialogProvider>
+        <App />
+      </DialogProvider>
     </QueryClientProvider>
   </StrictMode>,
 );

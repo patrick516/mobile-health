@@ -59,6 +59,40 @@ export const getDrugs = async (req, res, next) => {
 
 export const getStock = async (req, res, next) => {
   try {
+    try {
+      const fulfilled = await prisma.stockRequest.findMany({
+        where: { status: "FULFILLED", requestingUser: { role: "CCW" } },
+        select: {
+          drugId: true,
+          quantityRequested: true,
+          requestingUserId: true,
+        },
+      });
+      for (const request of fulfilled) {
+        if (!(request.quantityRequested > 0)) continue;
+        const existing = await prisma.drugStock.findUnique({
+          where: {
+            userId_drugId: {
+              userId: request.requestingUserId,
+              drugId: request.drugId,
+            },
+          },
+          select: { id: true },
+        });
+        if (existing) continue;
+        await prisma.drugStock.create({
+          data: {
+            userId: request.requestingUserId,
+            drugId: request.drugId,
+            quantityCurrent: request.quantityRequested,
+            quantityMinimum: 5,
+          },
+        });
+      }
+    } catch {
+      // never block stock reads on the kit-row backfill
+    }
+
     // CCW: only their own stock. Super Admin: everything.
     // Everyone else: stock held by staff of their own facility.
     const where =

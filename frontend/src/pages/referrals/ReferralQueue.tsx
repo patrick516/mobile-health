@@ -12,6 +12,7 @@ import type { Referral, Pagination } from "../../types";
 import { useAuthStore } from "../../store/auth.store";
 import WalkInEncounter from "../../components/encounters/WalkInEncounter";
 import Select from "../../components/ui/Select";
+import { useDialog } from "../../components/ui/dialog-context";
 
 const STATUS_STYLE: Record<string, string> = {
   PENDING: "badge-yellow",
@@ -47,6 +48,7 @@ const fullName = (p: any) =>
 export default function ReferralQueue() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
+  const { alert } = useDialog();
   const canPrescribe = [
     "NURSE",
     "DISTRICT_OFFICER",
@@ -135,11 +137,18 @@ export default function ReferralQueue() {
       setDiagnosis("");
       setMeds([]);
     },
-    onError: (err: any) =>
-      alert(err.response?.data?.message || "Could not update this referral."),
+    onError: (err: any) => {
+      alert({
+        title: "Could not update this referral",
+        message:
+          err.response?.data?.message ||
+          "Something went wrong. Please try again.",
+        variant: "danger",
+      });
+    },
   });
 
-  const handleUpdate = (status: string) => {
+  const handleUpdate = async (status: string) => {
     if (!selected) return;
 
     // Arrival (and any refinement while ARRIVED) may carry a prescription —
@@ -155,13 +164,21 @@ export default function ReferralQueue() {
         if (!m.drugName && !m.quantity) continue; // empty row, ignore
         const qty = parseInt(m.quantity);
         if (!m.drugName || !(qty > 0)) {
-          return alert("Choose a drug and enter a quantity for each row.");
+          await alert({
+            title: "Check the form",
+            message: "Choose a drug and enter a quantity for each row.",
+            variant: "warning",
+          });
+          return;
         }
         const left = availableStock[m.drugName]?.total ?? 0;
         if (qty > left) {
-          return alert(
-            `Only ${left} of ${m.drugName} in stock. Lower the quantity.`,
-          );
+          await alert({
+            title: "Not enough stock",
+            message: `Only ${left} of ${m.drugName} in stock. Lower the quantity.`,
+            variant: "warning",
+          });
+          return;
         }
         medications.push({
           drugName: m.drugName,
@@ -172,9 +189,13 @@ export default function ReferralQueue() {
     }
 
     if (status === "COMPLETED" && !feedback.trim()) {
-      return alert(
-        "Write a short feedback note for the CHW before closing the loop.",
-      );
+      await alert({
+        title: "Feedback required",
+        message:
+          "Write a short feedback note for the CHW before closing the loop.",
+        variant: "warning",
+      });
+      return;
     }
 
     updateMutation.mutate({

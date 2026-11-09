@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { CalendarHeart, CheckCircle2 } from "lucide-react";
 import api from "../../services/api";
 import { useAuthStore } from "../../store/auth.store";
+import { useDialog } from "../../components/ui/dialog-context";
 
 type AncVisit = {
   id: string;
@@ -33,6 +34,7 @@ const STATUS_STYLES: Record<string, string> = {
 export default function AncTracker() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
+  const { alert } = useDialog();
   const canRecord = [
     "NURSE",
     "DISTRICT_OFFICER",
@@ -51,8 +53,15 @@ export default function AncTracker() {
     mutationFn: (id: string) => api.patch(`/anc/${id}/record`, {}),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["anc-schedules"] }),
-    onError: (err: any) =>
-      alert(err.response?.data?.message || "Could not record this ANC visit."),
+    onError: (err: any) => {
+      alert({
+        title: "Could not record this visit",
+        message:
+          err.response?.data?.message ||
+          "Something went wrong. Please try again.",
+        variant: "danger",
+      });
+    },
   });
 
   const list = visits || [];

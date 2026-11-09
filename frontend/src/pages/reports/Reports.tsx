@@ -14,6 +14,7 @@ import api from "../../services/api";
 import Select from "../../components/ui/Select";
 import DatePicker from "../../components/ui/DatePicker";
 import { useAuthStore } from "../../store/auth.store";
+import { useDialog } from "../../components/ui/dialog-context";
 
 type ReportType =
   | "households"
@@ -84,6 +85,7 @@ export default function Reports() {
     .split("T")[0];
 
   const { user, isSuperAdmin } = useAuthStore();
+  const { alert } = useDialog();
   // Only Super Admin may browse the whole country; everyone else is locked
   // to the district of their own facility.
   const isGlobal = isSuperAdmin();
@@ -196,7 +198,11 @@ export default function Reports() {
       a.click();
       window.URL.revokeObjectURL(url);
     } catch {
-      alert("Export failed. Please try again.");
+      await alert({
+        title: "Export failed",
+        message: "Please try again.",
+        variant: "danger",
+      });
     } finally {
       setExporting(null);
     }

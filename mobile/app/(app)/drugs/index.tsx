@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import {
   KeyboardAvoidingView,
 } from "react-native";
 import { goBack } from "../../../src/utils/nav";
+import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { COLORS, SIZES, SHADOWS } from "../../../constants/theme";
 import { getDb } from "../../../src/db/schema";
@@ -143,10 +144,12 @@ export default function DrugsScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    load();
-    loadRequests();
-  }, [load, loadRequests]);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+      loadRequests();
+    }, [load, loadRequests]),
+  );
 
   const submitRequestCore = async (opts: {
     drugId: string;
