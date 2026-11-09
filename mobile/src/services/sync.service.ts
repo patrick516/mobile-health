@@ -6,6 +6,7 @@ import api from "./api";
 import { getDb } from "../db/schema";
 import { useAppStore } from "../store";
 import * as Crypto from "expo-crypto";
+import { Alert } from "react-native";
 
 const TABLE_BY_TYPE: Record<string, string> = {
   HOUSEHOLD: "households",
@@ -78,6 +79,111 @@ const pullFromServer = async () => {
       `);
     }
 
+    // ── Households + members: download them so a new phone starts with its data
+    try {
+      let page = 1;
+      let totalPages = 1;
+      do {
+        const hhRes = await api.get("/households", {
+          params: { page, limit: 100 },
+        });
+        const serverHouseholds = hhRes.data.data || [];
+        totalPages = hhRes.data.pagination?.totalPages || 1;
+
+        Alert.alert(
+          "Sync debug",
+          `Households page ${page}: ${serverHouseholds.length} received`,
+        );
+        for (const h of serverHouseholds) {
+          const existingHh = await db.getFirstAsync<{ id: string }>(
+            `SELECT id FROM households
+             WHERE id = ? OR local_id = ?
+                OR (household_number IS NOT NULL AND household_number = ?)`,
+            [h.id, h.localId || h.id, h.householdNumber || ""],
+          );
+          if (existingHh) continue;
+
+          await db.runAsync(
+            `INSERT INTO households
+             (id, local_id, village_id, village_name, zone_name, ta_name,
+              head_of_household_name, head_phone, head_national_id, consent_given,
+              registered_by_name, registered_by_user_id, household_number,
+              structure_type, wall_material, roof_material, floor_type,
+              has_electricity, water_source, latrine_present, latrine_type,
+              handwashing_facility, distance_to_facility, mosquito_nets,
+              number_of_rooms, landmark, gps_lat, gps_lng, status, synced,
+              created_at, updated_at)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)`,
+            [
+              h.id,
+              h.localId || h.id,
+              h.villageId,
+              h.village?.name || "",
+              h.village?.zone?.name || "",
+              h.village?.zone?.ta?.name || "",
+              h.headOfHouseholdName,
+              h.headPhone || null,
+              h.headNationalId || null,
+              h.consentGiven ? 1 : 0,
+              h.registeredByName || null,
+              h.registeredByUserId || h.registeredById || null,
+              h.householdNumber || null,
+              h.structureType || null,
+              h.wallMaterial || null,
+              h.roofMaterial || null,
+              h.floorType || null,
+              h.hasElectricity ? 1 : 0,
+              h.waterSource || null,
+              h.latrinePresent ? 1 : 0,
+              h.latrineType || null,
+              h.handwashingFacility ? 1 : 0,
+              h.distanceToFacility || null,
+              h.mosquitoNets || null,
+              h.numberOfRooms ?? null,
+              h.landmark || null,
+              h.gpsLat ?? null,
+              h.gpsLng ?? null,
+              h.status || "ACTIVE",
+              h.createdAt || new Date().toISOString(),
+              h.updatedAt || new Date().toISOString(),
+            ],
+          );
+
+          for (const m of h.members || []) {
+            const existingMember = await db.getFirstAsync<{ id: string }>(
+              `SELECT id FROM members WHERE id = ? OR local_id = ?`,
+              [m.id, m.localId || m.id],
+            );
+            if (existingMember) continue;
+            await db.runAsync(
+              `INSERT INTO members
+               (id, local_id, household_id, first_name, last_name, full_name,
+                date_of_birth, estimated_age, sex, relationship_to_head,
+                is_pregnant, status, synced)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)`,
+              [
+                m.id,
+                m.localId || m.id,
+                h.id,
+                m.firstName || "",
+                m.lastName || "",
+                `${m.firstName || ""} ${m.lastName || ""}`.trim() || null,
+                m.dateOfBirth || null,
+                m.estimatedAge ?? null,
+                m.sex || "",
+                m.relationshipToHead || "",
+                m.isPregnant ? 1 : 0,
+                "ACTIVE",
+              ],
+            );
+          }
+        }
+        page += 1;
+      } while (page <= totalPages);
+    } catch (hhErr: any) {
+      console.log("[SYNC] Household pull skipped:", hhErr?.message);
+    }
+    Alert.alert("Sync debug", `Household pull failed: ${hhErr?.message}`);
     const schedulesRes = await api.get("/immunisations/schedules", {
       params: { _t: Date.now() },
     });
