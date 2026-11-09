@@ -73,6 +73,7 @@ export default function DrugsScreen() {
   // Request modal
   const [showRequest, setShowRequest] = useState(false);
   const [formulary, setFormulary] = useState<FormularyDrug[]>([]);
+  const [formularyErr, setFormularyErr] = useState(false);
   const [selDrug, setSelDrug] = useState<FormularyDrug | null>(null);
   const [formSearch, setFormSearch] = useState("");
   const [reqQty, setReqQty] = useState("");
@@ -106,6 +107,7 @@ export default function DrugsScreen() {
   }, []);
 
   const loadFormulary = useCallback(async () => {
+    let fetchOk = false;
     try {
       const res = await api.get("/drugs");
       const list = res.data.data || [];
@@ -125,6 +127,7 @@ export default function DrugsScreen() {
           ],
         );
       }
+      fetchOk = true;
     } catch {
       // Offline — fall back to the last synced formulary below
     }
@@ -134,6 +137,7 @@ export default function DrugsScreen() {
         "SELECT * FROM drugs WHERE is_active = 1 ORDER BY name_english ASC",
       );
       setFormulary(rows);
+      setFormularyErr(!fetchOk && rows.length === 0);
     } catch (err) {
       console.error("Load formulary error:", err);
     }
@@ -590,14 +594,18 @@ export default function DrugsScreen() {
                 formulary.length === 0 ? (
                   <View style={styles.modalEmptyWrap}>
                     <Text style={styles.modalEmpty}>
-                      Formulary not loaded. Check your connection, then retry.
+                      {formularyErr
+                        ? "Couldn't load the formulary. Check your connection, then retry."
+                        : "No drugs registered yet — ask your administrator to add drugs."}
                     </Text>
-                    <TouchableOpacity
-                      style={styles.retryBtn}
-                      onPress={loadFormulary}
-                    >
-                      <Text style={styles.retryText}>Retry</Text>
-                    </TouchableOpacity>
+                    {formularyErr && (
+                      <TouchableOpacity
+                        style={styles.retryBtn}
+                        onPress={loadFormulary}
+                      >
+                        <Text style={styles.retryText}>Retry</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 ) : (
                   <Text style={styles.modalEmpty}>

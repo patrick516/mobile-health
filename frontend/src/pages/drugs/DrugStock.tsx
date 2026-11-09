@@ -174,6 +174,7 @@ export default function DrugStock() {
         try {
           await api.patch(`/drugs/requests/${issueRequestId}`, {
             status: "FULFILLED",
+            dispensed: true,
           });
           queryClient.invalidateQueries({ queryKey: ["stock-requests"] });
         } catch {
@@ -1020,7 +1021,9 @@ export default function DrugStock() {
                           className="btn-primary text-xs px-3 py-1"
                           disabled={updateRequestMutation.isPending}
                         >
-                          Mark Fulfilled
+                          {req.requestingUser.role === "CCW"
+                            ? "Dispense to CCW"
+                            : "Mark Fulfilled"}
                         </button>
                       </div>
                     )}
