@@ -485,6 +485,11 @@ const pullFromServer = async () => {
           finalMemberId = f.member.id;
         }
 
+        // If the server failed to send an ID but sent a member object, use that ID
+        if (!finalMemberId && f.member?.id) {
+          finalMemberId = f.member.id;
+        }
+
         if (finalMemberId) {
           const localMember = await db.getFirstAsync<{
             first_name: string;
@@ -501,8 +506,8 @@ const pullFromServer = async () => {
             await db.runAsync(
               `INSERT OR IGNORE INTO members (id, local_id, first_name, last_name, full_name, sex, synced) VALUES (?,?,?,?,?,?,1)`,
               [
-                f.member.id,
-                f.member.id,
+                f.member.id || finalMemberId,
+                f.member.id || finalMemberId,
                 f.member.firstName || "",
                 f.member.lastName || "",
                 serverFullName || "Unknown",
@@ -511,7 +516,6 @@ const pullFromServer = async () => {
             );
           }
         }
-
         await db.runAsync(
           `INSERT OR REPLACE INTO fp_visits
            (id, local_id, member_id, visited_by_id, visit_date, method,
