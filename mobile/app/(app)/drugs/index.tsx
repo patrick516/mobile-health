@@ -10,6 +10,8 @@ import {
   Alert,
   Modal,
   TextInput,
+  Platform,
+  KeyboardAvoidingView,
 } from "react-native";
 import { goBack } from "../../../src/utils/nav";
 import { Ionicons } from "@expo/vector-icons";
@@ -526,10 +528,13 @@ export default function DrugsScreen() {
       <Modal
         visible={showRequest}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setShowRequest(false)}
       >
-        <View style={styles.modalBackdrop}>
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Request Drugs</Text>
@@ -582,9 +587,23 @@ export default function DrugsScreen() {
                 </TouchableOpacity>
               )}
               ListEmptyComponent={
-                <Text style={styles.modalEmpty}>
-                  No drugs found. Sync while online to load the formulary.
-                </Text>
+                formulary.length === 0 ? (
+                  <View style={styles.modalEmptyWrap}>
+                    <Text style={styles.modalEmpty}>
+                      Formulary not loaded. Check your connection, then retry.
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.retryBtn}
+                      onPress={loadFormulary}
+                    >
+                      <Text style={styles.retryText}>Retry</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <Text style={styles.modalEmpty}>
+                    No drugs match “{formSearch}”
+                  </Text>
+                )
               }
             />
 
@@ -615,7 +634,7 @@ export default function DrugsScreen() {
               </Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -810,15 +829,16 @@ const styles = StyleSheet.create({
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.45)",
-    justifyContent: "flex-end",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: SIZES.lg,
   },
   modalCard: {
     backgroundColor: COLORS.white,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    borderRadius: 16,
     padding: SIZES.lg,
-    paddingBottom: SIZES.xl,
     maxHeight: "85%",
+    width: "100%",
     overflow: "hidden",
   },
   modalHeader: {
@@ -875,6 +895,20 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     fontSize: SIZES.fontSm,
     paddingVertical: SIZES.lg,
+  },
+  modalEmptyWrap: {
+    alignItems: "center",
+  },
+  retryBtn: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SIZES.lg,
+    paddingVertical: SIZES.sm,
+    borderRadius: SIZES.radiusMd,
+  },
+  retryText: {
+    color: COLORS.white,
+    fontSize: SIZES.fontSm,
+    fontWeight: "600",
   },
   qtyRow: {
     flexDirection: "row",

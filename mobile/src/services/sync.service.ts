@@ -260,54 +260,59 @@ const pullFromServer = async () => {
       console.log("[SYNC] ANC pull skipped");
     }
 
-    const stockRes = await api.get("/drugs/stock");
-    const stocks = stockRes.data.data || [];
-    const meId = useAppStore.getState().user?.id;
-    let pickupFacility =
-      (useAppStore.getState().user as any)?.facility?.name || "";
-    const pickedUp: string[] = [];
-    for (const s of stocks) {
-      const prev = await db.getFirstAsync<{ quantity_current: number }>(
-        `SELECT quantity_current FROM drug_stock WHERE id = ?`,
-        [s.id],
-      );
-      await db.runAsync(
-        `INSERT OR REPLACE INTO drug_stock (id, drug_id, drug_code, name_english, name_chichewa, unit, quantity_current, quantity_minimum) VALUES (?,?,?,?,?,?,?,?)`,
-        [
-          s.id,
-          s.drugId || s.drug.id,
-          s.drug.drugCode,
-          s.drug.nameEnglish,
-          s.drug.nameChichewa,
-          s.drug.unit,
-          s.quantityCurrent,
-          s.quantityMinimum,
-        ],
-      );
-      if (
-        meId &&
-        s.user?.id === meId &&
-        prev &&
-        s.quantityCurrent > prev.quantity_current
-      ) {
-        pickedUp.push(s.drug.nameEnglish);
-        pickupFacility = pickupFacility || s.user?.facility?.name || "";
+    let stocks: any[] = [];
+    try {
+      const stockRes = await api.get("/drugs/stock");
+      stocks = stockRes.data.data || [];
+      const meId = useAppStore.getState().user?.id;
+      let pickupFacility =
+        (useAppStore.getState().user as any)?.facility?.name || "";
+      const pickedUp: string[] = [];
+      for (const s of stocks) {
+        const prev = await db.getFirstAsync<{ quantity_current: number }>(
+          `SELECT quantity_current FROM drug_stock WHERE id = ?`,
+          [s.id],
+        );
+        await db.runAsync(
+          `INSERT OR REPLACE INTO drug_stock (id, drug_id, drug_code, name_english, name_chichewa, unit, quantity_current, quantity_minimum) VALUES (?,?,?,?,?,?,?,?)`,
+          [
+            s.id,
+            s.drugId || s.drug.id,
+            s.drug.drugCode,
+            s.drug.nameEnglish,
+            s.drug.nameChichewa,
+            s.drug.unit,
+            s.quantityCurrent,
+            s.quantityMinimum,
+          ],
+        );
+        if (
+          meId &&
+          s.user?.id === meId &&
+          prev &&
+          s.quantityCurrent > prev.quantity_current
+        ) {
+          pickedUp.push(s.drug.nameEnglish);
+          pickupFacility = pickupFacility || s.user?.facility?.name || "";
+        }
       }
-    }
-    if (pickedUp.length > 0) {
-      await db.runAsync(
-        `INSERT INTO notifications (id, title, message, type, related_id, user_id, is_read, created_at) VALUES (?,?,?,?,?,?,?,?)`,
-        [
-          Crypto.randomUUID(),
-          "Drugs Issued — Pick Up",
-          `Visit ${pickupFacility || "your facility"} to pick up: ${pickedUp.join(", ")}`,
-          "DRUG_PICKUP",
-          null,
-          meId || null,
-          0,
-          new Date().toISOString(),
-        ],
-      );
+      if (pickedUp.length > 0) {
+        await db.runAsync(
+          `INSERT INTO notifications (id, title, message, type, related_id, user_id, is_read, created_at) VALUES (?,?,?,?,?,?,?,?)`,
+          [
+            Crypto.randomUUID(),
+            "Drugs Issued — Pick Up",
+            `Visit ${pickupFacility || "your facility"} to pick up: ${pickedUp.join(", ")}`,
+            "DRUG_PICKUP",
+            null,
+            meId || null,
+            0,
+            new Date().toISOString(),
+          ],
+        );
+      }
+    } catch (stockErr: any) {
+      console.log("[SYNC] Drug stock pull skipped:", stockErr?.message);
     }
 
     // Drug formulary — lets the CCW pick a drug when requesting a restock

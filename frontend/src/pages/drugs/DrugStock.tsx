@@ -30,7 +30,12 @@ interface DrugStockItem {
   quantityMinimum: number;
   lastRestockedAt?: string;
   drug: Drug;
-  user?: { id: string; fullName: string };
+  user?: {
+    id: string;
+    fullName?: string;
+    firstName?: string;
+    lastName?: string;
+  };
 }
 
 interface StockRequest {
@@ -60,6 +65,12 @@ interface StockRequest {
 
 const personName = (u?: StockRequest["requestingUser"]) =>
   u?.fullName || `${u?.firstName || ""} ${u?.lastName || ""}`.trim() || "—";
+
+const userLabel = (u?: {
+  fullName?: string;
+  firstName?: string;
+  lastName?: string;
+}) => u?.fullName || `${u?.firstName || ""} ${u?.lastName || ""}`.trim() || "—";
 
 export default function DrugStock() {
   const queryClient = useQueryClient();
@@ -225,6 +236,23 @@ export default function DrugStock() {
       (item.quantityCurrent / Math.max(item.quantityMinimum * 3, 1)) * 100,
     );
 
+  // Every formulary drug is listed — issued rows carry their CHW stock,
+  // unissued ones appear with 0 so staff can see what exists and issue it.
+  const stockRows: DrugStockItem[] = (() => {
+    const rows = stock ?? [];
+    const seen = new Set(rows.map((r) => r.drugId));
+    const unissued = (drugs ?? [])
+      .filter((d) => d.isActive && !seen.has(d.id))
+      .map((d) => ({
+        id: `formulary-${d.id}`,
+        drugId: d.id,
+        quantityCurrent: 0,
+        quantityMinimum: d.minimumThreshold,
+        drug: d,
+      }));
+    return [...rows, ...unissued];
+  })();
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "PENDING":
@@ -323,7 +351,8 @@ export default function DrugStock() {
             <div>
               <h2 className="font-bold text-gray-900">Current Stock Levels</h2>
               <p className="text-xs text-gray-500 mt-0.5">
-                Per CHW drug kit status
+                Per CHW drug kit status — formulary drugs not yet issued show as
+                “Not Issued”
               </p>
             </div>
             {canHandleRequests && (
@@ -366,7 +395,7 @@ export default function DrugStock() {
                     placeholder="Select a CCW..."
                     options={(ccwUsers || []).map((u: any) => ({
                       value: u.id,
-                      label: `${u.fullName} — ${u.phoneNumber}`,
+                      label: `${userLabel(u)} — ${u.phoneNumber}`,
                     }))}
                   />
                 </div>
@@ -487,24 +516,27 @@ export default function DrugStock() {
                   </td>
                 </tr>
               )}
-              {!stockLoading && stock?.length === 0 && (
+              {!stockLoading && stockRows.length === 0 && (
                 <tr>
                   <td colSpan={6} className="text-center py-12">
                     <FlaskConical
                       size={36}
                       className="text-gray-200 mx-auto mb-2"
                     />
-                    <p className="text-gray-400 text-sm">No stock data yet</p>
+                    <p className="text-gray-400 text-sm">
+                      No drugs in the formulary yet — add drugs in the Drug
+                      Formulary tab.
+                    </p>
                   </td>
                 </tr>
               )}
-              {stock?.map((item) => {
+              {stockRows.map((item) => {
                 const low = isLow(item);
                 const p = pct(item);
                 return (
                   <tr
                     key={item.id}
-                    className={`hover:bg-gray-50 ${low ? "bg-red-50/20" : ""}`}
+                    className={`hover:bg-gray-50 ${low && item.user ? "bg-red-50/20" : ""}`}
                   >
                     <td className="px-4 py-3">
                       <p className="text-sm font-medium text-gray-900">
@@ -515,19 +547,23 @@ export default function DrugStock() {
                       </p>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-600">
-                      {item.user?.fullName || "Unknown CHW"}
+                      {item.user ? (
+                        userLabel(item.user)
+                      ) : (
+                        <span className="text-gray-400">Not issued</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 min-w-32">
                       <div className="w-full bg-gray-100 rounded-full h-2">
                         <div
-                          className={`h-2 rounded-full ${low ? "bg-red-500" : "bg-teal-500"}`}
+                          className={`h-2 rounded-full ${low && item.user ? "bg-red-500" : "bg-teal-500"}`}
                           style={{ width: `${p}%` }}
                         />
                       </div>
                     </td>
                     <td className="px-4 py-3">
                       <span
-                        className={`text-sm font-semibold ${low ? "text-red-600" : "text-teal-700"}`}
+                        className={`text-sm font-semibold ${low && item.user ? "text-red-600" : "text-teal-700"}`}
                       >
                         {item.quantityCurrent}
                       </span>
@@ -537,14 +573,30 @@ export default function DrugStock() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      {low ? (
+                      {!item.user ? (
+                        <span className="badge-gray">Not Issued</span>
+                      ) : low ? (
                         <span className="badge-red">Low Stock</span>
                       ) : (
                         <span className="badge-green">Adequate</span>
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      {low && (
+                      {!item.user ? (
+                        canHandleRequests && (
+                          <button
+                            onClick={() => {
+                              setSelectedCcwId("");
+                              setKitQuantities({});
+                              setIssueRequestId(null);
+                              setShowInitKit(true);
+                            }}
+                            className="btn-secondary text-xs px-3 py-1"
+                          >
+                            Issue Kit
+                          </button>
+                        )
+                      ) : low ? (
                         <button
                           onClick={() => requestMutation.mutate(item.drugId)}
                           disabled={requestMutation.isPending}
@@ -553,7 +605,7 @@ export default function DrugStock() {
                           <RefreshCw size={12} />
                           Request Restock
                         </button>
-                      )}
+                      ) : null}
                     </td>
                   </tr>
                 );
