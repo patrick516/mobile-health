@@ -132,25 +132,33 @@ export default function FpScreen() {
     try {
       const db = await getDb();
       const uid = user?.id || "";
-      const now = new Date().toISOString();
+      const today = new Date().toISOString().split("T")[0];
 
+      // Use a safer query that doesn't hide records if the local join fails
       const rows = await db.getAllAsync<FpRecord>(
         tab === "follow-ups"
-          ? `SELECT f.*, m.full_name, h.household_number, h.village_name
+          ? `SELECT f.*, 
+               IFNULL(m.full_name, 'Unknown Member') as full_name, 
+               IFNULL(h.household_number, '—') as household_number, 
+               IFNULL(h.village_name, '—') as village_name
              FROM fp_visits f
              LEFT JOIN members m ON m.id = f.member_id
              LEFT JOIN households h ON h.id = m.household_id
-             WHERE h.registered_by_user_id = ?
-               AND f.next_follow_up_date <= ?
+             WHERE (h.registered_by_user_id = ? OR h.registered_by_user_id IS NULL OR f.visited_by_id = ?)
+               AND f.next_follow_up_date IS NOT NULL 
+               AND DATE(f.next_follow_up_date) <= DATE(?)
              ORDER BY f.next_follow_up_date ASC`
-          : `SELECT f.*, m.full_name, h.household_number, h.village_name
+          : `SELECT f.*, 
+               IFNULL(m.full_name, 'Unknown Member') as full_name, 
+               IFNULL(h.household_number, '—') as household_number, 
+               IFNULL(h.village_name, '—') as village_name
              FROM fp_visits f
              LEFT JOIN members m ON m.id = f.member_id
              LEFT JOIN households h ON h.id = m.household_id
-             WHERE h.registered_by_user_id = ?
+             WHERE (h.registered_by_user_id = ? OR h.registered_by_user_id IS NULL OR f.visited_by_id = ?)
              ORDER BY f.visit_date DESC
              LIMIT 100`,
-        tab === "follow-ups" ? [uid, now] : [uid],
+        tab === "follow-ups" ? [uid, uid, today] : [uid, uid],
       );
       setRecords(rows);
     } catch (err) {
@@ -160,7 +168,6 @@ export default function FpScreen() {
       setRefreshing(false);
     }
   }, [tab, user?.id]);
-
   useFocusEffect(
     useCallback(() => {
       load();
