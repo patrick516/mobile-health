@@ -84,6 +84,12 @@ export const getFpVisits = async (req, res, next) => {
             lastName: true,
             sex: true,
             dateOfBirth: true,
+            household: {
+              select: {
+                householdNumber: true,
+                village: { select: { name: true } },
+              },
+            },
           },
         },
         visitedBy: { select: { id: true, firstName: true, lastName: true } },

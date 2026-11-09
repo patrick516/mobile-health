@@ -456,6 +456,7 @@ const pullFromServer = async () => {
       v == null ? null : typeof v === "string" ? v : JSON.stringify(v);
 
     // ── Family planning visits
+    // ── Family planning visits
     try {
       const fpRes = await api.get("/fp/visits");
       const fpVisits = fpRes.data.data || [];
@@ -476,6 +477,39 @@ const pullFromServer = async () => {
         let finalMemberId = f.memberId || f.member?.id || "";
         if (!finalMemberId && existing?.member_id) {
           finalMemberId = existing.member_id;
+        }
+
+        // Resolve member names from server response if missing locally
+        if (!finalMemberId && f.member) {
+          // If the server sent a member object, use its ID
+          finalMemberId = f.member.id;
+        }
+
+        if (finalMemberId) {
+          const localMember = await db.getFirstAsync<{
+            first_name: string;
+            last_name: string;
+          }>(
+            `SELECT first_name, last_name FROM members WHERE id = ? OR local_id = ?`,
+            [finalMemberId, finalMemberId],
+          );
+
+          if (!localMember && f.member) {
+            // Member is missing locally, so insert them so the UI Join works!
+            const serverFullName =
+              `${f.member.firstName || ""} ${f.member.lastName || ""}`.trim();
+            await db.runAsync(
+              `INSERT OR IGNORE INTO members (id, local_id, first_name, last_name, full_name, sex, synced) VALUES (?,?,?,?,?,?,1)`,
+              [
+                f.member.id,
+                f.member.id,
+                f.member.firstName || "",
+                f.member.lastName || "",
+                serverFullName || "Unknown",
+                f.member.sex || "",
+              ],
+            );
+          }
         }
 
         await db.runAsync(
@@ -504,7 +538,6 @@ const pullFromServer = async () => {
     } catch (fpErr: any) {
       console.log("[SYNC] Family planning pull skipped:", fpErr?.message);
     }
-
     // ── Postnatal (PNC) visits: schedule and recorded measurements together
     try {
       const pncRes = await api.get("/pnc/schedules");
