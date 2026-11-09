@@ -26,7 +26,11 @@ const router = Router();
 router.use(authenticate);
 
 // ─── SUPER_ADMIN only ─────────────────────────────────────────────────────────
-router.get("/users", role("SUPER_ADMIN", "ADMIN"), getUsers);
+router.get(
+  "/users",
+  role("SUPER_ADMIN", "ADMIN", "NURSE", "PHARMACIST"),
+  getUsers,
+);
 router.post("/users", role("SUPER_ADMIN", "ADMIN"), createUser);
 router.patch("/users/:id", role("SUPER_ADMIN", "ADMIN"), updateUser);
 router.patch(

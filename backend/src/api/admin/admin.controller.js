@@ -24,8 +24,8 @@ export const getUsers = async (req, res, next) => {
         role && ["ADMIN", "SUPER_ADMIN"].includes(role)
           ? role
           : { in: ["ADMIN", "SUPER_ADMIN"] };
-    } else if (req.user.role === "ADMIN") {
-      // Admin can only see staff in their facility. They can filter by CCW, NURSE, or PHARMACIST.
+    } else if (["ADMIN", "NURSE", "PHARMACIST"].includes(req.user.role)) {
+      // Facility staff only see staff in their facility. They can filter by CCW, NURSE, or PHARMACIST.
       whereClause.facilityId = req.user.facilityId;
       whereClause.role =
         role && ["CCW", "NURSE", "PHARMACIST"].includes(role)

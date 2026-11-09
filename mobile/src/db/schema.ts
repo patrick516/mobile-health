@@ -415,13 +415,26 @@ export const initDb = async (): Promise<void> => {
         id TEXT PRIMARY KEY,
         local_id TEXT NOT NULL UNIQUE,
         drug_id TEXT NOT NULL,
+        drug_name TEXT,
         quantity_requested INTEGER NOT NULL,
         status TEXT DEFAULT 'PENDING',
         notes TEXT,
         synced INTEGER DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
+      CREATE TABLE IF NOT EXISTS drugs (
+        id TEXT PRIMARY KEY,
+        drug_code TEXT,
+        name_english TEXT,
+        name_chichewa TEXT,
+        unit TEXT,
+        minimum_threshold INTEGER DEFAULT 5,
+        is_active INTEGER DEFAULT 1
+      );
     `);
+
+    // ── Drug requests: cached drug name (added after table exists) ──
+    await addColumnIfMissing("stock_requests", "drug_name", "TEXT");
 
     // ─── BACKFILL: split existing full_name into first/last ───
     try {
@@ -541,6 +554,7 @@ export const resetDatabase = async (): Promise<void> => {
       DROP TABLE IF EXISTS tb_cases;
       DROP TABLE IF EXISTS pnc_visits;
       DROP TABLE IF EXISTS stock_requests;
+      DROP TABLE IF EXISTS drugs;
     `);
 
     console.log("[DB] Database reset successfully");

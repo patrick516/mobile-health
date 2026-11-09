@@ -51,6 +51,7 @@ export default function AppLayout() {
 
   return (
     <Tabs
+      backBehavior="history"
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: COLORS.primary,

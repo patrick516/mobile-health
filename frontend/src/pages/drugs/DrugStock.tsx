@@ -41,13 +41,33 @@ interface StockRequest {
   notes?: string;
   createdAt: string;
   drug: Drug;
-  requestingUser: { id: string; fullName: string; phoneNumber: string };
-  approvedBy?: { id: string; fullName: string };
+  requestingUser: {
+    id: string;
+    firstName?: string;
+    lastName?: string;
+    fullName?: string;
+    phoneNumber?: string;
+    role?: string;
+  };
+  approvedBy?: {
+    id: string;
+    fullName?: string;
+    firstName?: string;
+    lastName?: string;
+  };
+  pharmacyQty?: number | null;
 }
+
+const personName = (u?: StockRequest["requestingUser"]) =>
+  u?.fullName || `${u?.firstName || ""} ${u?.lastName || ""}`.trim() || "—";
 
 export default function DrugStock() {
   const queryClient = useQueryClient();
-  const { isAdmin } = useAuthStore();
+  const { isAdmin, user } = useAuthStore();
+  const canHandleRequests = ["ADMIN", "NURSE", "PHARMACIST"].includes(
+    user?.role || "",
+  );
+  const [issueRequestId, setIssueRequestId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<
     "formulary" | "stock" | "requests"
   >("stock");
@@ -84,17 +104,17 @@ export default function DrugStock() {
   >({
     queryKey: ["stock-requests"],
     queryFn: () => api.get("/drugs/requests").then((r) => r.data.data),
-    enabled: isAdmin(),
+    enabled: canHandleRequests,
   });
 
-  // Fetch CCW users - Admin only
+  // Fetch CCW users — facility team (for issuing kits)
   const { data: ccwUsers } = useQuery({
     queryKey: ["ccw-users"],
     queryFn: () =>
       api
         .get("/admin/users", { params: { role: "CCW" } })
         .then((r) => r.data.data),
-    enabled: isAdmin(),
+    enabled: canHandleRequests,
   });
 
   const createDrugMutation = useMutation({
@@ -137,8 +157,19 @@ export default function DrugStock() {
         );
       await Promise.all(promises);
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["drug-stock"] });
+      if (issueRequestId) {
+        try {
+          await api.patch(`/drugs/requests/${issueRequestId}`, {
+            status: "FULFILLED",
+          });
+          queryClient.invalidateQueries({ queryKey: ["stock-requests"] });
+        } catch {
+          // stays APPROVED — can be marked fulfilled manually
+        }
+        setIssueRequestId(null);
+      }
       setShowInitKit(false);
       setSelectedCcwId("");
       setKitQuantities({});
@@ -155,6 +186,34 @@ export default function DrugStock() {
       queryClient.invalidateQueries({ queryKey: ["drug-stock"] });
     },
   });
+
+  const escalateMutation = useMutation({
+    mutationFn: async (req: StockRequest) => {
+      const staff =
+        `${user?.firstName || ""} ${user?.lastName || ""}`.trim() ||
+        user?.fullName ||
+        "Facility staff";
+      const ccw = personName(req.requestingUser);
+      const note = `ESCALATED by ${staff}: pharmacy short — ${ccw} needs ${req.quantityRequested} ${req.drug.unit}s of ${req.drug.nameEnglish}`;
+      await api.post("/drugs/requests", {
+        drugId: req.drugId,
+        quantityRequested: req.quantityRequested,
+        notes: note,
+      });
+      await api.patch(`/drugs/requests/${req.id}`, { notes: note });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["stock-requests"] });
+    },
+  });
+
+  const startIssueForRequest = (req: StockRequest) => {
+    setSelectedCcwId(req.requestingUser.id);
+    setKitQuantities({ [req.drugId]: req.quantityRequested });
+    setIssueRequestId(req.id);
+    setShowInitKit(true);
+    setActiveTab("stock");
+  };
 
   const isLow = (item: DrugStockItem) =>
     item.quantityCurrent <= item.quantityMinimum;
@@ -226,33 +285,33 @@ export default function DrugStock() {
             Stock Levels
           </button>
           {isAdmin() && (
-            <>
-              <button
-                onClick={() => setActiveTab("formulary")}
-                className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
-                  activeTab === "formulary"
-                    ? "bg-teal-700 text-white"
-                    : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-                }`}
-              >
-                Drug Formulary
-              </button>
-              <button
-                onClick={() => setActiveTab("requests")}
-                className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors flex items-center gap-2 ${
-                  activeTab === "requests"
-                    ? "bg-teal-700 text-white"
-                    : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-                }`}
-              >
-                Stock Requests
-                {pendingCount > 0 && (
-                  <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">
-                    {pendingCount}
-                  </span>
-                )}
-              </button>
-            </>
+            <button
+              onClick={() => setActiveTab("formulary")}
+              className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+                activeTab === "formulary"
+                  ? "bg-teal-700 text-white"
+                  : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+              }`}
+            >
+              Drug Formulary
+            </button>
+          )}
+          {canHandleRequests && (
+            <button
+              onClick={() => setActiveTab("requests")}
+              className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors flex items-center gap-2 ${
+                activeTab === "requests"
+                  ? "bg-teal-700 text-white"
+                  : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+              }`}
+            >
+              Stock Requests
+              {pendingCount > 0 && (
+                <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+                  {pendingCount}
+                </span>
+              )}
+            </button>
           )}
         </nav>
       </div>
@@ -267,9 +326,14 @@ export default function DrugStock() {
                 Per CHW drug kit status
               </p>
             </div>
-            {isAdmin() && (
+            {canHandleRequests && (
               <button
-                onClick={() => setShowInitKit(!showInitKit)}
+                onClick={() => {
+                  setShowInitKit(!showInitKit);
+                  setIssueRequestId(null);
+                  setSelectedCcwId("");
+                  setKitQuantities({});
+                }}
                 className="btn-secondary flex items-center gap-2 text-sm"
               >
                 <Plus size={15} />
@@ -279,7 +343,7 @@ export default function DrugStock() {
           </div>
 
           {/* Issue Kit Form */}
-          {showInitKit && isAdmin() && (
+          {showInitKit && canHandleRequests && (
             <div className="p-5 border-b border-gray-100 bg-gray-50">
               <h3 className="font-semibold text-gray-900 mb-3">
                 Issue Drug Kit to CCW
@@ -380,6 +444,7 @@ export default function DrugStock() {
                         setShowInitKit(false);
                         setSelectedCcwId("");
                         setKitQuantities({});
+                        setIssueRequestId(null);
                       }}
                     >
                       Cancel
@@ -715,7 +780,7 @@ export default function DrugStock() {
       )}
 
       {/* ==================== STOCK REQUESTS TAB ==================== */}
-      {activeTab === "requests" && isAdmin() && (
+      {activeTab === "requests" && canHandleRequests && (
         <div className="card overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100">
             <h2 className="font-bold text-gray-900">Stock Requests</h2>
@@ -731,6 +796,7 @@ export default function DrugStock() {
                   "Requested By",
                   "Drug",
                   "Quantity",
+                  "Pharmacy",
                   "Requested On",
                   "Status",
                   "Action",
@@ -748,7 +814,7 @@ export default function DrugStock() {
               {requestsLoading && (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="text-center py-8 text-gray-400 text-sm"
                   >
                     Loading...
@@ -757,7 +823,7 @@ export default function DrugStock() {
               )}
               {!requestsLoading && stockRequests?.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="text-center py-12">
+                  <td colSpan={7} className="text-center py-12">
                     <CheckCircle
                       size={36}
                       className="text-gray-200 mx-auto mb-2"
@@ -772,10 +838,13 @@ export default function DrugStock() {
                 <tr key={req.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3">
                     <p className="text-sm font-medium text-gray-900">
-                      {req.requestingUser.fullName}
+                      {personName(req.requestingUser)}
                     </p>
                     <p className="text-xs text-gray-400">
                       {req.requestingUser.phoneNumber}
+                      {req.requestingUser.role
+                        ? ` · ${req.requestingUser.role}`
+                        : ""}
                     </p>
                   </td>
                   <td className="px-4 py-3">
@@ -795,10 +864,46 @@ export default function DrugStock() {
                       {req.drug.unit}s
                     </span>
                   </td>
+                  <td className="px-4 py-3">
+                    {req.pharmacyQty == null ? (
+                      <span className="text-xs text-gray-400">—</span>
+                    ) : (
+                      <>
+                        <span
+                          className={`text-sm font-semibold ${
+                            req.pharmacyQty >= req.quantityRequested
+                              ? "text-green-600"
+                              : "text-red-600"
+                          }`}
+                        >
+                          {req.pharmacyQty}
+                        </span>
+                        <span className="text-xs text-gray-400">
+                          {" "}
+                          {req.drug.unit}s
+                        </span>
+                        {req.pharmacyQty < req.quantityRequested && (
+                          <p className="text-xs text-red-500 mt-0.5">
+                            Short — escalate
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-sm text-gray-500">
                     {new Date(req.createdAt).toLocaleDateString()}
                   </td>
-                  <td className="px-4 py-3">{getStatusBadge(req.status)}</td>
+                  <td className="px-4 py-3">
+                    {getStatusBadge(req.status)}
+                    {req.notes?.startsWith("ESCALATED") && (
+                      <span
+                        className="badge-yellow mt-1 inline-block"
+                        title={req.notes}
+                      >
+                        ESCALATED
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     {req.status === "PENDING" && (
                       <div className="flex gap-2">
@@ -826,21 +931,46 @@ export default function DrugStock() {
                         >
                           Reject
                         </button>
+                        <button
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                `Pharmacy is short for ${req.drug.nameEnglish}. Raise a supply request and mark this one as escalated?`,
+                              )
+                            ) {
+                              escalateMutation.mutate(req);
+                            }
+                          }}
+                          className="btn-secondary text-xs px-3 py-1"
+                          disabled={escalateMutation.isPending}
+                        >
+                          Escalate
+                        </button>
                       </div>
                     )}
                     {req.status === "APPROVED" && (
-                      <button
-                        onClick={() =>
-                          updateRequestMutation.mutate({
-                            id: req.id,
-                            status: "FULFILLED",
-                          })
-                        }
-                        className="btn-primary text-xs px-3 py-1"
-                        disabled={updateRequestMutation.isPending}
-                      >
-                        Mark Fulfilled
-                      </button>
+                      <div className="flex gap-2">
+                        {req.requestingUser.role === "CCW" && (
+                          <button
+                            onClick={() => startIssueForRequest(req)}
+                            className="btn-secondary text-xs px-3 py-1"
+                          >
+                            Issue Kit
+                          </button>
+                        )}
+                        <button
+                          onClick={() =>
+                            updateRequestMutation.mutate({
+                              id: req.id,
+                              status: "FULFILLED",
+                            })
+                          }
+                          className="btn-primary text-xs px-3 py-1"
+                          disabled={updateRequestMutation.isPending}
+                        >
+                          Mark Fulfilled
+                        </button>
+                      </div>
                     )}
                     {req.status === "FULFILLED" && (
                       <span className="text-xs text-green-600">

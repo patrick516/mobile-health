@@ -649,14 +649,26 @@ export const syncBatch = async (req, res, next) => {
             const fields = pick(payload, STOCK_REQUEST_FIELDS);
             const existing = await prisma.stockRequest.findFirst({
               where: {
-                requestingUserId: req.user.id,
-                drugId: fields.drugId,
-                status: "PENDING",
+                OR: [
+                  ...(localId ? [{ id: localId }] : []),
+                  {
+                    requestingUserId: req.user.id,
+                    drugId: fields.drugId,
+                    status: "PENDING",
+                  },
+                ],
               },
             });
             if (!existing) {
               await prisma.stockRequest.create({
-                data: { ...fields, requestingUserId: req.user.id },
+                data: {
+                  ...fields,
+                  // The phone's local id becomes the server id so the phone
+                  // can match status updates when it pulls /drugs/requests
+                  // (StockRequest has no localId column).
+                  ...(localId ? { id: localId } : {}),
+                  requestingUserId: req.user.id,
+                },
               });
             }
             break;

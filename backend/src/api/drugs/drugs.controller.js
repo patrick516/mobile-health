@@ -30,7 +30,13 @@ export const getStock = async (req, res, next) => {
       include: {
         drug: true,
         user: {
-          select: { id: true, firstName: true, lastName: true, role: true },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true,
+            facility: { select: { name: true } },
+          },
         },
       },
       orderBy: { drug: { nameEnglish: "asc" } },
@@ -134,24 +140,69 @@ export const getStockRequests = async (req, res, next) => {
     const requests = await prisma.stockRequest.findMany({
       where: {
         ...(status ? { status } : {}),
+        // CCWs see only their own requests. Facility staff see their
+        // facility's requests. Super Admin and facility-less staff see
+        // only what they created themselves — CCW requests stay with
+        // the facility that must fulfil them.
         ...(req.user.role === "CCW"
           ? { requestingUserId: req.user.id }
-          : req.user.role !== "SUPER_ADMIN"
-            ? req.user.facilityId
-              ? { requestingUser: { facilityId: req.user.facilityId } }
-              : { requestingUserId: req.user.id }
-            : {}),
+          : req.user.role !== "SUPER_ADMIN" && req.user.facilityId
+            ? { requestingUser: { facilityId: req.user.facilityId } }
+            : { requestingUserId: req.user.id }),
       },
       include: {
         drug: true,
         requestingUser: {
-          select: { id: true, firstName: true, lastName: true },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phoneNumber: true,
+            role: true,
+          },
         },
         approvedBy: { select: { id: true, firstName: true, lastName: true } },
       },
       orderBy: { createdAt: "desc" },
     });
-    res.json({ success: true, data: requests });
+
+    // Pharmacy balance per drug: how much the facility store (DrugBatch)
+    // still holds, so the nurse/pharmacist can check availability before
+    // approving — and escalate when the store is short.
+    const wantPharmacy =
+      !!req.user.facilityId &&
+      req.user.role !== "CCW" &&
+      req.user.role !== "SUPER_ADMIN";
+    let batches = [];
+    if (wantPharmacy) {
+      batches = await prisma.drugBatch.findMany({
+        where: { facilityId: req.user.facilityId, status: "ACTIVE" },
+        select: {
+          drugName: true,
+          drugNameChichewa: true,
+          quantityRemaining: true,
+        },
+      });
+    }
+    const norm = (s) => (s || "").trim().toLowerCase();
+    const pharmacyQty = (drug) => {
+      if (!wantPharmacy || !drug) return null;
+      const names = [norm(drug.nameEnglish), norm(drug.nameChichewa)].filter(
+        Boolean,
+      );
+      return batches
+        .filter(
+          (b) =>
+            names.includes(norm(b.drugName)) ||
+            names.includes(norm(b.drugNameChichewa)),
+        )
+        .reduce((sum, b) => sum + b.quantityRemaining, 0);
+    };
+
+    res.json({
+      success: true,
+      data: requests.map((r) => ({ ...r, pharmacyQty: pharmacyQty(r.drug) })),
+    });
   } catch (err) {
     next(err);
   }
@@ -160,35 +211,41 @@ export const getStockRequests = async (req, res, next) => {
 export const updateStockRequest = async (req, res, next) => {
   try {
     const { status, notes } = req.body;
-    if (!["APPROVED", "FULFILLED", "REJECTED"].includes(status))
+    if (status && !["APPROVED", "FULFILLED", "REJECTED"].includes(status))
       return res
         .status(400)
         .json({ success: false, message: "Invalid status." });
+    if (!status && !notes)
+      return res
+        .status(400)
+        .json({ success: false, message: "status or notes is required." });
     if (req.user.role === "CCW")
       return res
         .status(403)
         .json({ success: false, message: "Access denied." });
 
-    // Only requests from your own facility's staff (Super Admin: any)
-    if (req.user.role !== "SUPER_ADMIN") {
-      const target = await prisma.stockRequest.findUnique({
-        where: { id: req.params.id },
-        select: { requestingUser: { select: { facilityId: true } } },
-      });
-      if (
-        !target ||
-        !req.user.facilityId ||
-        target.requestingUser.facilityId !== req.user.facilityId
-      ) {
-        return res
-          .status(404)
-          .json({ success: false, message: "Request not found." });
-      }
+    // Approvals are handled by the facility team (nurse/pharmacist/admin)
+    const target = await prisma.stockRequest.findUnique({
+      where: { id: req.params.id },
+      select: { requestingUser: { select: { facilityId: true } } },
+    });
+    if (
+      !target ||
+      !req.user.facilityId ||
+      target.requestingUser.facilityId !== req.user.facilityId
+    ) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Request not found." });
     }
     const data = {
-      status,
-      approvedById: req.user.id,
-      ...(status === "FULFILLED" ? { fulfilledAt: new Date() } : {}),
+      ...(status
+        ? {
+            status,
+            approvedById: req.user.id,
+            ...(status === "FULFILLED" ? { fulfilledAt: new Date() } : {}),
+          }
+        : {}),
       ...(notes ? { notes } : {}),
     };
     const request = await prisma.stockRequest.update({

@@ -116,6 +116,8 @@ export default function NotificationsScreen() {
     if (n.type === "ANC") {
       // Open the ANC schedule so the CCW can act on the reminder
       router.push("/(app)/anc/index" as any);
+    } else if (n.type === "DRUG_PICKUP") {
+      router.push("/(app)/drugs" as any);
     } else if (n.type === "REFERRAL" || n.related_id) {
       // Use correct route path
       router.push("/referrals");

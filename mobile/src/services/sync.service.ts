@@ -262,7 +262,15 @@ const pullFromServer = async () => {
 
     const stockRes = await api.get("/drugs/stock");
     const stocks = stockRes.data.data || [];
+    const meId = useAppStore.getState().user?.id;
+    let pickupFacility =
+      (useAppStore.getState().user as any)?.facility?.name || "";
+    const pickedUp: string[] = [];
     for (const s of stocks) {
+      const prev = await db.getFirstAsync<{ quantity_current: number }>(
+        `SELECT quantity_current FROM drug_stock WHERE id = ?`,
+        [s.id],
+      );
       await db.runAsync(
         `INSERT OR REPLACE INTO drug_stock (id, drug_id, drug_code, name_english, name_chichewa, unit, quantity_current, quantity_minimum) VALUES (?,?,?,?,?,?,?,?)`,
         [
@@ -276,6 +284,53 @@ const pullFromServer = async () => {
           s.quantityMinimum,
         ],
       );
+      if (
+        meId &&
+        s.user?.id === meId &&
+        prev &&
+        s.quantityCurrent > prev.quantity_current
+      ) {
+        pickedUp.push(s.drug.nameEnglish);
+        pickupFacility = pickupFacility || s.user?.facility?.name || "";
+      }
+    }
+    if (pickedUp.length > 0) {
+      await db.runAsync(
+        `INSERT INTO notifications (id, title, message, type, related_id, user_id, is_read, created_at) VALUES (?,?,?,?,?,?,?,?)`,
+        [
+          Crypto.randomUUID(),
+          "Drugs Issued — Pick Up",
+          `Visit ${pickupFacility || "your facility"} to pick up: ${pickedUp.join(", ")}`,
+          "DRUG_PICKUP",
+          null,
+          meId || null,
+          0,
+          new Date().toISOString(),
+        ],
+      );
+    }
+
+    // Drug formulary — lets the CCW pick a drug when requesting a restock
+    try {
+      const formRes = await api.get("/drugs");
+      const formulary = formRes.data.data || [];
+      for (const d of formulary) {
+        await db.runAsync(
+          `INSERT OR REPLACE INTO drugs (id, drug_code, name_english, name_chichewa, unit, minimum_threshold, is_active)
+           VALUES (?,?,?,?,?,?,?)`,
+          [
+            d.id,
+            d.drugCode,
+            d.nameEnglish,
+            d.nameChichewa,
+            d.unit,
+            d.minimumThreshold,
+            d.isActive ? 1 : 0,
+          ],
+        );
+      }
+    } catch (err: any) {
+      console.log("[SYNC] Drug formulary pull skipped:", err.message);
     }
 
     try {
@@ -283,36 +338,84 @@ const pullFromServer = async () => {
         params: { limit: 50 },
       });
       const stockRequests = stockReqsRes.data.data || [];
-      for (const req of stockRequests) {
-        const existing = await db.getFirstAsync<{ id: string }>(
-          `SELECT id FROM stock_requests WHERE id = ? OR local_id = ?`,
-          [req.id, req.localId],
+      const notifyRequestOutcome = async (req: any) => {
+        const notifId = Crypto.randomUUID();
+        await db.runAsync(
+          `INSERT INTO notifications (id, title, message, type, related_id, user_id, is_read, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            notifId,
+            req.status === "FULFILLED"
+              ? " Stock Request Fulfilled"
+              : " Stock Request Rejected",
+            req.status === "FULFILLED"
+              ? `Your request for ${req.quantityRequested} ${req.drug?.unit}s of ${req.drug?.nameEnglish} is ready.`
+              : `Your stock request for ${req.drug?.nameEnglish} was rejected.`,
+            "STOCK_REQUEST",
+            req.id,
+            useAppStore.getState().user?.id || null,
+            0,
+            new Date().toISOString(),
+          ],
         );
-        if (existing && req.status !== "PENDING") {
+      };
+      for (const req of stockRequests) {
+        // 1) Exact match — requests created from this phone use the local id
+        //    as the server id, so they always match here.
+        let existing = await db.getFirstAsync<{ id: string; status: string }>(
+          `SELECT id, status FROM stock_requests WHERE id = ? OR local_id = ?`,
+          [req.id, req.localId || req.id],
+        );
+
+        // 2) Fallback — same drug + quantity, still open (covers rows created
+        //    before this fix or from another device).
+        if (!existing && req.drug?.id) {
+          existing = await db.getFirstAsync<{ id: string; status: string }>(
+            `SELECT id, status FROM stock_requests
+             WHERE drug_id = ? AND quantity_requested = ?
+               AND status IN ('PENDING','APPROVED')
+             ORDER BY created_at DESC LIMIT 1`,
+            [req.drug.id, req.quantityRequested],
+          );
+        }
+
+        if (existing) {
+          // Only act on a real status transition (stops repeat notifications)
+          if (existing.status === req.status || req.status === "PENDING")
+            continue;
           await db.runAsync(
             `UPDATE stock_requests SET status = ?, synced = 1 WHERE id = ?`,
             [req.status, existing.id],
           );
           if (req.status === "FULFILLED" || req.status === "REJECTED") {
-            const notifId = Crypto.randomUUID();
-            await db.runAsync(
-              `INSERT INTO notifications (id, title, message, type, related_id, user_id, is_read, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-              [
-                notifId,
-                req.status === "FULFILLED"
-                  ? " Stock Request Fulfilled"
-                  : " Stock Request Rejected",
-                req.status === "FULFILLED"
-                  ? `Your request for ${req.quantityRequested} ${req.drug?.unit}s of ${req.drug?.nameEnglish} is ready.`
-                  : `Your stock request for ${req.drug?.nameEnglish} was rejected.`,
-                "STOCK_REQUEST",
-                req.id,
-                useAppStore.getState().user?.id || null,
-                0,
-                new Date().toISOString(),
-              ],
-            );
+            await notifyRequestOutcome(req);
           }
+          continue;
+        }
+
+        // 3) Not tracked locally (made on web / another device / reinstall)
+        if (req.status === "PENDING" || !req.drug) continue;
+        const mirrored = await db.getFirstAsync<{ id: string }>(
+          `SELECT id FROM stock_requests
+           WHERE drug_id = ? AND status = ? AND quantity_requested = ?
+           LIMIT 1`,
+          [req.drug.id, req.status, req.quantityRequested],
+        );
+        if (mirrored) continue;
+        await db.runAsync(
+          `INSERT OR REPLACE INTO stock_requests (id, local_id, drug_id, drug_name, quantity_requested, status, notes, synced)
+           VALUES (?,?,?,?,?,?,?,1)`,
+          [
+            req.id,
+            req.id,
+            req.drug.id,
+            req.drug.nameEnglish,
+            req.quantityRequested,
+            req.status,
+            req.notes || null,
+          ],
+        );
+        if (req.status === "FULFILLED" || req.status === "REJECTED") {
+          await notifyRequestOutcome(req);
         }
       }
     } catch (err: any) {

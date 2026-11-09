@@ -94,6 +94,19 @@ const SIDE_EFFECTS_LIST = [
   "Reduced libido",
 ];
 
+// Progressive date entry: "2026" → "2026-" → "2026-08" → "2026-08-" → "2026-08-25"
+const formatFollowUpDate = (text: string, isDelete: boolean): string => {
+  const digits = text.replace(/\D/g, "").slice(0, 8);
+  if (digits.length <= 4) {
+    return digits.length === 4 && !isDelete ? `${digits}-` : digits;
+  }
+  if (digits.length <= 6) {
+    const partial = `${digits.slice(0, 4)}-${digits.slice(4)}`;
+    return digits.length === 6 && !isDelete ? `${partial}-` : partial;
+  }
+  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+};
+
 export default function FpScreen() {
   const user = useAppStore((s) => s.user);
   const [records, setRecords] = useState<FpRecord[]>([]);
@@ -185,6 +198,18 @@ export default function FpScreen() {
     if (!memberId || !selectedMethod) {
       Alert.alert("Required", "Please select a member and a method.");
       return;
+    }
+    if (nextFollowUp) {
+      const validDate =
+        /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(nextFollowUp) &&
+        !isNaN(new Date(nextFollowUp).getTime());
+      if (!validDate) {
+        Alert.alert(
+          "Invalid date",
+          "Next follow-up must be a complete valid date (YYYY-MM-DD).",
+        );
+        return;
+      }
     }
     setSaving(true);
     try {
@@ -518,7 +543,12 @@ export default function FpScreen() {
             <TextInput
               style={styles.input}
               value={nextFollowUp}
-              onChangeText={setNextFollowUp}
+              onChangeText={(text) =>
+                setNextFollowUp(
+                  formatFollowUpDate(text, text.length < nextFollowUp.length),
+                )
+              }
+              keyboardType="number-pad"
               placeholder="e.g. 2026-09-15"
               placeholderTextColor={COLORS.placeholder}
             />

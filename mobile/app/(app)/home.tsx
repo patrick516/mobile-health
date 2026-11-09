@@ -8,7 +8,7 @@ import {
   StatusBar,
   Alert,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { COLORS, SIZES, SHADOWS } from "../../constants/theme";
@@ -95,21 +95,30 @@ export default function HomeScreen() {
   const setLastSyncAt = useAppStore((s) => s.setLastSyncAt);
   const clearAuth = useAppStore((s) => s.clearAuth);
   const [unreadFeedback, setUnreadFeedback] = useState(0);
+  const [unreadNotifs, setUnreadNotifs] = useState(0);
 
   useEffect(() => {
     refreshPendingCount();
-    loadUnreadFeedback();
+    loadUnread();
     handleSync();
   }, []);
 
-  const loadUnreadFeedback = async () => {
+  useFocusEffect(() => {
+    loadUnread();
+  });
+
+  const loadUnread = async () => {
     try {
       const { getDb } = await import("../../src/db/schema");
       const db = await getDb();
-      const result = await db.getFirstAsync<{ count: number }>(
+      const fb = await db.getFirstAsync<{ count: number }>(
         `SELECT COUNT(*) as count FROM supervisor_feedback WHERE is_read = 0`,
       );
-      setUnreadFeedback(result?.count ?? 0);
+      setUnreadFeedback(fb?.count ?? 0);
+      const nt = await db.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) as count FROM notifications WHERE is_read = 0`,
+      );
+      setUnreadNotifs(nt?.count ?? 0);
     } catch (e) {}
   };
 
@@ -125,6 +134,7 @@ export default function HomeScreen() {
     setIsSyncing(false);
     setLastSyncAt(new Date());
     await refreshPendingCount();
+    await loadUnread();
     if (result.synced > 0) {
       console.log(`[HOME] Synced ${result.synced} records`);
     }
@@ -247,9 +257,11 @@ export default function HomeScreen() {
                     color={btn.color}
                   />
                 </View>
-                {(btn as any).badge && unreadFeedback > 0 && (
+                {(btn as any).badge && unreadFeedback + unreadNotifs > 0 && (
                   <View style={styles.navBadge}>
-                    <Text style={styles.navBadgeText}>{unreadFeedback}</Text>
+                    <Text style={styles.navBadgeText}>
+                      {unreadFeedback + unreadNotifs}
+                    </Text>
                   </View>
                 )}
               </View>

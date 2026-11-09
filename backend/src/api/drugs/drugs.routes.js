@@ -24,7 +24,7 @@ router.post("/requests", createStockRequest);
 router.get("/requests", getStockRequests);
 router.patch(
   "/requests/:id",
-  role("SUPER_ADMIN", "ADMIN", "NURSE", "DISTRICT_OFFICER", "PHARMACIST"),
+  role("NURSE", "PHARMACIST", "ADMIN"),
   updateStockRequest,
 );
 
