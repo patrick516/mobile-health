@@ -6,7 +6,6 @@ import api from "./api";
 import { getDb } from "../db/schema";
 import { useAppStore } from "../store";
 import * as Crypto from "expo-crypto";
-import { Alert } from "react-native";
 
 const TABLE_BY_TYPE: Record<string, string> = {
   HOUSEHOLD: "households",
@@ -90,9 +89,8 @@ const pullFromServer = async () => {
         const serverHouseholds = hhRes.data.data || [];
         totalPages = hhRes.data.pagination?.totalPages || 1;
 
-        Alert.alert(
-          "Sync debug",
-          `Households page ${page}: ${serverHouseholds.length} received`,
+        console.log(
+          `[SYNC] Households page ${page}: ${serverHouseholds.length} received`,
         );
         for (const h of serverHouseholds) {
           const existingHh = await db.getFirstAsync<{ id: string }>(
@@ -183,7 +181,70 @@ const pullFromServer = async () => {
     } catch (hhErr: any) {
       console.log("[SYNC] Household pull skipped:", hhErr?.message);
     }
-    Alert.alert("Sync debug", `Household pull failed: ${hhErr?.message}`);
+    // ── Members in full: pregnancy dates, relationship, phone, ID, etc.
+    try {
+      const memRes = await api.get("/members");
+      const serverMembers = memRes.data.data || [];
+
+      for (const m of serverMembers) {
+        const fullName =
+          `${m.firstName || ""} ${m.lastName || ""}`.trim() || null;
+
+        const values = [
+          m.firstName || "",
+          m.lastName || "",
+          fullName,
+          m.dateOfBirth ? String(m.dateOfBirth).slice(0, 10) : null,
+          m.estimatedAge ?? null,
+          m.sex || "",
+          m.relationshipToHead || "",
+          m.isPregnant ? 1 : 0,
+          m.lmpDate ? String(m.lmpDate).slice(0, 10) : null,
+          m.expectedDeliveryDate
+            ? String(m.expectedDeliveryDate).slice(0, 10)
+            : null,
+          m.chronicIllnesses ? JSON.stringify(m.chronicIllnesses) : null,
+          m.hasDisability ? 1 : 0,
+          m.disabilityType || null,
+          m.nationalId || null,
+          m.phone || null,
+          m.status || "ACTIVE",
+        ];
+
+        const existing = await db.getFirstAsync<{ id: string; synced: number }>(
+          `SELECT id, synced FROM members WHERE id = ? OR local_id = ?`,
+          [m.id, m.localId || m.id],
+        );
+
+        if (existing) {
+          // Never overwrite something the CCW changed offline and not yet pushed
+          if (existing.synced !== 1) continue;
+          await db.runAsync(
+            `UPDATE members SET first_name = ?, last_name = ?, full_name = ?,
+               date_of_birth = ?, estimated_age = ?, sex = ?,
+               relationship_to_head = ?, is_pregnant = ?, lmp_date = ?,
+               expected_delivery_date = ?, chronic_illnesses = ?,
+               has_disability = ?, disability_type = ?, national_id = ?,
+               phone = ?, status = ?
+             WHERE id = ?`,
+            [...values, existing.id],
+          );
+        } else {
+          await db.runAsync(
+            `INSERT INTO members
+             (id, local_id, household_id, first_name, last_name, full_name,
+              date_of_birth, estimated_age, sex, relationship_to_head,
+              is_pregnant, lmp_date, expected_delivery_date, chronic_illnesses,
+              has_disability, disability_type, national_id, phone, status, synced)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)`,
+            [m.id, m.localId || m.id, m.householdId, ...values],
+          );
+        }
+      }
+    } catch (memErr: any) {
+      console.log("[SYNC] Member pull skipped:", memErr?.message);
+    }
+
     const schedulesRes = await api.get("/immunisations/schedules", {
       params: { _t: Date.now() },
     });
@@ -289,6 +350,30 @@ const pullFromServer = async () => {
             ],
           );
         }
+      } else {
+        // New on this phone: made on another device or by the web portal
+        await db.runAsync(
+          `INSERT OR IGNORE INTO referrals
+           (id, local_id, visit_id, member_id, destination_facility_id, reason,
+            urgency, status, due_by, feedback_note, diagnosis, treatment_given,
+            synced, created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?)`,
+          [
+            r.id,
+            r.localId || r.id,
+            r.visitId || r.visit?.id || "",
+            r.memberId || r.member?.id || "",
+            r.destinationFacilityId || r.destinationFacility?.id || null,
+            r.reason,
+            r.urgency,
+            r.status,
+            r.dueBy || null,
+            r.feedbackNote || null,
+            r.diagnosis || null,
+            r.treatmentGiven || null,
+            r.createdAt || new Date().toISOString(),
+          ],
+        );
       }
     }
 
@@ -364,6 +449,168 @@ const pullFromServer = async () => {
       }
     } catch (ancErr) {
       console.log("[SYNC] ANC pull skipped");
+    }
+
+    // Server JSON fields (arrays/objects) are stored as text on the phone
+    const asText = (v: any) =>
+      v == null ? null : typeof v === "string" ? v : JSON.stringify(v);
+
+    // ── Family planning visits
+    try {
+      const fpRes = await api.get("/fp/visits");
+      const fpVisits = fpRes.data.data || [];
+      for (const f of fpVisits) {
+        const existing = await db.getFirstAsync<{ id: string; synced: number }>(
+          `SELECT id, synced FROM fp_visits WHERE id = ? OR local_id = ?`,
+          [f.id, f.localId || f.id],
+        );
+        if (existing && existing.synced !== 1) continue;
+        await db.runAsync(
+          `INSERT OR REPLACE INTO fp_visits
+           (id, local_id, member_id, visited_by_id, visit_date, method,
+            quantity_given, next_follow_up_date, side_effects, referral_needed,
+            counselling_given, notes, synced, created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?)`,
+          [
+            f.id,
+            f.localId || f.id,
+            f.memberId || f.member?.id || "",
+            f.visitedById || f.visitedBy?.id || "",
+            f.visitDate,
+            f.method,
+            f.quantityGiven ?? null,
+            f.nextFollowUpDate || null,
+            asText(f.sideEffects),
+            f.referralNeeded ? 1 : 0,
+            (f.counsellingGiven ?? f.counselingGiven ?? true) ? 1 : 0,
+            f.notes || null,
+            f.createdAt || new Date().toISOString(),
+          ],
+        );
+      }
+    } catch (fpErr: any) {
+      console.log("[SYNC] Family planning pull skipped:", fpErr?.message);
+    }
+
+    // ── Postnatal (PNC) visits: schedule and recorded measurements together
+    try {
+      const pncRes = await api.get("/pnc/schedules");
+      const pncVisits = pncRes.data.data || [];
+      for (const p of pncVisits) {
+        const existing = await db.getFirstAsync<{ id: string; synced: number }>(
+          `SELECT id, synced FROM pnc_visits WHERE id = ? OR local_id = ?`,
+          [p.id, p.localId || p.id],
+        );
+        if (existing && existing.synced !== 1) continue;
+        await db.runAsync(
+          `INSERT OR REPLACE INTO pnc_visits
+           (id, local_id, member_id, pnc_number, expected_date, status,
+            visited_date, visited_by_id, mother_temperature, mother_blood_pressure,
+            mother_breast_status, mother_uterus_status, mother_danger_signs,
+            newborn_weight, newborn_temperature, newborn_cord_status,
+            is_breastfeeding, newborn_danger_signs, referral_needed, notes,
+            synced, created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)`,
+          [
+            p.id,
+            p.localId || p.id,
+            p.memberId || p.member?.id || "",
+            p.pncNumber,
+            p.expectedDate,
+            p.status || "SCHEDULED",
+            p.visitedDate || null,
+            p.visitedById || p.visitedBy?.id || null,
+            p.motherTemperature ?? null,
+            p.motherBloodPressure || null,
+            p.motherBreastStatus || null,
+            p.motherUterusStatus || null,
+            asText(p.motherDangerSigns),
+            p.newbornWeight ?? null,
+            p.newbornTemperature ?? null,
+            p.newbornCordStatus || null,
+            p.isBreastfeeding ? 1 : 0,
+            asText(p.newbornDangerSigns),
+            p.referralNeeded ? 1 : 0,
+            p.notes || null,
+            p.createdAt || new Date().toISOString(),
+          ],
+        );
+      }
+    } catch (pncErr: any) {
+      console.log("[SYNC] PNC pull skipped:", pncErr?.message);
+    }
+
+    // ── TB cases (with the recent DOT visits the server sends)
+    try {
+      const tbRes = await api.get("/tb/cases");
+      const tbCases = tbRes.data.data || [];
+      for (const c of tbCases) {
+        const existing = await db.getFirstAsync<{ id: string; synced: number }>(
+          `SELECT id, synced FROM tb_cases WHERE id = ? OR local_id = ?`,
+          [c.id, c.localId || c.id],
+        );
+        const caseId = existing?.id ?? c.id;
+
+        if (!existing) {
+          await db.runAsync(
+            `INSERT INTO tb_cases
+             (id, local_id, member_id, registered_by_id, treatment_start_date,
+              treatment_category, facility_id, treatment_number, is_active,
+              outcome, outcome_date, notes, synced, created_at)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?)`,
+            [
+              c.id,
+              c.localId || c.id,
+              c.memberId || c.member?.id || "",
+              c.registeredById || c.registeredBy?.id || "",
+              c.treatmentStartDate,
+              c.treatmentCategory,
+              c.facilityId || c.facility?.id || null,
+              c.treatmentNumber || null,
+              c.isActive ? 1 : 0,
+              c.outcome || null,
+              c.outcomeDate || null,
+              c.notes || null,
+              c.createdAt || new Date().toISOString(),
+            ],
+          );
+        } else if (existing.synced === 1) {
+          await db.runAsync(
+            `UPDATE tb_cases SET treatment_category = ?, facility_id = ?,
+               treatment_number = ?, is_active = ?, outcome = ?,
+               outcome_date = ?, notes = ?
+             WHERE id = ?`,
+            [
+              c.treatmentCategory,
+              c.facilityId || c.facility?.id || null,
+              c.treatmentNumber || null,
+              c.isActive ? 1 : 0,
+              c.outcome || null,
+              c.outcomeDate || null,
+              c.notes || null,
+              existing.id,
+            ],
+          );
+        }
+
+        for (const d of c.dotVisits || []) {
+          await db.runAsync(
+            `INSERT OR IGNORE INTO tb_dot_visits
+             (id, local_id, tb_case_id, visited_by_id, visit_date, status, synced)
+             VALUES (?,?,?,?,?,?,1)`,
+            [
+              d.id,
+              d.localId || d.id,
+              caseId,
+              "",
+              d.visitDate,
+              d.status || "OBSERVED",
+            ],
+          );
+        }
+      }
+    } catch (tbErr: any) {
+      console.log("[SYNC] TB pull skipped:", tbErr?.message);
     }
 
     let stocks: any[] = [];
