@@ -460,11 +460,24 @@ const pullFromServer = async () => {
       const fpRes = await api.get("/fp/visits");
       const fpVisits = fpRes.data.data || [];
       for (const f of fpVisits) {
-        const existing = await db.getFirstAsync<{ id: string; synced: number }>(
-          `SELECT id, synced FROM fp_visits WHERE id = ? OR local_id = ?`,
+        const existing = await db.getFirstAsync<{
+          id: string;
+          synced: number;
+          member_id: string;
+        }>(
+          `SELECT id, synced, member_id FROM fp_visits WHERE id = ? OR local_id = ?`,
           [f.id, f.localId || f.id],
         );
+
+        // Do not overwrite if locally changed and pending
         if (existing && existing.synced !== 1) continue;
+
+        // Keep the local memberId if the server fails to send it back
+        let finalMemberId = f.memberId || f.member?.id || "";
+        if (!finalMemberId && existing?.member_id) {
+          finalMemberId = existing.member_id;
+        }
+
         await db.runAsync(
           `INSERT OR REPLACE INTO fp_visits
            (id, local_id, member_id, visited_by_id, visit_date, method,
@@ -474,7 +487,7 @@ const pullFromServer = async () => {
           [
             f.id,
             f.localId || f.id,
-            f.memberId || f.member?.id || "",
+            finalMemberId,
             f.visitedById || f.visitedBy?.id || "",
             f.visitDate,
             f.method,
