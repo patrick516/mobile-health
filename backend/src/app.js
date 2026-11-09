@@ -29,6 +29,12 @@ import feedbackRoutes from "./api/feedback/feedback.routes.js";
 const app = express();
 
 //  MIDDLEWARE
+// No ETags / no caching: a 304 has no body and breaks the mobile client.
+app.set("etag", false);
+app.use((req, res, next) => {
+  res.set("Cache-Control", "no-store");
+  next();
+});
 app.use(helmet());
 app.use(
   cors({
@@ -44,6 +50,11 @@ app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
 //  HEALTH CHECK
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+//  ROOT — probes hit "/" too; answer 200 instead of falling into the 404
+app.get("/", (req, res) => {
+  res.json({ status: "ok", service: "mobilehealth-api" });
 });
 
 //  ROUTES

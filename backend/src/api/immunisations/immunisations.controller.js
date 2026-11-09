@@ -47,7 +47,6 @@ export const getSchedules = async (req, res, next) => {
       status: s.status,
       givenAt: s.givenAt,
     }));
-    console.log("Schedules sample:", JSON.stringify(data[0]));
     res.json({ success: true, data });
   } catch (err) {
     next(err);
