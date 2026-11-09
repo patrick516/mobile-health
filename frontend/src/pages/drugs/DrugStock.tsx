@@ -39,6 +39,15 @@ interface DrugStockItem {
   };
 }
 
+interface FacilityBatch {
+  id: string;
+  drugName: string;
+  drugNameChichewa?: string;
+  quantityRemaining: number;
+  expiryDate: string;
+  status: string;
+}
+
 interface StockRequest {
   id: string;
   drugId: string;
@@ -130,6 +139,39 @@ export default function DrugStock() {
     enabled: canHandleRequests,
   });
 
+  // Facility inventory — Issue Kit may only draw from what is actually in stock
+  const { data: facilityBatches } = useQuery<FacilityBatch[]>({
+    queryKey: ["pharmacy-batches-active"],
+    queryFn: () =>
+      api
+        .get("/pharmacy/batches", { params: { status: "ACTIVE" } })
+        .then((r) => r.data.data),
+    enabled: canHandleRequests,
+  });
+
+  const normName = (s?: string) => (s || "").trim().toLowerCase();
+  const batchAvailable: Record<string, number> = {};
+  (facilityBatches || []).forEach((b) => {
+    if (b.status !== "ACTIVE" || !(b.quantityRemaining > 0)) return;
+    const names = new Set(
+      [b.drugName, b.drugNameChichewa].filter(Boolean).map(normName),
+    );
+    names.forEach((k) => {
+      batchAvailable[k] = (batchAvailable[k] || 0) + b.quantityRemaining;
+    });
+  });
+  const inventoryLoaded = facilityBatches !== undefined;
+  const availFor = (d: Drug) =>
+    Math.max(
+      batchAvailable[normName(d.nameEnglish)] || 0,
+      batchAvailable[normName(d.nameChichewa)] || 0,
+    );
+  const issuableDrugs = (drugs || []).filter(
+    (d) =>
+      d.isActive &&
+      (!inventoryLoaded || availFor(d) > 0 || (kitQuantities[d.id] ?? 0) > 0),
+  );
+
   const createDrugMutation = useMutation({
     mutationFn: (data: object) => api.post("/admin/drugs", data),
     onSuccess: () => {
@@ -172,6 +214,7 @@ export default function DrugStock() {
     },
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["drug-stock"] });
+      queryClient.invalidateQueries({ queryKey: ["pharmacy-batches-active"] });
       if (issueRequestId) {
         try {
           await api.patch(`/drugs/requests/${issueRequestId}`, {
@@ -184,6 +227,7 @@ export default function DrugStock() {
         }
         setIssueRequestId(null);
       }
+      setFormError("");
       setShowInitKit(false);
       setSelectedCcwId("");
       setKitQuantities({});
@@ -223,7 +267,11 @@ export default function DrugStock() {
 
   const startIssueForRequest = (req: StockRequest) => {
     setSelectedCcwId(req.requestingUser.id);
-    setKitQuantities({ [req.drugId]: req.quantityRequested });
+    const current =
+      stock?.find(
+        (s) => s.user?.id === req.requestingUser.id && s.drugId === req.drugId,
+      )?.quantityCurrent ?? 0;
+    setKitQuantities({ [req.drugId]: current + req.quantityRequested });
     setIssueRequestId(req.id);
     setShowInitKit(true);
     setActiveTab("stock");
@@ -365,6 +413,7 @@ export default function DrugStock() {
                   setIssueRequestId(null);
                   setSelectedCcwId("");
                   setKitQuantities({});
+                  setFormError("");
                 }}
                 className="btn-secondary flex items-center gap-2 text-sm"
               >
@@ -380,6 +429,11 @@ export default function DrugStock() {
               <h3 className="font-semibold text-gray-900 mb-3">
                 Issue Drug Kit to CCW
               </h3>
+              {formError && (
+                <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg mb-3">
+                  {formError}
+                </p>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1.5">
@@ -391,7 +445,13 @@ export default function DrugStock() {
                       setSelectedCcwId(val);
                       const defaults: Record<string, number> = {};
                       drugs?.forEach((d) => {
-                        defaults[d.id] = d.minimumThreshold * 2;
+                        const avail = availFor(d);
+                        if (avail > 0) {
+                          defaults[d.id] = Math.min(
+                            d.minimumThreshold * 2,
+                            avail,
+                          );
+                        }
                       });
                       setKitQuantities(defaults);
                     }}
@@ -409,62 +469,84 @@ export default function DrugStock() {
                   <p className="text-sm font-semibold text-gray-700 mb-3">
                     Set quantities for each drug
                   </p>
+                  {issuableDrugs.length === 0 && (
+                    <p className="text-sm text-gray-500 bg-white border rounded-lg px-3 py-4 mb-3">
+                      No drugs in facility inventory yet — receive batch stock
+                      in Drug Inventory first.
+                    </p>
+                  )}
                   <div className="space-y-2 max-h-96 overflow-y-auto">
-                    {drugs
-                      .filter((d) => d.isActive)
-                      .map((drug) => (
-                        <div
-                          key={drug.id}
-                          className="flex items-center gap-4 p-3 bg-white rounded-lg border"
-                        >
-                          <div className="flex-1">
-                            <p className="text-sm font-medium text-gray-900">
-                              {drug.nameEnglish}
-                            </p>
-                            <p className="text-xs text-gray-400 font-mono">
-                              {drug.drugCode} · min: {drug.minimumThreshold}{" "}
-                              {drug.unit}s
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              className="w-7 h-7 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-200"
-                              onClick={() =>
-                                setKitQuantities((p) => ({
-                                  ...p,
-                                  [drug.id]: Math.max(0, (p[drug.id] || 0) - 5),
-                                }))
-                              }
-                            >
-                              −
-                            </button>
-                            <span className="text-sm font-bold w-8 text-center">
-                              {kitQuantities[drug.id] ?? 0}
-                            </span>
-                            <button
-                              className="w-7 h-7 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-200"
-                              onClick={() =>
-                                setKitQuantities((p) => ({
-                                  ...p,
-                                  [drug.id]: (p[drug.id] || 0) + 5,
-                                }))
-                              }
-                            >
-                              +
-                            </button>
-                            <span className="text-xs text-gray-400 w-12">
-                              {drug.unit}s
-                            </span>
-                          </div>
+                    {issuableDrugs.map((drug) => (
+                      <div
+                        key={drug.id}
+                        className="flex items-center gap-4 p-3 bg-white rounded-lg border"
+                      >
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-gray-900">
+                            {drug.nameEnglish}
+                          </p>
+                          <p className="text-xs text-gray-400 font-mono">
+                            {drug.drugCode} · min: {drug.minimumThreshold}{" "}
+                            {drug.unit}s
+                          </p>
+                          {inventoryLoaded &&
+                            (availFor(drug) > 0 ? (
+                              <p className="text-xs font-medium text-emerald-700 mt-0.5">
+                                Facility stock: {availFor(drug)} {drug.unit}s
+                              </p>
+                            ) : (
+                              <p className="text-xs font-medium text-red-500 mt-0.5">
+                                Not in facility stock
+                              </p>
+                            ))}
                         </div>
-                      ))}
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="w-7 h-7 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-200"
+                            onClick={() =>
+                              setKitQuantities((p) => ({
+                                ...p,
+                                [drug.id]: Math.max(0, (p[drug.id] || 0) - 5),
+                              }))
+                            }
+                          >
+                            −
+                          </button>
+                          <span className="text-sm font-bold w-8 text-center">
+                            {kitQuantities[drug.id] ?? 0}
+                          </span>
+                          <button
+                            className="w-7 h-7 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-200"
+                            onClick={() =>
+                              setKitQuantities((p) => {
+                                const current = p[drug.id] || 0;
+                                const cap = Math.max(availFor(drug), current);
+                                return {
+                                  ...p,
+                                  [drug.id]: Math.min(current + 5, cap),
+                                };
+                              })
+                            }
+                          >
+                            +
+                          </button>
+                          <span className="text-xs text-gray-400 w-12">
+                            {drug.unit}s
+                          </span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
 
                   <div className="flex gap-3 mt-4">
                     <button
                       className="btn-primary"
                       onClick={() => initKitMutation.mutate()}
-                      disabled={initKitMutation.isPending || !selectedCcwId}
+                      disabled={
+                        initKitMutation.isPending ||
+                        !selectedCcwId ||
+                        !Object.values(kitQuantities).some((q) => q > 0)
+                      }
                     >
                       {initKitMutation.isPending
                         ? "Issuing..."

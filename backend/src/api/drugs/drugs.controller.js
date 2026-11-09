@@ -57,6 +57,61 @@ export const getDrugs = async (req, res, next) => {
   }
 };
 
+const planInventoryDraw = async ({
+  facilityId,
+  drug,
+  amount,
+  performedById,
+  notes,
+}) => {
+  const n0 = drug.nameEnglish;
+  const n1 = drug.nameChichewa || drug.nameEnglish;
+  const batches = await prisma.drugBatch.findMany({
+    where: {
+      facilityId,
+      status: "ACTIVE",
+      OR: [
+        { drugName: { equals: n0, mode: "insensitive" } },
+        { drugName: { equals: n1, mode: "insensitive" } },
+        { drugNameChichewa: { equals: n0, mode: "insensitive" } },
+        { drugNameChichewa: { equals: n1, mode: "insensitive" } },
+      ],
+    },
+    orderBy: { expiryDate: "asc" },
+  });
+  const available = batches.reduce((sum, b) => sum + b.quantityRemaining, 0);
+  const writes = [];
+  let left = amount;
+  for (const batch of batches) {
+    if (left <= 0) break;
+    const take = Math.min(batch.quantityRemaining, left);
+    const remaining = batch.quantityRemaining - take;
+    left -= take;
+    writes.push(
+      prisma.drugBatch.update({
+        where: { id: batch.id },
+        data: {
+          quantityRemaining: remaining,
+          ...(remaining === 0 ? { status: "DEPLETED" } : {}),
+        },
+      }),
+      prisma.drugTransaction.create({
+        data: {
+          batchId: batch.id,
+          facilityId,
+          transactionType: "OUT",
+          quantity: take,
+          quantityBefore: batch.quantityRemaining,
+          quantityAfter: remaining,
+          performedById,
+          ...(notes ? { notes } : {}),
+        },
+      }),
+    );
+  }
+  return { available, writes };
+};
+
 export const getStock = async (req, res, next) => {
   try {
     try {
@@ -171,18 +226,52 @@ export const updateStock = async (req, res, next) => {
       targetUserId = userId;
     }
 
-    const stock = await prisma.drugStock.upsert({
+    const existing = await prisma.drugStock.findUnique({
       where: { userId_drugId: { userId: targetUserId, drugId } },
-      update: { quantityCurrent, lastRestockedAt: new Date() },
-      create: {
-        userId: targetUserId,
-        drugId,
-        quantityCurrent,
-        quantityMinimum: 5,
-        lastRestockedAt: new Date(),
-      },
-      include: { drug: true },
+      select: { quantityCurrent: true },
     });
+    const delta = quantityCurrent - (existing ? existing.quantityCurrent : 0);
+    const writes = [];
+    if (delta > 0) {
+      const [target, drug] = await Promise.all([
+        prisma.user.findUnique({
+          where: { id: targetUserId },
+          select: { facilityId: true },
+        }),
+        prisma.drug.findUnique({ where: { id: drugId } }),
+      ]);
+      if (target?.facilityId && drug) {
+        const plan = await planInventoryDraw({
+          facilityId: target.facilityId,
+          drug,
+          amount: delta,
+          performedById: req.user.id,
+          notes: "CHW kit issue",
+        });
+        if (plan.available < delta) {
+          return res.status(400).json({
+            success: false,
+            message: `Insufficient inventory: only ${plan.available} ${drug.unit}s of ${drug.nameEnglish} in facility stock. Receive batch stock first.`,
+          });
+        }
+        writes.push(...plan.writes);
+      }
+    }
+    writes.push(
+      prisma.drugStock.upsert({
+        where: { userId_drugId: { userId: targetUserId, drugId } },
+        update: { quantityCurrent, lastRestockedAt: new Date() },
+        create: {
+          userId: targetUserId,
+          drugId,
+          quantityCurrent,
+          quantityMinimum: 5,
+          lastRestockedAt: new Date(),
+        },
+        include: { drug: true },
+      }),
+    );
+    const [stock] = await prisma.$transaction(writes);
     res.json({ success: true, data: stock });
   } catch (err) {
     next(err);
@@ -336,7 +425,7 @@ export const updateStockRequest = async (req, res, next) => {
     ) {
       const drug = await prisma.drug.findUnique({
         where: { id: target.drugId },
-        select: { nameEnglish: true, nameChichewa: true },
+        select: { nameEnglish: true, nameChichewa: true, unit: true },
       });
       const kitRow = await prisma.drugStock.findUnique({
         where: {
@@ -346,51 +435,43 @@ export const updateStockRequest = async (req, res, next) => {
           },
         },
       });
+      const writes = [];
       if (kitRow) {
-        await prisma.drugStock.update({
-          where: { id: kitRow.id },
-          data: { quantityCurrent: { increment: target.quantityRequested } },
-        });
+        writes.push(
+          prisma.drugStock.update({
+            where: { id: kitRow.id },
+            data: { quantityCurrent: { increment: target.quantityRequested } },
+          }),
+        );
       } else {
-        await prisma.drugStock.create({
-          data: {
-            userId: target.requestingUser.id,
-            drugId: target.drugId,
-            quantityCurrent: target.quantityRequested,
-            quantityMinimum: 5,
-          },
-        });
+        writes.push(
+          prisma.drugStock.create({
+            data: {
+              userId: target.requestingUser.id,
+              drugId: target.drugId,
+              quantityCurrent: target.quantityRequested,
+              quantityMinimum: 5,
+            },
+          }),
+        );
       }
       if (drug && target.requestingUser.facilityId) {
-        const n0 = drug.nameEnglish;
-        const n1 = drug.nameChichewa || drug.nameEnglish;
-        const batch = await prisma.drugBatch.findFirst({
-          where: {
-            facilityId: target.requestingUser.facilityId,
-            status: "ACTIVE",
-            OR: [
-              { drugName: { equals: n0, mode: "insensitive" } },
-              { drugName: { equals: n1, mode: "insensitive" } },
-              { drugNameChichewa: { equals: n0, mode: "insensitive" } },
-              { drugNameChichewa: { equals: n1, mode: "insensitive" } },
-            ],
-          },
-          orderBy: { expiryDate: "asc" },
+        const plan = await planInventoryDraw({
+          facilityId: target.requestingUser.facilityId,
+          drug,
+          amount: target.quantityRequested,
+          performedById: req.user.id,
+          notes: "Stock request fulfilled",
         });
-        if (batch) {
-          const remaining = Math.max(
-            0,
-            batch.quantityRemaining - target.quantityRequested,
-          );
-          await prisma.drugBatch.update({
-            where: { id: batch.id },
-            data: {
-              quantityRemaining: remaining,
-              ...(remaining === 0 ? { status: "DEPLETED" } : {}),
-            },
+        if (plan.available < target.quantityRequested) {
+          return res.status(400).json({
+            success: false,
+            message: `Cannot fulfil: facility stock has only ${plan.available} ${drug.unit}s of ${drug.nameEnglish}. Receive batch stock first.`,
           });
         }
+        writes.push(...plan.writes);
       }
+      await prisma.$transaction(writes);
     }
 
     const data = {
