@@ -12,7 +12,8 @@ type FpVisit = {
   notes: string | null;
   member: {
     id: string;
-    fullName: string;
+    firstName: string;
+    lastName: string;
     sex: string;
     dateOfBirth: string | null;
   };
@@ -250,9 +251,10 @@ export default function FpTracker() {
                   <tr key={v.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3">
                       <p className="font-medium text-gray-900">
-                        {v.member.fullName}
+                        {`${v.member?.firstName || ""} ${v.member?.lastName || ""}`.trim() ||
+                          "Unknown"}
                       </p>
-                      <p className="text-xs text-gray-400">{v.member.sex}</p>
+                      <p className="text-xs text-gray-400">{v.member?.sex}</p>
                     </td>
                     <td className="px-4 py-3">
                       <span
