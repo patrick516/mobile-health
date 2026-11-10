@@ -484,17 +484,20 @@ export default function ReferralQueue() {
             <div className="space-y-3 pt-2 border-t border-gray-100">
               {(() => {
                 const queue = selected.pharmacyRequest;
-                const queueOpen =
-                  queue &&
-                  (queue.status === "PENDING" ||
-                    queue.status === "PARTIALLY_FULFILLED");
                 const queueLocked =
                   queue &&
                   (queue.status === "PARTIALLY_FULFILLED" ||
                     queue.status === "FULFILLED");
+                // Once a prescription is in the queue, every input field is
+                // hidden — the nurse only watches status until pharmacy acts.
+                const awaitingPharmacy =
+                  selected.status === "ARRIVED" &&
+                  !!queue &&
+                  queue.status !== "REJECTED";
                 const showPrescribe =
-                  ["PENDING", "OVERDUE", "ARRIVED"].includes(selected.status) &&
-                  !queueLocked;
+                  ["PENDING", "OVERDUE"].includes(selected.status) ||
+                  (selected.status === "ARRIVED" &&
+                    (!queue || queue.status === "REJECTED"));
 
                 return (
                   <>
@@ -510,7 +513,7 @@ export default function ReferralQueue() {
                         </div>
                         <p className="text-xs text-teal-700">
                           {queue.status === "PENDING" &&
-                            "Sent to pharmacy — waiting for the pharmacist to dispense. You can edit the prescription until they start."}
+                            "Sent to pharmacy — waiting for the pharmacist to dispense. No further action needed here."}
                           {queue.status === "PARTIALLY_FULFILLED" &&
                             "Pharmacy has started dispensing. Further changes must be made at the pharmacy counter."}
                           {queue.status === "FULFILLED" &&
@@ -659,6 +662,7 @@ export default function ReferralQueue() {
                     {["PENDING", "OVERDUE", "ARRIVED"].includes(
                       selected.status,
                     ) &&
+                      !awaitingPharmacy &&
                       !queueLocked && (
                         <div>
                           <label className="text-xs text-gray-500 mb-1 block">
@@ -685,19 +689,17 @@ export default function ReferralQueue() {
                             : "Mark Arrived"}
                         </button>
                       )}
-                      {selected.status === "ARRIVED" && !queueLocked ? (
+                      {selected.status === "ARRIVED" && showPrescribe ? (
                         <button
                           className="btn-primary text-sm"
                           onClick={() => handleUpdate("ARRIVED")}
                         >
                           {meds.length > 0
                             ? "Send / Update Prescription"
-                            : queueOpen
-                              ? "Save Details"
-                              : "Save Details"}
+                            : "Save Details"}
                         </button>
                       ) : null}
-                      {selected.status === "ARRIVED" && queueOpen ? (
+                      {awaitingPharmacy ? (
                         <p className="text-xs text-gray-500 text-center">
                           Waiting on pharmacy — no further action needed here
                           until they dispense.
