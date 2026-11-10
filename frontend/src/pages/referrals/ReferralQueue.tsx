@@ -158,6 +158,16 @@ export default function ReferralQueue() {
   const handleUpdate = async (status: string) => {
     if (!selected) return;
 
+    // Feedback to the CHW — required whenever we are closing / updating it
+    if (["FEEDBACK_SENT", "COMPLETED"].includes(status) && !feedback.trim()) {
+      await alert({
+        title: "Feedback required",
+        message: "Write a short feedback note for the CHW before sending it.",
+        variant: "warning",
+      });
+      return;
+    }
+
     // Arrival (and any refinement while ARRIVED) may carry a prescription —
     // it creates/updates the PENDING PharmacyRequest the pharmacist sees
     const medications: {
@@ -208,7 +218,7 @@ export default function ReferralQueue() {
     updateMutation.mutate({
       id: selected.id,
       data: {
-        status,
+        ...(status ? { status } : {}),
         ...(diagnosis ? { diagnosis } : {}),
         ...(feedback ? { feedbackNote: feedback } : {}),
         ...(feedback ? { treatmentGiven: feedback } : {}),
@@ -304,7 +314,7 @@ export default function ReferralQueue() {
                 setSelected(ref);
                 setMeds([]);
                 setDiagnosis(ref.diagnosis || "");
-                setFeedback("");
+                setFeedback(ref.feedbackNote || "");
               }}
               className={`card p-4 cursor-pointer hover:shadow-md transition-shadow ${selected?.id === ref.id ? "ring-2 ring-teal-500" : ""}`}
             >
@@ -642,22 +652,45 @@ export default function ReferralQueue() {
                       </div>
                     )}
 
-                    {["TREATED", "FEEDBACK_SENT", "COMPLETED"].includes(
-                      selected.status,
-                    ) && (
-                      <div>
-                        <p className="text-xs font-semibold text-gray-700 mb-1">
-                          Feedback to the CHW
-                        </p>
-                        <textarea
-                          className="input text-sm resize-none"
-                          rows={3}
-                          placeholder="What should the CHW know for follow-up?"
-                          value={feedback}
-                          onChange={(e) => setFeedback(e.target.value)}
-                        />
-                      </div>
-                    )}
+                    {(() => {
+                      const showFeedback = [
+                        "TREATED",
+                        "FEEDBACK_SENT",
+                        "COMPLETED",
+                      ].includes(selected.status);
+                      if (!showFeedback) return null;
+                      const alreadyCompleted = selected.status === "COMPLETED";
+                      return (
+                        <div className="space-y-2">
+                          <p className="text-xs font-semibold text-gray-700">
+                            Feedback to the CHW
+                          </p>
+                          <textarea
+                            className="input text-sm resize-none"
+                            rows={3}
+                            placeholder="What should the CHW know for follow-up?"
+                            value={feedback}
+                            onChange={(e) => setFeedback(e.target.value)}
+                          />
+                          <button
+                            className="btn-primary text-sm w-full"
+                            onClick={() => handleUpdate("COMPLETED")}
+                            disabled={updateMutation.isPending}
+                          >
+                            {updateMutation.isPending
+                              ? "Sending..."
+                              : alreadyCompleted
+                                ? "Update Feedback"
+                                : "Send Feedback to CHW"}
+                          </button>
+                          {!alreadyCompleted && (
+                            <p className="text-xs text-gray-400 text-center">
+                              Sends the note and closes the loop.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {["PENDING", "OVERDUE", "ARRIVED"].includes(
                       selected.status,
@@ -708,20 +741,14 @@ export default function ReferralQueue() {
                       {selected.status === "ARRIVED" &&
                       queue?.status === "FULFILLED" ? (
                         <p className="text-xs text-teal-700 text-center font-medium">
-                          Dispensed. Use feedback below, then close the loop.
+                          Dispensed. Write feedback above, then send it to the
+                          CHW.
                         </p>
                       ) : null}
-                      {["TREATED", "FEEDBACK_SENT"].includes(
+                      {!["TREATED", "FEEDBACK_SENT", "COMPLETED"].includes(
                         selected.status,
-                      ) ? (
-                        <button
-                          className="btn-primary text-sm"
-                          onClick={() => handleUpdate("COMPLETED")}
-                        >
-                          Close Loop — Mark Completed
-                        </button>
-                      ) : null}
-                      {!["COMPLETED"].includes(selected.status) &&
+                      ) &&
+                        !["COMPLETED"].includes(selected.status) &&
                         !(queue && queue.status !== "REJECTED") && (
                           <button
                             className="btn-danger text-sm"
