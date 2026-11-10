@@ -276,6 +276,27 @@ export const getRequests = async (req, res, next) => {
           select: { firstName: true, lastName: true, role: true },
         },
         fulfilledBy: { select: { firstName: true, lastName: true } },
+        referral: {
+          select: {
+            id: true,
+            reason: true,
+            urgency: true,
+            destinationFacility: { select: { name: true } },
+            visit: {
+              select: {
+                id: true,
+                member: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    fullName: true,
+                  },
+                },
+              },
+            },
+          },
+        },
       },
       orderBy: { createdAt: "desc" },
     });

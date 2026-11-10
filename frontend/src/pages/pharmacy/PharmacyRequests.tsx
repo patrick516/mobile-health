@@ -26,13 +26,18 @@ export default function PharmacyRequests() {
   const { user } = useAuthStore();
   const { alert } = useDialog();
 
-  const isPharmacist = user?.role === "PHARMACIST";
+  const canFulfill = ["SUPER_ADMIN", "ADMIN", "NURSE", "PHARMACIST"].includes(
+    user?.role || "",
+  );
   const canCreateRequest = [
     "NURSE",
     "ADMIN",
     "DISTRICT_OFFICER",
     "SUPER_ADMIN",
   ].includes(user?.role || "");
+  const isOpenable = (r: any) =>
+    canFulfill &&
+    (r.status === "PENDING" || r.status === "PARTIALLY_FULFILLED");
 
   const [filter, setFilter] = useState("PENDING");
   const [selected, setSelected] = useState<any>(null);
@@ -113,10 +118,11 @@ export default function PharmacyRequests() {
   const handleFulfill = () => {
     if (!selected) return;
     const fulfilledItems = selected.items.map((item: any) => {
-      const chosen = substitute[item.id];
+      const chosen = stockMatch(substitute[item.id] || item.drugName);
+      const qty = parseInt(fulfillData[item.id] || "0");
       return {
         itemId: item.id,
-        quantityFulfilled: parseInt(fulfillData[item.id] || "0"),
+        quantityFulfilled: qty,
         ...(chosen && chosen !== item.drugName ? { drugName: chosen } : {}),
       };
     });
@@ -127,12 +133,26 @@ export default function PharmacyRequests() {
     setSelected(r);
     const init: Record<string, string> = {};
     const subs: Record<string, string> = {};
-    r.items.forEach((i: any) => {
-      init[i.id] = String(i.quantityRequested);
+    (r.items || []).forEach((i: any) => {
+      const remaining = Math.max(
+        0,
+        (i.quantityRequested || 0) - (i.quantityFulfilled || 0),
+      );
+      init[i.id] = String(remaining || i.quantityRequested || 0);
       subs[i.id] = i.drugName;
     });
     setFulfillData(init);
     setSubstitute(subs);
+  };
+
+  const stockMatch = (name: string) => {
+    if (!name) return name;
+    if (availableStock[name]) return name;
+    return (
+      Object.keys(availableStock).find(
+        (n) => n.toLowerCase() === name.toLowerCase(),
+      ) || name
+    );
   };
 
   return (
@@ -174,7 +194,13 @@ export default function PharmacyRequests() {
 
       <div className="space-y-3">
         {requests?.map((r: any) => (
-          <div key={r.id} className="card p-4">
+          <div
+            key={r.id}
+            className={`card p-4 ${
+              isOpenable(r) ? "cursor-pointer hover:border-teal-300" : ""
+            }`}
+            onClick={() => isOpenable(r) && openFulfill(r)}
+          >
             <div className="flex items-start justify-between">
               <div>
                 <p className="font-semibold text-gray-900">{r.patientName}</p>
@@ -192,7 +218,12 @@ export default function PharmacyRequests() {
 
                 {r.referralId ? (
                   <p className="text-xs text-teal-700">
-                    From a referral — dispensing marks it TREATED
+                    Referred patient
+                    {r.referral?.reason ? ` · ${r.referral.reason}` : ""}
+                    {r.referral?.destinationFacility?.name
+                      ? ` → ${r.referral.destinationFacility.name}`
+                      : ""}{" "}
+                    — dispensing marks it TREATED
                   </p>
                 ) : (
                   <p className="text-xs text-gray-400">Walk-in encounter</p>
@@ -219,12 +250,15 @@ export default function PharmacyRequests() {
                 >
                   {r.status.replace("_", " ")}
                 </span>
-                {isPharmacist && r.status === "PENDING" && (
+                {isOpenable(r) && (
                   <button
-                    onClick={() => openFulfill(r)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openFulfill(r);
+                    }}
                     className="text-xs bg-teal-600 text-white px-3 py-1 rounded-lg hover:bg-teal-700"
                   >
-                    Fulfill
+                    Open &amp; Dispense
                   </button>
                 )}
               </div>
@@ -245,14 +279,35 @@ export default function PharmacyRequests() {
               <h3 className="font-bold text-gray-900">
                 Dispense — {selected.patientName}
               </h3>
-              <p className="text-sm text-gray-500">
-                Available stock is shown per drug. Adjust quantities or
-                substitute an in-stock alternative, then dispense (FEFO).
+              {selected.referralId ? (
+                <p className="text-xs text-teal-700 mt-1">
+                  Linked referral
+                  {selected.referral?.reason
+                    ? ` · ${selected.referral.reason}`
+                    : ""}
+                  {selected.referral?.urgency
+                    ? ` · ${selected.referral.urgency}`
+                    : ""}
+                  {selected.referral?.destinationFacility?.name
+                    ? ` → ${selected.referral.destinationFacility.name}`
+                    : ""}
+                  {" — "}
+                  confirming dispense marks the referral TREATED.
+                </p>
+              ) : (
+                <p className="text-xs text-gray-400 mt-1">
+                  Walk-in encounter — quantities below are prefilled from the
+                  prescription.
+                </p>
+              )}
+              <p className="text-sm text-gray-500 mt-1">
+                Drug lines are auto-filled from the request. Adjust quantities
+                or substitute an in-stock alternative, then dispense (FEFO).
               </p>
             </div>
             <div className="space-y-3">
               {selected.items.map((item: any) => {
-                const chosen = substitute[item.id] || item.drugName;
+                const chosen = stockMatch(substitute[item.id] || item.drugName);
                 const info = availableStock[chosen];
                 return (
                   <div
@@ -286,6 +341,10 @@ export default function PharmacyRequests() {
                         </select>
                         <p className="text-xs text-gray-500 mt-1">
                           Requested: {item.quantityRequested}
+                          {(item.quantityFulfilled || 0) > 0 &&
+                            ` · already given: ${item.quantityFulfilled} · remaining: ${
+                              item.quantityRequested - item.quantityFulfilled
+                            }`}
                           {item.notes && (
                             <span className="text-teal-700">
                               {" "}
@@ -327,8 +386,18 @@ export default function PharmacyRequests() {
               })}
             </div>
             <div className="bg-teal-50 border border-teal-100 rounded-lg px-3 py-2 text-xs text-teal-800">
-              Dispensing completes the loop: the linked referral is marked
-              <b> TREATED</b> automatically, and the CHW sees it on next sync.
+              {selected.referralId ? (
+                <>
+                  One action completes the loop: stock is drawn FEFO, the linked
+                  referral is marked <b>TREATED</b>, and the CHW sees it on next
+                  sync.
+                </>
+              ) : (
+                <>
+                  Dispensing draws stock FEFO and updates inventory balances
+                  immediately.
+                </>
+              )}
             </div>
             <div className="flex gap-3">
               <button
@@ -347,7 +416,9 @@ export default function PharmacyRequests() {
               >
                 {fulfillMutation.isPending
                   ? "Processing..."
-                  : "Confirm Dispense"}
+                  : selected.referralId
+                    ? "Confirm Dispense & Close Referral"
+                    : "Confirm Dispense"}
               </button>
             </div>
           </div>
