@@ -11,11 +11,25 @@ type PncVisit = {
   notes: string | null;
   member: {
     id: string;
-    fullName: string;
+    firstName?: string;
+    lastName?: string;
+    fullName?: string;
     expectedDeliveryDate: string | null;
   };
-  visitedBy: { fullName: string } | null;
+  visitedBy: {
+    firstName?: string;
+    lastName?: string;
+    fullName?: string;
+  } | null;
 };
+
+const personName = (
+  p?: {
+    fullName?: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
+  } | null,
+) => p?.fullName || `${p?.firstName || ""} ${p?.lastName || ""}`.trim() || "—";
 
 const PNC_LABEL: Record<number, string> = {
   1: "PNC 1 — Day 1",
@@ -168,7 +182,7 @@ export default function PncTracker() {
               filtered.map((v) => (
                 <tr key={v.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3 font-medium text-gray-900">
-                    {v.member.fullName}
+                    {personName(v.member)}
                   </td>
                   <td className="px-4 py-3 text-gray-600">
                     {PNC_LABEL[v.pncNumber] ?? `PNC ${v.pncNumber}`}
@@ -191,7 +205,7 @@ export default function PncTracker() {
                       : "—"}
                   </td>
                   <td className="px-4 py-3 text-gray-600">
-                    {v.visitedBy?.fullName ?? "—"}
+                    {personName(v.visitedBy)}
                   </td>
                   <td className="px-4 py-3">
                     {v.referralNeeded ? (

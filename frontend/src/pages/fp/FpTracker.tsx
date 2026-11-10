@@ -17,8 +17,21 @@ type FpVisit = {
     sex: string;
     dateOfBirth: string | null;
   };
-  visitedBy: { id: string; fullName: string };
+  visitedBy: {
+    id: string;
+    firstName?: string;
+    lastName?: string;
+    fullName?: string;
+  } | null;
 };
+
+const personName = (
+  p?: {
+    fullName?: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
+  } | null,
+) => p?.fullName || `${p?.firstName || ""} ${p?.lastName || ""}`.trim() || "—";
 
 const METHOD_LABELS: Record<string, string> = {
   CONDOM: "Condoms",
@@ -301,7 +314,7 @@ export default function FpTracker() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-gray-600 text-xs">
-                      {v.visitedBy?.fullName ?? "—"}
+                      {personName(v.visitedBy)}
                     </td>
                   </tr>
                 );

@@ -137,23 +137,41 @@ export default function FpScreen() {
       // Use a safer query that doesn't hide records if the local join fails
       const rows = await db.getAllAsync<FpRecord>(
         tab === "follow-ups"
-          ? `SELECT f.*, 
-               IFNULL(m.full_name, 'Unknown Member') as full_name, 
-               IFNULL(h.household_number, '—') as household_number, 
+          ? `SELECT f.*,
+               COALESCE(
+                 NULLIF(
+                   COALESCE(
+                     NULLIF(m.full_name, ''),
+                     TRIM(COALESCE(m.first_name, '') || ' ' || COALESCE(m.last_name, ''))
+                   ),
+                   ''
+                 ),
+                 'Unknown Member'
+               ) as full_name,
+               IFNULL(h.household_number, '—') as household_number,
                IFNULL(h.village_name, '—') as village_name
              FROM fp_visits f
-             LEFT JOIN members m ON m.id = f.member_id
+             LEFT JOIN members m ON m.id = f.member_id OR m.local_id = f.member_id
              LEFT JOIN households h ON h.id = m.household_id
              WHERE (h.registered_by_user_id = ? OR h.registered_by_user_id IS NULL OR f.visited_by_id = ?)
-               AND f.next_follow_up_date IS NOT NULL 
+               AND f.next_follow_up_date IS NOT NULL
                AND DATE(f.next_follow_up_date) <= DATE(?)
              ORDER BY f.next_follow_up_date ASC`
-          : `SELECT f.*, 
-               IFNULL(m.full_name, 'Unknown Member') as full_name, 
-               IFNULL(h.household_number, '—') as household_number, 
+          : `SELECT f.*,
+               COALESCE(
+                 NULLIF(
+                   COALESCE(
+                     NULLIF(m.full_name, ''),
+                     TRIM(COALESCE(m.first_name, '') || ' ' || COALESCE(m.last_name, ''))
+                   ),
+                   ''
+                 ),
+                 'Unknown Member'
+               ) as full_name,
+               IFNULL(h.household_number, '—') as household_number,
                IFNULL(h.village_name, '—') as village_name
              FROM fp_visits f
-             LEFT JOIN members m ON m.id = f.member_id
+             LEFT JOIN members m ON m.id = f.member_id OR m.local_id = f.member_id
              LEFT JOIN households h ON h.id = m.household_id
              WHERE (h.registered_by_user_id = ? OR h.registered_by_user_id IS NULL OR f.visited_by_id = ?)
              ORDER BY f.visit_date DESC
@@ -182,10 +200,25 @@ export default function FpScreen() {
     const db = await getDb();
     const uid = user?.id || "";
     const rows = await db.getAllAsync<any>(
-      `SELECT m.id, m.full_name, m.sex, h.household_number
+      `SELECT m.id, m.sex, h.household_number,
+              COALESCE(
+                NULLIF(
+                  COALESCE(
+                    NULLIF(m.full_name, ''),
+                    TRIM(COALESCE(m.first_name, '') || ' ' || COALESCE(m.last_name, ''))
+                  ),
+                  ''
+                ),
+                'Unknown Member'
+              ) as full_name
        FROM members m
        LEFT JOIN households h ON h.id = m.household_id
-       WHERE m.full_name LIKE ?
+       WHERE (
+         COALESCE(
+           NULLIF(m.full_name, ''),
+           TRIM(COALESCE(m.first_name, '') || ' ' || COALESCE(m.last_name, ''))
+         ) LIKE ?
+       )
          AND h.registered_by_user_id = ?
          AND m.status = 'ACTIVE'
        LIMIT 10`,
@@ -401,7 +434,9 @@ export default function FpScreen() {
                 </View>
               )}
             </View>
-            <Text style={styles.memberName}>{item.full_name}</Text>
+            <Text style={styles.memberName}>
+              {item.full_name || "Unknown Member"}
+            </Text>
             <Text style={styles.hhInfo}>
               {item.household_number} · {item.village_name}
             </Text>
