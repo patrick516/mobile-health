@@ -145,11 +145,11 @@ export default function AddReferralScreen() {
     setLastVisitId(v?.id || "");
   };
 
-  const choosePatient = (p: Patient) => {
+  const choosePatient = async (p: Patient) => {
     setPatientId(p.id);
     setMemberName(p.full_name);
     useAppStore.getState().setSelectedMember(p.id);
-    resolveVisit(p.id, p.local_id);
+    await resolveVisit(p.id, p.local_id);
   };
 
   const clearPatient = () => {
@@ -256,7 +256,6 @@ export default function AddReferralScreen() {
     if (!reason) {
       return showError("Required", "Please select a reason for referral.");
     }
-    // ─── FIX: visit_id is now optional — removed the hard block
 
     setSaving(true);
     try {
@@ -268,23 +267,72 @@ export default function AddReferralScreen() {
       else if (urgency === "URGENT") dueBy.setDate(dueBy.getDate() + 2);
       else dueBy.setDate(dueBy.getDate() + 7);
 
-      const member = await db.getFirstAsync<{ id: string }>(
-        "SELECT id FROM members WHERE id = ? OR local_id = ?",
-        [patientId, patientId],
-      );
+      const member = await db.getFirstAsync<{
+        id: string;
+        household_id: string | null;
+      }>("SELECT id, household_id FROM members WHERE id = ? OR local_id = ?", [
+        patientId,
+        patientId,
+      ]);
       if (!member) throw new Error("Member not found in local database.");
 
-      // ─── FIX: visit_id uses lastVisitId || null — no longer required
+      let visitId = lastVisitId;
+      if (!visitId) {
+        const v = await db.getFirstAsync<{ id: string }>(
+          `SELECT id FROM visits WHERE member_id = ? OR member_id = ?
+           ORDER BY visited_at DESC LIMIT 1`,
+          [member.id, patientId],
+        );
+        visitId = v?.id || "";
+      }
+
+      if (!visitId) {
+        const householdId = member.household_id;
+        if (!householdId) {
+          throw new Error(
+            "This member has no household linked — cannot save referral.",
+          );
+        }
+        visitId = Crypto.randomUUID();
+        const encounterAt = new Date().toISOString();
+        await db.runAsync(
+          `INSERT INTO visits (
+            id, local_id, member_id, household_id, visited_at, visit_type,
+            referral_needed, notes, synced
+          ) VALUES (?,?,?,?,?,?,?,?,0)`,
+          [
+            visitId,
+            visitId,
+            member.id,
+            householdId,
+            encounterAt,
+            "SICK",
+            1,
+            "Encounter recorded when referral was created",
+          ],
+        );
+        await enqueue("VISIT", {
+          localId: visitId,
+          memberId: member.id,
+          householdId,
+          visitedAt: encounterAt,
+          visitType: "SICK",
+          referralNeeded: true,
+          notes: "Encounter recorded when referral was created",
+        });
+      }
+
       await db.runAsync(
         `INSERT INTO referrals (
-          id, local_id, visit_id, member_id, reason, urgency,
-          status, due_by, synced
-        ) VALUES (?,?,?,?,?,?,?,?,0)`,
+          id, local_id, visit_id, member_id, destination_facility_id,
+          reason, urgency, status, due_by, synced
+        ) VALUES (?,?,?,?,?,?,?,?,?,0)`,
         [
           localId,
           localId,
-          lastVisitId || null,
+          visitId,
           member.id,
+          selectedFacilityId || null,
           reason,
           urgency,
           "PENDING",
@@ -294,7 +342,7 @@ export default function AddReferralScreen() {
 
       await enqueue("REFERRAL", {
         localId,
-        visitId: lastVisitId || null,
+        visitId,
         memberId: member.id,
         destinationFacilityId: selectedFacilityId || null,
         reason,
@@ -320,7 +368,12 @@ export default function AddReferralScreen() {
       );
     } catch (err) {
       console.error("Save referral error:", err);
-      showError("Save Failed", "Failed to save referral. Please try again.");
+      showError(
+        "Save Failed",
+        err instanceof Error && err.message
+          ? err.message
+          : "Failed to save referral. Please try again.",
+      );
     } finally {
       setSaving(false);
     }
