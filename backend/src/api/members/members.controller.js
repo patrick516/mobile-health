@@ -37,17 +37,37 @@ function addWeeks(date, weeks) {
   return d;
 }
 
-// GET /api/members?householdId=&taId=
+// GET /api/members?householdId=&taId=&search=
 export const getMembers = async (req, res, next) => {
   try {
-    const { householdId, taId } = req.query;
+    const { householdId, taId, search } = req.query;
     const villageScope = buildVillageScope(req.user, taId);
     const hasScope = Object.keys(villageScope).length > 0;
+    const q = (search || "").trim();
 
     const members = await prisma.householdMember.findMany({
       where: {
         ...(householdId ? { householdId } : {}),
         status: "ACTIVE",
+        ...(q
+          ? {
+              OR: [
+                { firstName: { contains: q, mode: "insensitive" } },
+                { lastName: { contains: q, mode: "insensitive" } },
+                {
+                  firstName: { contains: q.split(" ")[0], mode: "insensitive" },
+                  ...(q.split(" ").length > 1
+                    ? {
+                        lastName: {
+                          contains: q.split(" ").slice(1).join(" "),
+                          mode: "insensitive",
+                        },
+                      }
+                    : {}),
+                },
+              ],
+            }
+          : {}),
         // The user's scope always applies; a CCW also sees only households they registered
         ...(hasScope || req.user.role === "CCW"
           ? {
@@ -68,6 +88,7 @@ export const getMembers = async (req, res, next) => {
         ancVisits: { where: { status: { in: ["SCHEDULED", "OVERDUE"] } } },
       },
       orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+      ...(q ? { take: 30 } : {}),
     });
     res.json({ success: true, data: members });
   } catch (err) {

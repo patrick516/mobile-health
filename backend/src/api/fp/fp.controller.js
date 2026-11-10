@@ -141,6 +141,7 @@ export const getFpFollowUps = async (req, res, next) => {
             },
           },
         },
+        visitedBy: { select: { id: true, firstName: true, lastName: true } },
       },
       orderBy: { nextFollowUpDate: "asc" },
     });

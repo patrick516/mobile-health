@@ -501,17 +501,23 @@ const pullFromServer = async () => {
 
           if (!localMember && f.member) {
             // Member is missing locally, so insert them so the UI Join works!
+            // household_id / relationship_to_head are NOT NULL on this schema
             const serverFullName =
               `${f.member.firstName || ""} ${f.member.lastName || ""}`.trim();
             await db.runAsync(
-              `INSERT OR IGNORE INTO members (id, local_id, first_name, last_name, full_name, sex, synced) VALUES (?,?,?,?,?,?,1)`,
+              `INSERT OR IGNORE INTO members
+               (id, local_id, household_id, first_name, last_name, full_name,
+                sex, relationship_to_head, status, synced)
+               VALUES (?,?,?,?,?,?,?,?, 'ACTIVE', 1)`,
               [
                 f.member.id || finalMemberId,
                 f.member.id || finalMemberId,
+                "unknown",
                 f.member.firstName || "",
                 f.member.lastName || "",
                 serverFullName || "Unknown",
-                f.member.sex || "",
+                f.member.sex || "F",
+                "OTHER_RELATIVE",
               ],
             );
           }
