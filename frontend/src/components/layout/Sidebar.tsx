@@ -145,14 +145,21 @@ export default function Sidebar() {
   const { user } = useAuthStore();
   const isPharmacist = user?.role === "PHARMACIST";
 
-  // Number of prescriptions waiting (pharmacists only; shares the dashboard's data)
+  // Pending prescriptions — everyone who can open Pharmacy Hub sees the badge
+  const canSeePharmacy = [
+    "PHARMACIST",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "NURSE",
+    "DISTRICT_OFFICER",
+  ].includes(user?.role || "");
   const { data: pendingRequests } = useQuery({
     queryKey: ["pharmacy-requests-pending"],
     queryFn: () =>
       api
         .get("/pharmacy/requests", { params: { status: "PENDING" } })
         .then((r) => r.data.data),
-    enabled: isPharmacist,
+    enabled: canSeePharmacy,
     refetchInterval: 5000,
   });
   const pendingCount = pendingRequests?.length ?? 0;
@@ -222,7 +229,7 @@ export default function Sidebar() {
                       : item.label}
                   </span>
 
-                  {isPharmacist &&
+                  {canSeePharmacy &&
                     item.to === "/pharmacy" &&
                     pendingCount > 0 && (
                       <span className="ml-auto bg-orange-500 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5">

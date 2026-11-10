@@ -159,6 +159,19 @@ export interface Referral {
     symptoms?: string[];
     muacStatus?: string;
   };
+  pharmacyRequest?: {
+    id: string;
+    status: "PENDING" | "FULFILLED" | "PARTIALLY_FULFILLED" | "REJECTED";
+    diagnosis?: string | null;
+    createdAt: string;
+    items: {
+      id: string;
+      drugName: string;
+      quantityRequested: number;
+      quantityFulfilled: number;
+      notes?: string | null;
+    }[];
+  } | null;
 }
 
 export interface Drug {

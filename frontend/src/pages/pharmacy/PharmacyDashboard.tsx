@@ -116,9 +116,10 @@ export default function PharmacyDashboard() {
           </div>
           <div className="space-y-2">
             {requests?.slice(0, 5).map((r: any) => (
-              <div
+              <Link
                 key={r.id}
-                className="py-2 border-b border-gray-50 last:border-0"
+                to="/pharmacy/requests"
+                className="py-2 border-b border-gray-50 last:border-0 block cursor-pointer hover:bg-orange-50 rounded px-1 -mx-1 transition-colors"
               >
                 <p className="text-sm font-semibold text-gray-900">
                   {r.patientName}
@@ -128,6 +129,9 @@ export default function PharmacyDashboard() {
                       · {r.patientAge} yrs
                     </span>
                   )}
+                  <span className="ml-2 text-xs font-medium text-teal-600">
+                    Open →
+                  </span>
                 </p>
                 {r.diagnosis && (
                   <p className="text-xs text-gray-500">
@@ -139,7 +143,7 @@ export default function PharmacyDashboard() {
                     ?.map((i: any) => `${i.drugName} × ${i.quantityRequested}`)
                     .join(", ")}
                 </p>
-              </div>
+              </Link>
             ))}
           </div>
         </div>

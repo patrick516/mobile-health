@@ -45,6 +45,13 @@ const fullName = (p: any) =>
     ? `${p.firstName || ""} ${p.lastName || ""}`.trim() || p.fullName || "—"
     : "—";
 
+const QUEUE_BADGE: Record<string, string> = {
+  PENDING: "badge-yellow",
+  PARTIALLY_FULFILLED: "badge-blue",
+  FULFILLED: "badge-green",
+  REJECTED: "badge-red",
+};
+
 export default function ReferralQueue() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
@@ -153,7 +160,7 @@ export default function ReferralQueue() {
 
     // Arrival (and any refinement while ARRIVED) may carry a prescription —
     // it creates/updates the PENDING PharmacyRequest the pharmacist sees
-    let medications: {
+    const medications: {
       drugName: string;
       quantityRequested: number;
       notes?: string;
@@ -296,6 +303,8 @@ export default function ReferralQueue() {
               onClick={() => {
                 setSelected(ref);
                 setMeds([]);
+                setDiagnosis(ref.diagnosis || "");
+                setFeedback("");
               }}
               className={`card p-4 cursor-pointer hover:shadow-md transition-shadow ${selected?.id === ref.id ? "ring-2 ring-teal-500" : ""}`}
             >
@@ -473,185 +482,256 @@ export default function ReferralQueue() {
             </div>
 
             <div className="space-y-3 pt-2 border-t border-gray-100">
-              {["PENDING", "OVERDUE", "ARRIVED"].includes(selected.status) && (
-                <div className="space-y-3">
-                  <p className="text-xs font-semibold text-gray-700">
-                    {selected.status === "ARRIVED"
-                      ? "Clinical Record & Prescription"
-                      : "Record Arrival & Prescription"}
-                  </p>
+              {(() => {
+                const queue = selected.pharmacyRequest;
+                const queueOpen =
+                  queue &&
+                  (queue.status === "PENDING" ||
+                    queue.status === "PARTIALLY_FULFILLED");
+                const queueLocked =
+                  queue &&
+                  (queue.status === "PARTIALLY_FULFILLED" ||
+                    queue.status === "FULFILLED");
+                const showPrescribe =
+                  ["PENDING", "OVERDUE", "ARRIVED"].includes(selected.status) &&
+                  !queueLocked;
 
-                  <div>
-                    <label className="text-xs text-gray-500 mb-1 block">
-                      Diagnosis
-                    </label>
-                    <input
-                      className="input text-sm"
-                      placeholder="e.g. Severe malaria"
-                      value={diagnosis}
-                      onChange={(e) => setDiagnosis(e.target.value)}
-                    />
-                  </div>
-
-                  {canPrescribe && (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs text-gray-500">
-                          Prescription → pharmacist queue
-                        </label>
-                        <button
-                          type="button"
-                          className="text-xs font-semibold text-teal-700"
-                          onClick={() =>
-                            setMeds((prev) => [
-                              ...prev,
-                              { drugName: "", quantity: "", dosage: "" },
-                            ])
-                          }
-                        >
-                          + Add drug
-                        </button>
-                      </div>
-
-                      {meds.length === 0 && (
-                        <p className="text-xs text-gray-400">
-                          No medication added.
+                return (
+                  <>
+                    {queue && (
+                      <div className="bg-teal-50 border border-teal-100 rounded-lg px-3 py-2 space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs font-semibold text-teal-800">
+                            Pharmacy queue
+                          </p>
+                          <span className={QUEUE_BADGE[queue.status] || ""}>
+                            {queue.status.replace("_", " ")}
+                          </span>
+                        </div>
+                        <p className="text-xs text-teal-700">
+                          {queue.status === "PENDING" &&
+                            "Sent to pharmacy — waiting for the pharmacist to dispense. You can edit the prescription until they start."}
+                          {queue.status === "PARTIALLY_FULFILLED" &&
+                            "Pharmacy has started dispensing. Further changes must be made at the pharmacy counter."}
+                          {queue.status === "FULFILLED" &&
+                            "Medication given — stock has been deducted. Send feedback below to close the loop."}
+                          {queue.status === "REJECTED" &&
+                            "Pharmacy rejected this prescription. Review and send again."}
                         </p>
-                      )}
+                        {queue.items?.length > 0 && (
+                          <ul className="text-xs text-teal-900 space-y-0.5">
+                            {queue.items.map((it) => (
+                              <li key={it.id}>
+                                • {it.drugName} — {it.quantityFulfilled}/
+                                {it.quantityRequested} given
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
 
-                      {meds.map((m, i) => (
-                        <div
-                          key={i}
-                          className="border border-gray-100 rounded-lg p-2 space-y-2"
-                        >
-                          <div className="flex gap-2">
-                            <div className="flex-1 min-w-0">
-                              <Select
-                                value={m.drugName}
-                                onChange={(val) =>
-                                  updateMed(i, "drugName", val)
-                                }
-                                placeholder="Search drug…"
-                                searchable
-                                options={Object.entries(availableStock).map(
-                                  ([name, info]) => ({
-                                    value: name,
-                                    label: `${name} — ${info.total} ${info.unit}`,
-                                  }),
-                                )}
-                              />
-                            </div>
-                            <input
-                              type="number"
-                              min={1}
-                              className="input text-sm w-20"
-                              placeholder="Qty"
-                              value={m.quantity}
-                              onChange={(e) =>
-                                updateMed(i, "quantity", e.target.value)
-                              }
-                            />
-                            <button
-                              type="button"
-                              className="text-gray-400 hover:text-red-600 px-1"
-                              onClick={() =>
-                                setMeds((prev) =>
-                                  prev.filter((_, idx) => idx !== i),
-                                )
-                              }
-                              title="Remove"
-                            >
-                              ×
-                            </button>
-                          </div>
+                    {showPrescribe && (
+                      <div className="space-y-3">
+                        <p className="text-xs font-semibold text-gray-700">
+                          {selected.status === "ARRIVED"
+                            ? "Clinical Record & Prescription"
+                            : "Record Arrival & Prescription"}
+                        </p>
+
+                        <div>
+                          <label className="text-xs text-gray-500 mb-1 block">
+                            Diagnosis
+                          </label>
                           <input
                             className="input text-sm"
-                            placeholder="Dosage, e.g. 2 tablets twice daily"
-                            value={m.dosage}
-                            onChange={(e) =>
-                              updateMed(i, "dosage", e.target.value)
-                            }
+                            placeholder="e.g. Severe malaria"
+                            value={diagnosis}
+                            onChange={(e) => setDiagnosis(e.target.value)}
                           />
                         </div>
-                      ))}
+
+                        {canPrescribe && (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <label className="text-xs text-gray-500">
+                                Prescription → pharmacist queue
+                              </label>
+                              <button
+                                type="button"
+                                className="text-xs font-semibold text-teal-700"
+                                onClick={() =>
+                                  setMeds((prev) => [
+                                    ...prev,
+                                    { drugName: "", quantity: "", dosage: "" },
+                                  ])
+                                }
+                              >
+                                + Add drug
+                              </button>
+                            </div>
+
+                            {meds.length === 0 && (
+                              <p className="text-xs text-gray-400">
+                                {queue?.status === "PENDING"
+                                  ? "Previous prescription is in the queue. Add drugs only to replace it."
+                                  : "No medication added."}
+                              </p>
+                            )}
+
+                            {meds.map((m, i) => (
+                              <div
+                                key={i}
+                                className="border border-gray-100 rounded-lg p-2 space-y-2"
+                              >
+                                <div className="flex gap-2">
+                                  <div className="flex-1 min-w-0">
+                                    <Select
+                                      value={m.drugName}
+                                      onChange={(val) =>
+                                        updateMed(i, "drugName", val)
+                                      }
+                                      placeholder="Search drug…"
+                                      searchable
+                                      options={Object.entries(
+                                        availableStock,
+                                      ).map(([name, info]) => ({
+                                        value: name,
+                                        label: `${name} — ${info.total} ${info.unit}`,
+                                      }))}
+                                    />
+                                  </div>
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    className="input text-sm w-20"
+                                    placeholder="Qty"
+                                    value={m.quantity}
+                                    onChange={(e) =>
+                                      updateMed(i, "quantity", e.target.value)
+                                    }
+                                  />
+                                  <button
+                                    type="button"
+                                    className="text-gray-400 hover:text-red-600 px-1"
+                                    onClick={() =>
+                                      setMeds((prev) =>
+                                        prev.filter((_, idx) => idx !== i),
+                                      )
+                                    }
+                                    title="Remove"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                                <input
+                                  className="input text-sm"
+                                  placeholder="Dosage, e.g. 2 tablets twice daily"
+                                  value={m.dosage}
+                                  onChange={(e) =>
+                                    updateMed(i, "dosage", e.target.value)
+                                  }
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {["TREATED", "FEEDBACK_SENT", "COMPLETED"].includes(
+                      selected.status,
+                    ) && (
+                      <div>
+                        <p className="text-xs font-semibold text-gray-700 mb-1">
+                          Feedback to the CHW
+                        </p>
+                        <textarea
+                          className="input text-sm resize-none"
+                          rows={3}
+                          placeholder="What should the CHW know for follow-up?"
+                          value={feedback}
+                          onChange={(e) => setFeedback(e.target.value)}
+                        />
+                      </div>
+                    )}
+
+                    {["PENDING", "OVERDUE", "ARRIVED"].includes(
+                      selected.status,
+                    ) &&
+                      !queueLocked && (
+                        <div>
+                          <label className="text-xs text-gray-500 mb-1 block">
+                            Notes for the CHW (optional)
+                          </label>
+                          <textarea
+                            className="input text-sm resize-none"
+                            rows={2}
+                            placeholder="Write feedback for the CHW..."
+                            value={feedback}
+                            onChange={(e) => setFeedback(e.target.value)}
+                          />
+                        </div>
+                      )}
+
+                    <div className="flex flex-col gap-2">
+                      {["PENDING", "OVERDUE"].includes(selected.status) && (
+                        <button
+                          className="btn-primary text-sm"
+                          onClick={() => handleUpdate("ARRIVED")}
+                        >
+                          {meds.length > 0
+                            ? "Mark Arrived & Send to Pharmacy"
+                            : "Mark Arrived"}
+                        </button>
+                      )}
+                      {selected.status === "ARRIVED" && !queueLocked ? (
+                        <button
+                          className="btn-primary text-sm"
+                          onClick={() => handleUpdate("ARRIVED")}
+                        >
+                          {meds.length > 0
+                            ? "Send / Update Prescription"
+                            : queueOpen
+                              ? "Save Details"
+                              : "Save Details"}
+                        </button>
+                      ) : null}
+                      {selected.status === "ARRIVED" && queueOpen ? (
+                        <p className="text-xs text-gray-500 text-center">
+                          Waiting on pharmacy — no further action needed here
+                          until they dispense.
+                        </p>
+                      ) : null}
+                      {selected.status === "ARRIVED" &&
+                      queue?.status === "FULFILLED" ? (
+                        <p className="text-xs text-teal-700 text-center font-medium">
+                          Dispensed. Use feedback below, then close the loop.
+                        </p>
+                      ) : null}
+                      {["TREATED", "FEEDBACK_SENT"].includes(
+                        selected.status,
+                      ) ? (
+                        <button
+                          className="btn-primary text-sm"
+                          onClick={() => handleUpdate("COMPLETED")}
+                        >
+                          Close Loop — Mark Completed
+                        </button>
+                      ) : null}
+                      {!["COMPLETED"].includes(selected.status) &&
+                        !(queue && queue.status !== "REJECTED") && (
+                          <button
+                            className="btn-danger text-sm"
+                            onClick={() => handleUpdate("MISSED")}
+                          >
+                            Mark Missed
+                          </button>
+                        )}
                     </div>
-                  )}
-                </div>
-              )}
-
-              {["TREATED", "FEEDBACK_SENT", "COMPLETED"].includes(
-                selected.status,
-              ) && (
-                <div>
-                  <p className="text-xs font-semibold text-gray-700 mb-1">
-                    Feedback to the CHW
-                  </p>
-                  <textarea
-                    className="input text-sm resize-none"
-                    rows={3}
-                    placeholder="What should the CHW know for follow-up?"
-                    value={feedback}
-                    onChange={(e) => setFeedback(e.target.value)}
-                  />
-                </div>
-              )}
-
-              {["PENDING", "OVERDUE", "ARRIVED"].includes(selected.status) &&
-                !["TREATED", "FEEDBACK_SENT", "COMPLETED"].includes(
-                  selected.status,
-                ) && (
-                  <div>
-                    <label className="text-xs text-gray-500 mb-1 block">
-                      Notes for the CHW (optional)
-                    </label>
-                    <textarea
-                      className="input text-sm resize-none"
-                      rows={2}
-                      placeholder="Write feedback for the CHW..."
-                      value={feedback}
-                      onChange={(e) => setFeedback(e.target.value)}
-                    />
-                  </div>
-                )}
-
-              <div className="flex flex-col gap-2">
-                {["PENDING", "OVERDUE"].includes(selected.status) && (
-                  <button
-                    className="btn-primary text-sm"
-                    onClick={() => handleUpdate("ARRIVED")}
-                  >
-                    {meds.length > 0
-                      ? "Mark Arrived & Send to Pharmacy"
-                      : "Mark Arrived"}
-                  </button>
-                )}
-                {selected.status === "ARRIVED" ? (
-                  <button
-                    className="btn-primary text-sm"
-                    onClick={() => handleUpdate("ARRIVED")}
-                  >
-                    {meds.length > 0
-                      ? "Send / Update Prescription"
-                      : "Save Details"}
-                  </button>
-                ) : null}
-                {["TREATED", "FEEDBACK_SENT"].includes(selected.status) ? (
-                  <button
-                    className="btn-primary text-sm"
-                    onClick={() => handleUpdate("COMPLETED")}
-                  >
-                    Close Loop — Mark Completed
-                  </button>
-                ) : null}
-                {!["COMPLETED"].includes(selected.status) && (
-                  <button
-                    className="btn-danger text-sm"
-                    onClick={() => handleUpdate("MISSED")}
-                  >
-                    Mark Missed
-                  </button>
-                )}
-              </div>
+                  </>
+                );
+              })()}
             </div>
           </div>
         </div>

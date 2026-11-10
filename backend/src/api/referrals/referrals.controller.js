@@ -74,9 +74,43 @@ export const getReferrals = async (req, res, next) => {
       prisma.referral.count({ where }),
     ]);
 
+    // Attach linked pharmacy queue entry (no Prisma relation on referralId)
+    const ids = referrals.map((r) => r.id);
+    const requests = ids.length
+      ? await prisma.pharmacyRequest.findMany({
+          where: { referralId: { in: ids } },
+          select: {
+            id: true,
+            referralId: true,
+            status: true,
+            diagnosis: true,
+            createdAt: true,
+            items: {
+              select: {
+                id: true,
+                drugName: true,
+                quantityRequested: true,
+                quantityFulfilled: true,
+                notes: true,
+              },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+        })
+      : [];
+    const byReferral = {};
+    for (const req of requests) {
+      if (req.referralId && !byReferral[req.referralId])
+        byReferral[req.referralId] = req;
+    }
+    const data = referrals.map((r) => ({
+      ...r,
+      pharmacyRequest: byReferral[r.id] || null,
+    }));
+
     res.json({
       success: true,
-      data: referrals,
+      data,
       pagination: {
         total,
         page: parseInt(page),
@@ -288,12 +322,24 @@ export const updateReferral = async (req, res, next) => {
       });
 
       if (meds.length > 0) {
+        // Latest request for this referral — edit while still open, never
+        // reopen a fulfilled one (prevents double-dispense loops)
         const existing = await tx.pharmacyRequest.findFirst({
-          where: { referralId: updated.id, status: "PENDING" },
-          select: { id: true },
+          where: { referralId: updated.id },
+          select: { id: true, status: true },
+          orderBy: { createdAt: "desc" },
         });
 
-        if (existing) {
+        if (existing && existing.status === "FULFILLED") {
+          throw Object.assign(
+            new Error(
+              "This patient has already been dispensed. Open a new referral if they need medication again.",
+            ),
+            { statusCode: 409 },
+          );
+        }
+
+        if (existing && existing.status === "PENDING") {
           // Prescription edited before the pharmacist acted — replace items
           await tx.pharmacyRequestItem.deleteMany({
             where: { requestId: existing.id },
@@ -305,6 +351,13 @@ export const updateReferral = async (req, res, next) => {
               items: { create: meds },
             },
           });
+        } else if (existing && existing.status === "PARTIALLY_FULFILLED") {
+          throw Object.assign(
+            new Error(
+              "Pharmacy has already started dispensing this prescription. Further changes must be made at the pharmacy.",
+            ),
+            { statusCode: 409 },
+          );
         } else {
           const m = updated.member;
           const patientAge = m.dateOfBirth
@@ -333,6 +386,10 @@ export const updateReferral = async (req, res, next) => {
 
     res.json({ success: true, data: referral });
   } catch (err) {
+    if (err?.statusCode)
+      return res
+        .status(err.statusCode)
+        .json({ success: false, message: err.message });
     next(err);
   }
 };

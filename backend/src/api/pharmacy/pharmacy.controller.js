@@ -276,31 +276,35 @@ export const getRequests = async (req, res, next) => {
           select: { firstName: true, lastName: true, role: true },
         },
         fulfilledBy: { select: { firstName: true, lastName: true } },
-        referral: {
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    // PharmacyRequest.referralId has no Prisma relation — attach manually
+    const referralIds = [
+      ...new Set(requests.map((r) => r.referralId).filter(Boolean)),
+    ];
+    const referrals = referralIds.length
+      ? await prisma.referral.findMany({
+          where: { id: { in: referralIds } },
           select: {
             id: true,
             reason: true,
             urgency: true,
+            status: true,
             destinationFacility: { select: { name: true } },
-            visit: {
-              select: {
-                id: true,
-                member: {
-                  select: {
-                    id: true,
-                    firstName: true,
-                    lastName: true,
-                    fullName: true,
-                  },
-                },
-              },
-            },
           },
-        },
-      },
-      orderBy: { createdAt: "desc" },
+        })
+      : [];
+    const referralById = Object.fromEntries(referrals.map((f) => [f.id, f]));
+
+    res.json({
+      success: true,
+      data: requests.map((r) => ({
+        ...r,
+        referral: r.referralId ? referralById[r.referralId] || null : null,
+      })),
     });
-    res.json({ success: true, data: requests });
   } catch (err) {
     next(err);
   }
@@ -369,15 +373,21 @@ export const fulfillRequest = async (req, res, next) => {
         .status(404)
         .json({ success: false, message: "Request not found." });
 
-    // Already dispensed? Stop here so stock is never deducted twice
-    if (request.status !== "PENDING")
+    // Block re-dispense once fully done; allow continuing a partial fill
+    if (request.status === "FULFILLED" || request.status === "REJECTED")
+      return res.status(409).json({
+        success: false,
+        message: "This request has already been processed.",
+      });
+    if (!["PENDING", "PARTIALLY_FULFILLED"].includes(request.status))
       return res.status(409).json({
         success: false,
         message: "This request has already been processed.",
       });
 
     const { fulfilledItems, notes } = req.body;
-    // fulfilledItems: [{ itemId, quantityFulfilled }]
+    // fulfilledItems: [{ itemId, quantityFulfilled }] — quantityFulfilled is
+    // the TOTAL desired for this attempt (capped at remaining - already given)
     if (!Array.isArray(fulfilledItems) || fulfilledItems.length === 0)
       return res
         .status(400)
@@ -396,9 +406,13 @@ export const fulfillRequest = async (req, res, next) => {
         });
         item.drugName = override;
       }
+      const desiredTotal = Math.max(parseInt(fi.quantityFulfilled) || 0, 0);
+      const already = item.quantityFulfilled || 0;
+      const remainingAllowed = Math.max(0, item.quantityRequested - already);
+      // Only the delta is dispensed this round (never re-dispense prior qty)
       const wanted = Math.min(
-        Math.max(parseInt(fi.quantityFulfilled) || 0, 0),
-        item.quantityRequested,
+        Math.max(desiredTotal - already, 0),
+        remainingAllowed,
       );
       if (wanted === 0) continue;
       const stock = await prisma.drugBatch.aggregate({
@@ -419,29 +433,32 @@ export const fulfillRequest = async (req, res, next) => {
         });
     }
 
-    // Fully fulfilled only if every requested item is listed (checked per item below)
-    let allFulfilled = request.items.every((i) =>
-      fulfilledItems.some((f) => f.itemId === i.id),
-    );
+    // Fully fulfilled only when every item's TOTAL reaches quantityRequested
+    let allFulfilled = true;
     for (const fi of fulfilledItems) {
       const item = request.items.find((i) => i.id === fi.itemId);
-      if (!item) continue;
+      if (!item) {
+        allFulfilled = false;
+        continue;
+      }
 
-      // Never more than was requested, never negative
-      const qtyOut = Math.min(
-        Math.max(parseInt(fi.quantityFulfilled) || 0, 0),
+      const desiredTotal = Math.max(parseInt(fi.quantityFulfilled) || 0, 0);
+      const already = item.quantityFulfilled || 0;
+      const nextTotal = Math.min(
+        Math.max(desiredTotal, already),
         item.quantityRequested,
       );
+      const qtyDelta = nextTotal - already;
 
       await prisma.pharmacyRequestItem.update({
         where: { id: fi.itemId },
-        data: { quantityFulfilled: qtyOut },
+        data: { quantityFulfilled: nextTotal },
       });
 
-      if (qtyOut < item.quantityRequested) allFulfilled = false;
+      if (nextTotal < item.quantityRequested) allFulfilled = false;
 
-      // Dispense stock using FEFO if quantity > 0
-      if (qtyOut > 0) {
+      // Dispense only this round's delta using FEFO
+      if (qtyDelta > 0) {
         const batches = await prisma.drugBatch.findMany({
           where: {
             facilityId,
@@ -453,7 +470,7 @@ export const fulfillRequest = async (req, res, next) => {
           orderBy: { expiryDate: "asc" },
         });
 
-        let remaining = qtyOut;
+        let remaining = qtyDelta;
         for (const batch of batches) {
           if (remaining <= 0) break;
           const deduct = Math.min(remaining, batch.quantityRemaining);
@@ -482,6 +499,28 @@ export const fulfillRequest = async (req, res, next) => {
           });
 
           remaining -= deduct;
+        }
+      }
+    }
+
+    // Items not listed in this attempt keep their prior totals; only mark
+    // FULFILLED when every requested item is fully given
+    if (allFulfilled) {
+      allFulfilled = request.items.every(
+        (i) =>
+          (i.quantityFulfilled || 0) >= i.quantityRequested ||
+          fulfilledItems.some((f) => f.itemId === i.id),
+      );
+      for (const i of request.items) {
+        const sent = fulfilledItems.find((f) => f.itemId === i.id);
+        if (!sent) {
+          allFulfilled = false;
+          break;
+        }
+        const desired = Math.max(parseInt(sent.quantityFulfilled) || 0, 0);
+        if (Math.min(desired, i.quantityRequested) < i.quantityRequested) {
+          allFulfilled = false;
+          break;
         }
       }
     }
