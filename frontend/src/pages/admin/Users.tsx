@@ -583,11 +583,20 @@ export default function Users() {
                   }
                   placeholder="Default to main hospital"
                   options={[
-                    { value: "", label: "My Main Hospital (Default)" },
-                    ...(adminFacilities?.map((f: any) => ({
-                      value: f.id,
-                      label: f.name,
-                    })) || []),
+                    {
+                      value: "",
+                      label: user?.facility?.name
+                        ? `${user.facility.name} (my main hospital — default)`
+                        : "My Main Hospital (Default)",
+                    },
+                    ...(adminFacilities || [])
+                      .filter(
+                        (f: { id: string }) => f.id !== user?.facility?.id,
+                      )
+                      .map((f: { id: string; name: string }) => ({
+                        value: f.id,
+                        label: f.name,
+                      })),
                   ]}
                 />
               </div>
