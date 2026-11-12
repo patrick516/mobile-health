@@ -128,7 +128,8 @@ export const createUser = async (req, res, next) => {
       passwordHash = await bcrypt.hash(tempPassword, 12);
     }
 
-    const pinHash = await bcrypt.hash(String(pin || "1234"), 12);
+    const plainPin = String(pin || "1234");
+    const pinHash = await bcrypt.hash(plainPin, 12);
 
     // ─── FACILITY ASSIGNMENT LOGIC ───
     let assignedFacilityId = null;
@@ -222,7 +223,11 @@ export const createUser = async (req, res, next) => {
       } else {
         await sendSms(
           user.phoneNumber,
-          `MobileHealth Malawi\n\nHello ${firstName}, your account has been created.\nContact your admin for your PIN.`,
+          `MobileHealth Malawi\n\nHello ${firstName}, your account has been created.\nRole: ${role}\nYour PIN: ${plainPin}\nYou will be asked to change it after your first login.${
+            APP_DOWNLOAD_LINK
+              ? `\n\nDownload the app: ${APP_DOWNLOAD_LINK}`
+              : ""
+          }`,
         );
       }
     } catch (notifyErr) {
@@ -390,6 +395,7 @@ export const resetUserPin = async (req, res, next) => {
         role: true,
         facilityId: true,
         email: true,
+        phoneNumber: true,
       },
     });
 
@@ -508,6 +514,21 @@ export const resetUserPin = async (req, res, next) => {
           newValue: { resetBy: req.user.id, resetAt: new Date().toISOString() },
         },
       });
+
+      if (targetUser.phoneNumber) {
+        try {
+          await sendSms(
+            targetUser.phoneNumber,
+            `MobileHealth Malawi\n\nHello ${targetUser.firstName}, your PIN has been reset.\nNew PIN: ${tempPin}\nYou will be asked to change it after you log in.${
+              APP_DOWNLOAD_LINK
+                ? `\n\nDownload the app: ${APP_DOWNLOAD_LINK}`
+                : ""
+            }`,
+          );
+        } catch (smsErr) {
+          console.error("SMS notification failed:", smsErr.message);
+        }
+      }
 
       return res.json({
         success: true,
