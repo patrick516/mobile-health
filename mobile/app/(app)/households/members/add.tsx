@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -61,6 +61,7 @@ export default function AddMemberScreen() {
   const [phone, setPhone] = useState("");
   const [nationalId, setNationalId] = useState("");
   const [saving, setSaving] = useState(false);
+  const scrollRef = useRef<ScrollView | null>(null);
 
   useEffect(() => {
     restoreDraft();
@@ -70,6 +71,10 @@ export default function AddMemberScreen() {
     const draft = await loadDraft<any>(DRAFT_KEY);
     if (!draft) return;
     if (draft.householdId !== selectedHouseholdId) return;
+    if (!draft.firstName && !draft.lastName) {
+      await clearDraft(DRAFT_KEY);
+      return;
+    }
     if (draft.firstName) setFirstName(draft.firstName);
     if (draft.lastName) setLastName(draft.lastName);
     if (draft.sex) setSex(draft.sex);
@@ -90,6 +95,21 @@ export default function AddMemberScreen() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
+      const hasContent =
+        firstName ||
+        lastName ||
+        sex ||
+        relationship ||
+        estimatedAge ||
+        phone ||
+        nationalId ||
+        isPregnant ||
+        hasDisability ||
+        chronicIllnesses.length > 0;
+      if (!hasContent) {
+        clearDraft(DRAFT_KEY);
+        return;
+      }
       saveDraft(DRAFT_KEY, {
         householdId: selectedHouseholdId,
         firstName,
@@ -171,6 +191,25 @@ export default function AddMemberScreen() {
     return parseInt(estimatedAge) < 5;
   };
 
+  const resetForm = () => {
+    setFirstName("");
+    setLastName("");
+    setSex("");
+    setRelationship("");
+    setUseDob(true);
+    setDob(new Date());
+    setEstimatedAge("");
+    setIsPregnant(false);
+    setLmpDate(new Date());
+    setChronicIllnesses([]);
+    setHasDisability(false);
+    setDisabilityType("");
+    setPhone("");
+    setNationalId("");
+    setShowDobPicker(false);
+    setShowLmpPicker(false);
+  };
+
   const handleSave = async () => {
     if (!firstName.trim())
       return showError("Required", "First name is required.");
@@ -191,6 +230,32 @@ export default function AddMemberScreen() {
     try {
       const localId = Crypto.randomUUID();
       const db = await getDb();
+
+      const hh = await db.getFirstAsync<{ id: string; local_id: string }>(
+        `SELECT id, local_id FROM households WHERE id = ? OR local_id = ?`,
+        [selectedHouseholdId, selectedHouseholdId],
+      );
+      const householdMembers = await db.getAllAsync<{
+        first_name: string | null;
+        last_name: string | null;
+      }>(
+        `SELECT first_name, last_name FROM members
+         WHERE (household_id = ? OR household_id = ?) AND status = 'ACTIVE'`,
+        [hh?.id ?? selectedHouseholdId, hh?.local_id ?? selectedHouseholdId],
+      );
+      const nameFirst = firstName.trim().toLowerCase();
+      const nameLast = lastName.trim().toLowerCase();
+      const duplicateMember = householdMembers.find(
+        (m) =>
+          (m.first_name || "").trim().toLowerCase() === nameFirst &&
+          (m.last_name || "").trim().toLowerCase() === nameLast,
+      );
+      if (duplicateMember) {
+        return showError(
+          "Already Registered",
+          `${firstName.trim()} ${lastName.trim()} is already a member of this household. No duplicate was created.`,
+        );
+      }
 
       let expectedDelivery: string | null = null;
       if (isPregnant) {
@@ -315,30 +380,21 @@ export default function AddMemberScreen() {
         });
       }
 
-      await clearDraft(DRAFT_KEY);
-      showSuccess("Member Added", `${firstName} ${lastName} has been added.`);
+      const wasUnder5 = isUnder5();
+      const wasPregnant = isPregnant;
+      const successMsg = `${fullNameCombined} has been added.${wasUnder5 ? "\n\nVaccination schedule will be set up on sync." : ""}${wasPregnant ? "\n\nANC schedule will be set up on sync." : ""}`;
 
-      Alert.alert(
-        "Member Added ✓",
-        `${firstName} ${lastName} has been added.${isUnder5() ? "\n\nVaccination schedule will be set up on sync." : ""}${isPregnant ? "\n\nANC schedule will be set up on sync." : ""}`,
-        [
-          {
-            text: "Add Another",
-            onPress: () => {
-              setFirstName("");
-              setLastName("");
-              setSex("");
-              setRelationship("");
-              setIsPregnant(false);
-              setChronicIllnesses([]);
-              setHasDisability(false);
-              setPhone("");
-              setNationalId("");
-            },
-          },
-          { text: "Done", onPress: () => goBack() },
-        ],
-      );
+      resetForm();
+      await clearDraft(DRAFT_KEY);
+      showSuccess("Member Added", `${fullNameCombined} has been added.`);
+
+      Alert.alert("Member Added ✓", successMsg, [
+        {
+          text: "Add Another",
+          onPress: () => scrollRef.current?.scrollTo({ y: 0, animated: true }),
+        },
+        { text: "Done", onPress: () => goBack() },
+      ]);
     } catch (err) {
       console.error("Add member error:", err);
       showError("Save Failed", "Failed to save member. Please try again.");
@@ -371,7 +427,11 @@ export default function AddMemberScreen() {
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        ref={scrollRef}
+        style={styles.scroll}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.section}>
           <Text style={styles.label}>First Name *</Text>
           <TextInput
